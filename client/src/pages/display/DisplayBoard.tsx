@@ -57,7 +57,7 @@ const toHindiSpeech = (token: string): string =>
 
 const ANNOUNCEMENT_TEXT: Record<DisplayLanguage, (token: string, dept: string) => string> = {
   EN: (t, d) => `Token ${t}, please proceed to ${d}.`,
-  HI: (t, d) => `टोकन ${toHindiSpeech(t)}, ${d} के लिए कृपया आगे आएं।`,
+  HI: (t, d) => `कृपया ध्यान दें। टोकन ${toHindiSpeech(t)}, ${d} में आगे आएं।`,
   BN: (t, d) => `টোকেন ${t}, ${d} এর জন্য অনুগ্রহ করে এগিয়ে আসুন।`,
   MR: (t, d) => `टोकन ${t}, ${d} साठी कृपया पुढे या.`,
   TA: (t, d) => `டோக்கன் ${t}, ${d} தயவுசெய்து முன் வாருங்கள்.`,
@@ -98,6 +98,56 @@ const POLL_INTERVAL_MS = 1_000;
 const SPEECH_REPEAT_DELAY_MS = 600;
 const MAX_SPEECH_REPEATS = 3;
 const DEFAULT_VOICE_LOCALE = "en-IN";
+const CHIME_TO_SPEECH_DELAY_MS = 900;
+
+/**
+ * Plays a two-tone descending chime (like Indian metro/PA systems) before an
+ * announcement, using the Web Audio API — no audio file needed. Resolves
+ * once the chime has finished so the caller can start speaking after it.
+ */
+function playAnnouncementChime(): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) {
+        resolve();
+        return;
+      }
+
+      const ctx = new AudioContextClass();
+      const startTime = ctx.currentTime;
+
+      const playTone = (frequency: number, start: number, duration: number) => {
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        oscillator.type = "sine";
+        oscillator.frequency.value = frequency;
+
+        gain.gain.setValueAtTime(0, startTime + start);
+        gain.gain.linearRampToValueAtTime(0.25, startTime + start + 0.05);
+        gain.gain.linearRampToValueAtTime(0, startTime + start + duration);
+
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+        oscillator.start(startTime + start);
+        oscillator.stop(startTime + start + duration + 0.05);
+      };
+
+      // "Ding" (G5) then "dong" (E5) — a calm, familiar two-tone chime.
+      playTone(784, 0, 0.35);
+      playTone(659, 0.32, 0.45);
+
+      window.setTimeout(() => {
+        ctx.close();
+        resolve();
+      }, CHIME_TO_SPEECH_DELAY_MS);
+    } catch (err) {
+      console.error("CHIME ERROR:", err);
+      resolve();
+    }
+  });
+}
 
 function useClock() {
   const [now, setNow] = useState(() => new Date());
@@ -206,26 +256,33 @@ function useSpeechAnnouncer(voicesRef: React.MutableRefObject<SpeechSynthesisVoi
       ? voicesRef.current
       : (voicesRef.current = window.speechSynthesis.getVoices());
 
-    let match = voices.find((v) => v.lang.toLowerCase() === voiceCode.toLowerCase());
+    // Prefer Google's voices where available — noticeably clearer and calmer
+    // than most default OS voices, which tends to matter most for Hindi.
+    const preferGoogle = (candidates: SpeechSynthesisVoice[]) =>
+      candidates.find((v) => v.name.toLowerCase().includes("google")) ?? candidates[0];
+
+    let match = preferGoogle(voices.filter((v) => v.lang.toLowerCase() === voiceCode.toLowerCase()));
 
     if (!match) {
       const prefix = voiceCode.split("-")[0].toLowerCase();
-      match = voices.find((v) => v.lang.toLowerCase().startsWith(prefix));
+      match = preferGoogle(voices.filter((v) => v.lang.toLowerCase().startsWith(prefix)));
     }
 
     // Some Android/Chrome voice packs expose Hindi without a matching BCP-47 tag.
     if (!match && locale === "HI") {
-      match = voices.find((v) => {
-        const name = v.name.toLowerCase();
-        const lang = v.lang.toLowerCase();
-        return lang.includes("hi") || name.includes("hindi") || name.includes("हिंदी");
-      });
+      match = preferGoogle(
+        voices.filter((v) => {
+          const name = v.name.toLowerCase();
+          const lang = v.lang.toLowerCase();
+          return lang.includes("hi") || name.includes("hindi") || name.includes("हिंदी");
+        }),
+      );
     }
 
     return { voiceCode, voice: match };
   };
 
-  const speak = (text: string, locale: DisplayLanguage, repeatCount = 1) => {
+  const speak = async (text: string, locale: DisplayLanguage, repeatCount = 1) => {
     if (!enabled || !text.trim() || !("speechSynthesis" in window)) return;
 
     const synth = window.speechSynthesis;
@@ -234,11 +291,17 @@ function useSpeechAnnouncer(voicesRef: React.MutableRefObject<SpeechSynthesisVoi
 
     synth.cancel();
 
+    // The metro-style chime + slower pacing is specifically for Hindi
+    // announcements. Every other language speaks immediately, same as before.
+    if (locale === "HI") {
+      await playAnnouncementChime();
+    }
+
     const speakOnce = (count: number) => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = voiceCode;
-      utterance.rate = locale === "HI" ? 0.72 : 0.82;
-      utterance.pitch = 1;
+      utterance.rate = locale === "HI" ? 0.66 : 0.82;
+      utterance.pitch = locale === "HI" ? 0.95 : 1;
       utterance.volume = 1;
       if (voice) utterance.voice = voice;
 
@@ -390,31 +453,54 @@ const DisplayBoard = () => {
   const tickerItems = buildTickerItems({ display, waiting: waiting.length, doctorName, doctorOnline });
 
   return (
-    <div className="flex min-h-screen flex-col overflow-hidden bg-[#F3F7FC] text-slate-900" style={{ fontFeatureSettings: '"tnum" 1' }}>
+    <div className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-blue-700 text-white" style={{ fontFeatureSettings: '"tnum" 1' }}>
       <TickerStyles />
+      <BackgroundDecoration />
 
-      <TopBar display={display} time={time} date={date} doctorName={doctorName} doctorOnline={doctorOnline} />
+      <div className="relative z-10 flex min-h-screen flex-col">
+        <TopBar display={display} time={time} date={date} doctorName={doctorName} doctorOnline={doctorOnline} />
 
-      {display.voiceEnabled && !announcer.enabled && <VoicePrompt onEnable={announcer.activate} />}
+        {display.voiceEnabled && !announcer.enabled && <VoicePrompt onEnable={announcer.activate} />}
 
-      <main className="grid flex-1 grid-cols-1 gap-4 p-4 md:p-6 lg:grid-cols-[1fr_360px] lg:gap-6 lg:p-8">
-        <div className="flex flex-col gap-4 lg:gap-6">
-          {display.showCurrent && (
-            <NowServingPanel current={current} doctorName={doctorName} doctorOnline={doctorOnline} />
-          )}
+        <main className="grid flex-1 grid-cols-1 gap-5 p-4 md:p-6 lg:grid-cols-[1fr_380px] lg:gap-6 lg:p-8">
+          <div className="flex flex-col gap-5 lg:gap-6">
+            {display.showCurrent && (
+              <NowServingPanel current={current} doctorName={doctorName} doctorOnline={doctorOnline} />
+            )}
 
-          {display.showWaiting && <StatusStrip waiting={waiting} emergency={display.showEmergency ? emergency : []} />}
-        </div>
+            {display.showWaiting && <StatusStrip waiting={waiting} emergency={display.showEmergency ? emergency : []} />}
+          </div>
 
-        {display.showNext && <UpNextPanel next={next} />}
-      </main>
+          {display.showNext && <UpNextPanel next={next} />}
+        </main>
 
-      <Ticker items={tickerItems} time={time} />
+        <Ticker items={tickerItems} time={time} />
+      </div>
     </div>
   );
 };
 
 export default DisplayBoard;
+
+// Ambient background: blurred glow orbs + faint grid, matching the brand's login screen
+
+function BackgroundDecoration() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-blue-400/20 blur-3xl" />
+      <div className="absolute -bottom-40 -right-20 h-[500px] w-[500px] rounded-full bg-cyan-300/10 blur-3xl" />
+      <div className="absolute right-20 top-20 h-32 w-32 rounded-full border border-white/10" />
+      <div
+        className="absolute inset-0 opacity-[0.04]"
+        style={{
+          backgroundImage:
+            "linear-gradient(#93c5fd 1px, transparent 1px), linear-gradient(90deg, #93c5fd 1px, transparent 1px)",
+          backgroundSize: "32px 32px",
+        }}
+      />
+    </div>
+  );
+}
 
 // Shared style injection for the ticker animation
 
@@ -436,10 +522,11 @@ function TickerStyles() {
 
 function LoadingScreen() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F3F7FC]">
-      <div className="text-center">
-        <div className="mx-auto mb-5 h-12 w-12 animate-spin rounded-full border-4 border-blue-100 border-t-[#0757B8]" />
-        <p className="text-xl font-semibold text-slate-700">Connecting to hospital display…</p>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-blue-700">
+      <BackgroundDecoration />
+      <div className="relative z-10 text-center">
+        <div className="mx-auto mb-5 h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-cyan-300" />
+        <p className="text-xl font-semibold text-white">Connecting to hospital display…</p>
       </div>
     </div>
   );
@@ -447,8 +534,9 @@ function LoadingScreen() {
 
 function ErrorScreen({ message, displayKey }: { message: string; displayKey?: string }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F3F7FC] px-6">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-blue-700 px-6">
+      <BackgroundDecoration />
+      <div className="relative z-10 w-full max-w-md rounded-[28px] border border-white/10 bg-white p-8 text-center shadow-[0_20px_60px_-20px_rgba(15,23,42,0.5)]">
         <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-3xl">
           ⚠
         </div>
@@ -481,48 +569,55 @@ function TopBar({
   doctorOnline: boolean;
 }) {
   return (
-    <header className="flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 shadow-sm md:px-8">
+    <header className="flex items-center justify-between gap-4 border-b border-white/10 bg-white/5 px-5 py-4 backdrop-blur-md md:px-8">
       <div className="flex min-w-0 items-center gap-4">
         {display.logoUrl ? (
-          <img
-            src={display.logoUrl}
-            alt={display.hospitalName}
-            className="h-12 w-12 shrink-0 rounded-xl border border-slate-100 object-contain p-1"
-          />
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-1">
+            <img src={display.logoUrl} alt={display.hospitalName} className="h-full w-full object-contain" />
+          </div>
         ) : (
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#0757B8] text-lg font-bold text-white">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white text-lg font-bold text-blue-700">
             {display.hospitalName.charAt(0)}
           </div>
         )}
 
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold text-slate-900 md:text-xl">{display.hospitalName}</h1>
-          <p className="truncate text-sm text-slate-500">{display.heading}</p>
+          <h1 className="truncate text-lg font-bold text-white md:text-xl">{display.hospitalName}</h1>
+          <p className="truncate text-sm text-blue-200">{display.heading}</p>
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-4">
+      <div className="flex shrink-0 items-center gap-3">
+        <LivePill />
         <DoctorPill doctorName={doctorName} doctorOnline={doctorOnline} />
 
         <div className="hidden text-right sm:block">
-          <p className="text-2xl font-bold tabular-nums text-slate-900">{time}</p>
-          <p className="text-xs text-slate-500">{date}</p>
+          <p className="text-2xl font-bold tabular-nums text-white">{time}</p>
+          <p className="text-xs text-blue-200">{date}</p>
         </div>
       </div>
     </header>
   );
 }
 
+function LivePill() {
+  return (
+    <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 backdrop-blur-md md:flex">
+      <span className="relative flex h-2.5 w-2.5">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
+      </span>
+      <span className="text-xs font-medium text-white">Live</span>
+    </div>
+  );
+}
+
 function DoctorPill({ doctorName, doctorOnline }: { doctorName: string; doctorOnline: boolean }) {
   return (
-    <div
-      className={`flex items-center gap-2 rounded-full border px-3.5 py-2 ${
-        doctorOnline ? "border-blue-100 bg-blue-50" : "border-slate-200 bg-slate-50"
-      }`}
-    >
-      <span className={`h-2 w-2 rounded-full ${doctorOnline ? "animate-pulse bg-[#0757B8]" : "bg-slate-400"}`} />
-      <span className="text-sm font-medium text-slate-900">Dr. {doctorName}</span>
-      <span className={`text-xs font-medium ${doctorOnline ? "text-[#0757B8]" : "text-slate-500"}`}>
+    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3.5 py-2 backdrop-blur-md">
+      <span className={`h-2 w-2 rounded-full ${doctorOnline ? "animate-pulse bg-cyan-300" : "bg-white/30"}`} />
+      <span className="text-sm font-medium text-white">Dr. {doctorName}</span>
+      <span className={`text-xs font-medium ${doctorOnline ? "text-cyan-300" : "text-blue-200"}`}>
         {doctorOnline ? "Online" : "Offline"}
       </span>
     </div>
@@ -531,12 +626,12 @@ function DoctorPill({ doctorName, doctorOnline }: { doctorName: string; doctorOn
 
 function VoicePrompt({ onEnable }: { onEnable: () => void }) {
   return (
-    <div className="flex flex-wrap items-center justify-center gap-4 bg-amber-400 px-4 py-2.5 text-sm font-semibold text-amber-950">
+    <div className="flex flex-wrap items-center justify-center gap-4 border-b border-white/10 bg-amber-400/90 px-4 py-2.5 text-sm font-semibold text-amber-950 backdrop-blur-md">
       <span>Turn on voice announcements for this screen</span>
       <button
         type="button"
         onClick={onEnable}
-        className="rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-slate-800"
+        className="rounded-lg bg-blue-950 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-blue-900"
       >
         Enable voice
       </button>
@@ -556,8 +651,8 @@ function NowServingPanel({
   doctorOnline: boolean;
 }) {
   return (
-    <section className="flex flex-1 flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_15px_45px_rgba(15,64,120,0.08)] md:p-8">
-      <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">Now serving</p>
+    <section className="flex flex-1 flex-col rounded-[28px] border border-white/10 bg-white p-6 shadow-[0_20px_60px_-20px_rgba(2,6,23,0.6)] md:p-8">
+      <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">Now serving</p>
 
       <div className="mt-4 flex flex-1 items-center">
         {current.length === 0 ? (
@@ -577,21 +672,19 @@ function NowServingPanel({
 function CurrentTokenCard({ queue, doctorOnline, solo }: { queue: DisplayQueue; doctorOnline: boolean; solo: boolean }) {
   return (
     <div
-      className={`rounded-2xl p-8 text-center text-white shadow-[0_15px_35px_rgba(7,87,184,0.25)] ${
-        doctorOnline
-          ? "bg-gradient-to-br from-[#0757B8] to-[#0B78E3]"
-          : "bg-gradient-to-br from-slate-500 to-slate-600"
+      className={`rounded-3xl p-8 text-center ${
+        doctorOnline ? "bg-gradient-to-br from-blue-50 to-cyan-50" : "bg-slate-50"
       }`}
     >
       <p
-        className={`font-extrabold leading-none tabular-nums tracking-tight ${
+        className={`bg-clip-text font-extrabold leading-none tabular-nums tracking-tight text-transparent ${
           solo ? "text-[9rem] md:text-[11rem]" : "text-7xl md:text-8xl"
-        }`}
+        } ${doctorOnline ? "bg-gradient-to-br from-blue-700 to-cyan-500" : "bg-gradient-to-br from-slate-400 to-slate-500"}`}
       >
         {queue.tokenLabel}
       </p>
-      <p className="mt-4 text-xl font-semibold md:text-2xl">{queue.departmentId?.name || "OPD"}</p>
-      {queue.doctorId?.name && <p className="mt-1 text-sm text-blue-100">Dr. {queue.doctorId.name}</p>}
+      <p className="mt-4 text-xl font-semibold text-slate-900 md:text-2xl">{queue.departmentId?.name || "OPD"}</p>
+      {queue.doctorId?.name && <p className="mt-1 text-sm text-slate-500">Dr. {queue.doctorId.name}</p>}
     </div>
   );
 }
@@ -613,10 +706,10 @@ function EmptyServingState({ doctorName, doctorOnline }: { doctorName: string; d
 
 function UpNextPanel({ next }: { next: DisplayQueue[] }) {
   return (
-    <section className="flex flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_15px_45px_rgba(15,64,120,0.08)]">
+    <section className="flex flex-col rounded-[28px] border border-white/10 bg-white p-6 shadow-[0_20px_60px_-20px_rgba(2,6,23,0.6)]">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">Up next</p>
-        <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-[#0757B8]">
+        <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">Up next</p>
+        <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
           {next.length}
         </span>
       </div>
@@ -627,7 +720,7 @@ function UpNextPanel({ next }: { next: DisplayQueue[] }) {
         <div className="mt-2 flex-1 divide-y divide-slate-100 overflow-y-auto">
           {next.map((queue) => (
             <div key={queue._id} className="flex items-center justify-between gap-3 py-3.5">
-              <span className="text-2xl font-bold tabular-nums text-[#0757B8]">{queue.tokenLabel}</span>
+              <span className="text-2xl font-bold tabular-nums text-blue-700">{queue.tokenLabel}</span>
               <span className="truncate text-sm text-slate-500">{queue.departmentId?.name || "OPD"}</span>
             </div>
           ))}
@@ -641,9 +734,9 @@ function UpNextPanel({ next }: { next: DisplayQueue[] }) {
 
 function StatusStrip({ waiting, emergency }: { waiting: DisplayQueue[]; emergency: DisplayQueue[] }) {
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_15px_45px_rgba(15,64,120,0.08)]">
+    <section className="rounded-[28px] border border-white/10 bg-white p-6 shadow-[0_20px_60px_-20px_rgba(2,6,23,0.6)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">Waiting</p>
+        <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">Waiting</p>
         <span className="rounded-full bg-amber-50 px-3 py-1 text-sm font-bold text-amber-600">
           {waiting.length} {waiting.length === 1 ? "patient" : "patients"}
         </span>
@@ -656,7 +749,7 @@ function StatusStrip({ waiting, emergency }: { waiting: DisplayQueue[]; emergenc
           {waiting.slice(0, 24).map((queue) => (
             <span
               key={queue._id}
-              className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-1.5 text-sm font-semibold tabular-nums text-[#0757B8]"
+              className="rounded-lg border border-blue-100 bg-gradient-to-br from-blue-50 to-cyan-50 px-3 py-1.5 text-sm font-semibold tabular-nums text-blue-700"
             >
               {queue.tokenLabel}
             </span>
@@ -722,8 +815,8 @@ function Ticker({ items, time }: { items: TickerItem[]; time: string }) {
   const doubled = [...items, ...items];
 
   return (
-    <footer className="flex items-center gap-4 border-t border-slate-200 bg-white py-3">
-      <div className="shrink-0 border-r border-slate-200 px-5 text-sm font-bold tabular-nums text-[#0757B8]">
+    <footer className="flex items-center gap-4 border-t border-white/10 bg-white/5 py-3 backdrop-blur-md">
+      <div className="shrink-0 border-r border-white/10 px-5 text-sm font-bold tabular-nums text-cyan-300">
         {time}
       </div>
 
@@ -732,7 +825,7 @@ function Ticker({ items, time }: { items: TickerItem[]; time: string }) {
           {doubled.map((item, index) => (
             <span
               key={index}
-              className={`text-sm font-medium ${item.emphasis === "amber" ? "text-amber-600" : "text-slate-500"}`}
+              className={`text-sm font-medium ${item.emphasis === "amber" ? "text-amber-300" : "text-blue-100"}`}
             >
               {item.text}
             </span>
@@ -740,7 +833,7 @@ function Ticker({ items, time }: { items: TickerItem[]; time: string }) {
         </div>
       </div>
 
-      <div className="hidden shrink-0 border-l border-slate-200 px-5 text-xs text-slate-400 md:block">
+      <div className="hidden shrink-0 border-l border-white/10 px-5 text-xs text-blue-300 md:block">
         NexTurn Smart Hospital Queue
       </div>
     </footer>
