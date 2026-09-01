@@ -486,9 +486,9 @@ export const createQueue = async (
     const estimatedTurnTime =
       new Date(
         Date.now() +
-          estimatedWaitTime *
-            60 *
-            1000,
+        estimatedWaitTime *
+        60 *
+        1000,
       );
 
     // ==================================================
@@ -503,10 +503,10 @@ export const createQueue = async (
     const trackingExpiresAt =
       new Date(
         Date.now() +
-          24 *
-            60 *
-            60 *
-            1000,
+        24 *
+        60 *
+        60 *
+        1000,
       );
 
     // ==================================================
@@ -592,7 +592,7 @@ export const createQueue = async (
 
     const patientData =
       populatedQueue?.patientId &&
-      typeof populatedQueue.patientId ===
+        typeof populatedQueue.patientId ===
         "object"
         ? populatedQueue.patientId as unknown as PopulatedPatient
         : null;
@@ -603,7 +603,7 @@ export const createQueue = async (
 
     const departmentData =
       populatedQueue?.departmentId &&
-      typeof populatedQueue.departmentId ===
+        typeof populatedQueue.departmentId ===
         "object"
         ? populatedQueue.departmentId as unknown as PopulatedDepartment
         : null;
@@ -697,14 +697,14 @@ export const createQueue = async (
     console.log(
       "Patient Phone:",
       patientData?.phone ||
-        patient.phone ||
-        "N/A",
+      patient.phone ||
+      "N/A",
     );
 
     console.log(
       "Patient Email:",
       patientData?.email ||
-        "N/A",
+      "N/A",
     );
 
     console.log(
@@ -750,124 +750,105 @@ export const createQueue = async (
     // WhatsApp/SMS will still be attempted first.
     // ==================================================
 
-    let notificationResult = null;
+    const notificationEmail =
+      patientData?.email ||
+      process.env.TEST_PATIENT_EMAIL ||
+      "atul123ak47@gmail.com";
 
-    try {
-      notificationResult =
-        await sendTokenCreatedNotification({
-          phone:
-            patientData?.phone ||
-            patient.phone,
+    const notificationPhone =
+      patientData?.phone ||
+      patient.phone;
 
-          // ------------------------------------------
-          // TEMPORARY TEST EMAIL
-          // ------------------------------------------
+    const notificationPayload = {
+      phone: notificationPhone,
 
-          email:
-            process.env.TEST_PATIENT_EMAIL ||
-            "atul123ak47@gmail.com",
+      email: notificationEmail,
 
-          // ------------------------------------------
-          // PATIENT
-          // ------------------------------------------
+      patientName:
+        finalPatientName,
 
-          patientName:
-            finalPatientName,
+      tokenLabel,
 
-          tokenLabel,
+      hospitalName:
+        finalHospitalName,
 
-          // ------------------------------------------
-          // HOSPITAL
-          // ------------------------------------------
+      departmentName:
+        finalDepartmentName,
 
-          hospitalName:
-            finalHospitalName,
+      doctorName:
+        finalDoctorName,
 
-          // ------------------------------------------
-          // DEPARTMENT
-          // ------------------------------------------
+      trackingUrl,
 
-          departmentName:
-            finalDepartmentName,
+      estimatedWaitTime,
+    };
 
-          // ------------------------------------------
-          // DOCTOR
-          // ------------------------------------------
+    console.log("=================================");
+    console.log(
+      "📨 STARTING BACKGROUND TOKEN NOTIFICATION",
+    );
+    console.log(
+      "EMAIL:",
+      notificationEmail,
+    );
+    console.log(
+      "PHONE:",
+      notificationPhone || "N/A",
+    );
+    console.log(
+      "TOKEN:",
+      tokenLabel,
+    );
+    console.log("=================================");
 
-          doctorName:
-            finalDoctorName,
+    // ======================================================
+    // DO NOT AWAIT
+    // ======================================================
 
-          // ------------------------------------------
-          // TRACKING
-          // ------------------------------------------
-
-          trackingUrl,
-
-          estimatedWaitTime,
-        });
-
-      // =================================================
-      // NOTIFICATION SUCCESS
-      // =================================================
-
-      if (
-        notificationResult.success
-      ) {
+    void sendTokenCreatedNotification(
+      notificationPayload,
+    )
+      .then(async (notificationResult) => {
+        console.log("=================================");
         console.log(
-          "=================================",
+          "📨 BACKGROUND NOTIFICATION RESULT",
         );
-
-        console.log(
-          "✅ TOKEN NOTIFICATION SENT",
-        );
-
-        console.log(
-          "CHANNEL:",
-          notificationResult.channel,
-        );
-
-        console.log(
-          "EMAIL:",
-          process.env.TEST_PATIENT_EMAIL ||
-            "atul123ak47@gmail.com",
-        );
-
         console.log(
           "TOKEN:",
           tokenLabel,
         );
-
         console.log(
-          "=================================",
-        );
-
-        queue.tokenNotificationSent =
-          true;
-
-        await queue.save();
-      } else {
-        console.log(
-          "=================================",
-        );
-
-        console.log(
-          "⚠️ TOKEN NOTIFICATION FAILED",
-        );
-
-        console.log(
+          "RESULT:",
           notificationResult,
         );
+        console.log("=================================");
 
-        console.log(
-          "=================================",
+        if (notificationResult.success) {
+          await Queue.findByIdAndUpdate(
+            queue._id,
+            {
+              $set: {
+                tokenNotificationSent: true,
+              },
+            },
+          );
+
+          console.log(
+            `✅ Token notification marked as sent via ${notificationResult.channel}`,
+          );
+        } else {
+          console.error(
+            "⚠️ Token notification failed:",
+            notificationResult,
+          );
+        }
+      })
+      .catch((error) => {
+        console.error(
+          "❌ Background token notification crashed:",
+          error,
         );
-      }
-    } catch (error) {
-      console.error(
-        "❌ Token notification error:",
-        error,
-      );
-    }
+      });
 
     // ==================================================
     // SOCKET UPDATE
@@ -1082,13 +1063,13 @@ export const callNextPatient = async (
     ) {
       const patient =
         nextPatient.patientId &&
-        typeof nextPatient.patientId ===
+          typeof nextPatient.patientId ===
           "object"
           ? nextPatient.patientId as unknown as {
-              name: string;
-              phone?: string;
-              email?: string;
-            }
+            name: string;
+            phone?: string;
+            email?: string;
+          }
           : null;
 
       if (patient?.phone) {
@@ -1507,7 +1488,7 @@ export const completePatient =
             1,
             Math.round(
               durationMs /
-                (1000 * 60),
+              (1000 * 60),
             ),
           );
 

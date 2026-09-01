@@ -1,4 +1,3 @@
-
 import {
   sendWhatsApp,
 } from "./whatsapp.service";
@@ -46,7 +45,8 @@ type NotificationType =
 ========================================================= */
 
 const TEST_PATIENT_EMAIL =
-  process.env.TEST_PATIENT_EMAIL;
+  process.env.TEST_PATIENT_EMAIL ||
+  "atul123ak47@gmail.com";
 
 /* =========================================================
    MAIN NOTIFICATION
@@ -75,44 +75,17 @@ export const sendPatientNotification = async (
   console.log("🔔 PATIENT NOTIFICATION");
   console.log("TYPE:", type);
   console.log("PATIENT:", patientName);
+  console.log("PHONE:", phone || "NOT PROVIDED");
   console.log(
-    "PHONE:",
-    phone || "NOT PROVIDED",
-  );
-  console.log(
-    "PATIENT EMAIL:",
+    "EMAIL:",
     email || "NOT PROVIDED",
   );
-  console.log(
-    "TEST EMAIL:",
-    TEST_PATIENT_EMAIL || "NOT CONFIGURED",
-  );
-  console.log(
-    "HOSPITAL:",
-    hospitalName || "NOT PROVIDED",
-  );
-  console.log(
-    "DEPARTMENT:",
-    departmentName || "NOT PROVIDED",
-  );
-  console.log(
-    "DOCTOR:",
-    doctorName || "NOT ASSIGNED",
-  );
   console.log("TOKEN:", tokenLabel);
-  console.log(
-    "ESTIMATED WAIT:",
-    estimatedWaitTime ?? "NOT PROVIDED",
-  );
-  console.log(
-    "TRACKING URL:",
-    trackingUrl || "NOT PROVIDED",
-  );
   console.log("=================================");
 
-  /* =====================================================
+  /* =======================================================
      CREATE MESSAGE
-  ===================================================== */
+  ======================================================= */
 
   let message = "";
 
@@ -152,135 +125,35 @@ export const sendPatientNotification = async (
       `Please proceed to the doctor's room.`;
   }
 
-  /* =====================================================
-     RESULTS
-  ===================================================== */
-
-  const successfulChannels: string[] = [];
-  const failedChannels: string[] = [];
-
-  /* =====================================================
-     1. WHATSAPP
-  ===================================================== */
-
-  if (phone) {
-    try {
-      console.log("=================================");
-      console.log("📱 Trying WhatsApp");
-      console.log("TO:", phone);
-      console.log("=================================");
-
-      const whatsappResult =
-        await sendWhatsApp({
-          phone,
-          message,
-        });
-
-      if (whatsappResult.success) {
-        console.log(
-          "✅ WhatsApp notification sent",
-        );
-
-        successfulChannels.push("WHATSAPP");
-      } else {
-        console.log(
-          "⚠️ WhatsApp failed",
-        );
-
-        failedChannels.push("WHATSAPP");
-      }
-    } catch (error) {
-      console.error(
-        "❌ WhatsApp error:",
-        error,
-      );
-
-      failedChannels.push("WHATSAPP");
-    }
-  }
-
-  /* =====================================================
-     2. SMS
-     
-     SMS is attempted when WhatsApp failed.
-  ===================================================== */
-
-  if (
-    phone &&
-    !successfulChannels.includes("WHATSAPP")
-  ) {
-    try {
-      console.log("=================================");
-      console.log("📤 Trying SMS");
-      console.log("TO:", phone);
-      console.log("=================================");
-
-      const smsResult =
-        await sendSMS({
-          phone,
-          message,
-        });
-
-      if (smsResult.success) {
-        console.log(
-          "✅ SMS notification sent",
-        );
-
-        successfulChannels.push("SMS");
-      } else {
-        console.log(
-          "⚠️ SMS failed",
-        );
-
-        failedChannels.push("SMS");
-      }
-    } catch (error) {
-      console.error(
-        "❌ SMS error:",
-        error,
-      );
-
-      failedChannels.push("SMS");
-    }
-  }
-
-  /* =====================================================
-     3. EMAIL
+  /* =======================================================
+     TOKEN CREATED
      
      IMPORTANT:
+     For token creation we try EMAIL FIRST.
      
-     TOKEN_CREATED email is independent of WhatsApp/SMS.
-     
-     Even if WhatsApp succeeds, email will still be sent.
-  ===================================================== */
+     This guarantees your default/test email is attempted
+     without waiting for WhatsApp/SMS failures.
+  ======================================================= */
 
   if (type === "TOKEN_CREATED") {
     const recipientEmail =
       email || TEST_PATIENT_EMAIL;
 
-    console.log("=================================");
-    console.log("📧 PATIENT TOKEN EMAIL");
-    console.log(
-      "PATIENT EMAIL:",
-      email || "NOT PROVIDED",
-    );
-    console.log(
-      "TEST EMAIL:",
-      TEST_PATIENT_EMAIL || "NOT CONFIGURED",
-    );
-    console.log(
-      "FINAL RECIPIENT:",
-      recipientEmail || "NONE",
-    );
-    console.log("=================================");
-
     if (recipientEmail) {
       try {
-        if (!trackingUrl) {
-          console.warn(
-            "⚠️ Tracking URL missing for patient email",
-          );
-        }
+        console.log("=================================");
+        console.log(
+          "📧 TRYING TOKEN EMAIL",
+        );
+        console.log(
+          "TO:",
+          recipientEmail,
+        );
+        console.log(
+          "TOKEN:",
+          tokenLabel,
+        );
+        console.log("=================================");
 
         const emailResult =
           await sendPatientTrackingEmail({
@@ -305,13 +178,15 @@ export const sendPatientNotification = async (
             trackingUrl:
               trackingUrl || "",
 
+            patientsAhead,
+
             estimatedWaitTime,
           });
 
         if (emailResult) {
           console.log("=================================");
           console.log(
-            "✅ PATIENT TOKEN EMAIL SENT",
+            "✅ TOKEN EMAIL SENT",
           );
           console.log(
             "TO:",
@@ -323,71 +198,185 @@ export const sendPatientNotification = async (
           );
           console.log("=================================");
 
-          successfulChannels.push("EMAIL");
-        } else {
-          console.error(
-            "❌ PATIENT TOKEN EMAIL FAILED",
-          );
-
-          failedChannels.push("EMAIL");
+          return {
+            success: true,
+            channel: "EMAIL",
+          };
         }
-      } catch (error) {
-        console.error("=================================");
-        console.error(
-          "❌ PATIENT TOKEN EMAIL ERROR",
+
+        console.log(
+          "⚠️ Email failed → trying WhatsApp",
         );
-        console.error("TO:", recipientEmail);
-        console.error("ERROR:", error);
-        console.error("=================================");
-
-        failedChannels.push("EMAIL");
+      } catch (error) {
+        console.error(
+          "❌ Token email error:",
+          error,
+        );
       }
-    } else {
-      console.warn(
-        "⚠️ No patient email and TEST_PATIENT_EMAIL is not configured",
-      );
-
-      failedChannels.push("EMAIL");
     }
   }
 
-  /* =====================================================
-     FINAL RESULT
-  ===================================================== */
+  /* =======================================================
+     WHATSAPP
+  ======================================================= */
 
-  const success =
-    successfulChannels.length > 0;
+  if (phone) {
+    try {
+      console.log(
+        "📱 Trying WhatsApp:",
+        phone,
+      );
 
-  console.log("=================================");
-  console.log("📊 NOTIFICATION RESULT");
-  console.log(
-    "SUCCESS:",
-    success,
+      const whatsappResult =
+        await sendWhatsApp({
+          phone,
+          message,
+        });
+
+      if (whatsappResult.success) {
+        console.log(
+          "✅ WhatsApp notification sent",
+        );
+
+        return {
+          success: true,
+          channel: "WHATSAPP",
+        };
+      }
+
+      console.log(
+        "⚠️ WhatsApp failed → trying SMS",
+      );
+    } catch (error) {
+      console.error(
+        "❌ WhatsApp error:",
+        error,
+      );
+    }
+
+    /* =====================================================
+       SMS FALLBACK
+    ===================================================== */
+
+    try {
+      console.log(
+        "📤 Trying SMS:",
+        phone,
+      );
+
+      const smsResult =
+        await sendSMS({
+          phone,
+          message,
+        });
+
+      if (smsResult.success) {
+        console.log(
+          "✅ SMS notification sent",
+        );
+
+        return {
+          success: true,
+          channel: "SMS",
+        };
+      }
+
+      console.log(
+        "⚠️ SMS failed",
+      );
+    } catch (error) {
+      console.error(
+        "❌ SMS error:",
+        error,
+      );
+    }
+  }
+
+  /* =======================================================
+     EMAIL FALLBACK
+     
+     Important for NEAR_TURN / CALLED.
+     
+     TOKEN_CREATED already attempted email above.
+  ======================================================= */
+
+  if (type !== "TOKEN_CREATED") {
+    const recipientEmail =
+      email || TEST_PATIENT_EMAIL;
+
+    if (recipientEmail) {
+      try {
+        console.log(
+          "📧 Trying fallback email:",
+          recipientEmail,
+        );
+
+        const emailResult =
+          await sendPatientTrackingEmail({
+            email: recipientEmail,
+
+            phone,
+
+            patientName,
+
+            tokenLabel,
+
+            hospitalName:
+              hospitalName ||
+              "NexTurn Hospital",
+
+            departmentName:
+              departmentName ||
+              "Department",
+
+            doctorName,
+
+            trackingUrl:
+              trackingUrl || "",
+
+            patientsAhead,
+
+            estimatedWaitTime,
+          });
+
+        if (emailResult) {
+          console.log(
+            "✅ Fallback email sent",
+          );
+
+          return {
+            success: true,
+            channel: "EMAIL",
+          };
+        }
+      } catch (error) {
+        console.error(
+          "❌ Fallback email error:",
+          error,
+        );
+      }
+    }
+  }
+
+  /* =======================================================
+     ALL FAILED
+  ======================================================= */
+
+  console.error("=================================");
+  console.error(
+    "⚠️ ALL NOTIFICATION CHANNELS FAILED",
   );
-  console.log(
-    "SUCCESSFUL CHANNELS:",
-    successfulChannels,
+  console.error(
+    "TOKEN:",
+    tokenLabel,
   );
-  console.log(
-    "FAILED CHANNELS:",
-    failedChannels,
-  );
-  console.log("=================================");
+  console.error("=================================");
 
   return {
-    success,
-
-    channel:
-      successfulChannels.join(",") ||
-      "NONE",
-
-    successfulChannels,
-
-    failedChannels,
-
-    message: success
-      ? "Notification sent successfully"
-      : "All notification channels failed",
+    success: false,
+    channel: "NONE",
+    message:
+      "All notification channels failed",
   };
 };
 
