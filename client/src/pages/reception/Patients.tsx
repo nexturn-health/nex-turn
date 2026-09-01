@@ -14,12 +14,6 @@ import {
 import {
     getTodayPatients,
     createPatient,
-    getPatientById,
-    updatePatient,
-} from "../../services/patient.api";
-
-import type {
-    UpdatePatientPayload,
 } from "../../services/patient.api";
 
 import type {

@@ -13,7 +13,6 @@ import {
     CheckCircle2,
     ArrowUpRight,
     ShieldCheck,
-    Sparkles,
     HeartPulse,
     Wifi,
     CircleCheck,

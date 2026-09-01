@@ -1650,64 +1650,64 @@ const StatCard = ({
 /* QUEUE ROW */
 /* ============================== */
 
-interface QueueRowProps {
-    department: string;
-    doctor: string;
-    waiting: number;
-    color: string;
-}
+// interface QueueRowProps {
+//     department: string;
+//     doctor: string;
+//     waiting: number;
+//     color: string;
+// }
 
-const QueueRow = ({
-    department,
-    doctor,
-    waiting,
-    color,
-}: QueueRowProps) => {
-    return (
-        <div className="flex items-center justify-between rounded-xl bg-slate-50 p-4">
+// const QueueRow = ({
+//     department,
+//     doctor,
+//     waiting,
+//     color,
+// }: QueueRowProps) => {
+//     return (
+//         <div className="flex items-center justify-between rounded-xl bg-slate-50 p-4">
 
-            <div className="flex items-center gap-3">
+//             <div className="flex items-center gap-3">
 
-                <div
-                    className={`
-                        flex h-10 w-10
-                        items-center justify-center
-                        rounded-xl
-                        ${color}
-                    `}
-                >
-                    <Activity size={19} />
-                </div>
+//                 <div
+//                     className={`
+//                         flex h-10 w-10
+//                         items-center justify-center
+//                         rounded-xl
+//                         ${color}
+//                     `}
+//                 >
+//                     <Activity size={19} />
+//                 </div>
 
-                <div>
+//                 <div>
 
-                    <p className="text-sm font-semibold text-slate-900">
-                        {department}
-                    </p>
+//                     <p className="text-sm font-semibold text-slate-900">
+//                         {department}
+//                     </p>
 
-                    <p className="mt-1 text-xs text-slate-500">
-                        {doctor}
-                    </p>
+//                     <p className="mt-1 text-xs text-slate-500">
+//                         {doctor}
+//                     </p>
 
-                </div>
+//                 </div>
 
-            </div>
+//             </div>
 
-            <div className="text-right">
+//             <div className="text-right">
 
-                <p className="text-lg font-bold text-slate-900">
-                    {waiting}
-                </p>
+//                 <p className="text-lg font-bold text-slate-900">
+//                     {waiting}
+//                 </p>
 
-                <p className="text-xs text-slate-500">
-                    waiting
-                </p>
+//                 <p className="text-xs text-slate-500">
+//                     waiting
+//                 </p>
 
-            </div>
+//             </div>
 
-        </div>
-    );
-};
+//         </div>
+//     );
+// };
 
 /* ============================== */
 /* QUICK ACTION */
