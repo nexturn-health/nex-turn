@@ -32,17 +32,38 @@ import displayRoutes from "./routes/display.routes";
 
 const app = express();
 
-const clientUrl = (
-  process.env.CLIENT_URL ||
-  "http://localhost:5173"
-).trim().replace(/,$/, "");
-
-console.log("🌐 CORS CLIENT_URL:", JSON.stringify(clientUrl));
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://nexturn-silk.vercel.app",
+];
 
 app.use(
   cors({
-    origin: clientUrl,
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      const isVercel =
+        origin.endsWith(".vercel.app");
+
+      if (
+        isVercel ||
+        allowedOrigins.includes(origin)
+      ) {
+        console.log("✅ CORS allowed:", origin);
+        return callback(null, true);
+      }
+
+      console.log("❌ CORS rejected:", origin);
+
+      return callback(
+        new Error("Not allowed by CORS")
+      );
+    },
+
     credentials: true,
+
     methods: [
       "GET",
       "POST",
@@ -51,6 +72,7 @@ app.use(
       "DELETE",
       "OPTIONS",
     ],
+
     allowedHeaders: [
       "Content-Type",
       "Authorization",
@@ -59,9 +81,6 @@ app.use(
 );
 
 app.use(express.json());
-
-app.use(express.json());
-
 app.get("/api/health", (_req, res) => {
   res.json({
     success: true,
@@ -70,22 +89,22 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
-app.use("/api/departments",departmentRoutes);
+app.use("/api/departments", departmentRoutes);
 app.use("/api/doctors", doctorRoutes);
-app.use("/api/receptionists",receptionistRoutes);
-app.use("/api/patients",patientRoutes);
-app.use("/api/queues",queueRoutes);
+app.use("/api/receptionists", receptionistRoutes);
+app.use("/api/patients", patientRoutes);
+app.use("/api/queues", queueRoutes);
 app.use("/api/test", testRoutes);
 app.use("/api/notifications", notificationRoutes,);
 app.use("/api/dashboard", dashboardRoutes,);
-app.use("/api/super-admin",superAdminRoutes,);
-app.use("/api/hospitals",hospitalRoutes,);
-app.use("/api/hospital-admins",hospitalAdminRoutes);
+app.use("/api/super-admin", superAdminRoutes,);
+app.use("/api/hospitals", hospitalRoutes,);
+app.use("/api/hospital-admins", hospitalAdminRoutes);
 // app.use("/api/reception",receptionRoutes );
-app.use("/api/display", displayRoutes );
+app.use("/api/display", displayRoutes);
 app.use(
-    "/api/webhooks/whatsapp",
-    whatsappWebhookRoutes
+  "/api/webhooks/whatsapp",
+  whatsappWebhookRoutes
 );
 
 export default app;
