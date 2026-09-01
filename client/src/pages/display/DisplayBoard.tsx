@@ -249,12 +249,24 @@ function useDisplayPolling(displayKey: string | undefined) {
 
 function useSpeechAnnouncer(voicesRef: React.MutableRefObject<SpeechSynthesisVoice[]>) {
   const [enabled, setEnabled] = useState(false);
+  const [selectedVoiceName, setSelectedVoiceName] = useState<string>(() =>
+    typeof window !== "undefined" ? localStorage.getItem("nexturn-display-voice") ?? "" : "",
+  );
 
   const findVoice = (locale: DisplayLanguage) => {
     const voiceCode = VOICE_LOCALES[locale] ?? DEFAULT_VOICE_LOCALE;
     const voices = voicesRef.current.length > 0
       ? voicesRef.current
       : (voicesRef.current = window.speechSynthesis.getVoices());
+
+    // If the user selected a specific browser voice, always use it.
+    // This makes the voice selector work independently from the display language.
+    if (selectedVoiceName) {
+      const selectedVoice = voices.find((v) => v.name === selectedVoiceName);
+      if (selectedVoice) {
+        return { voiceCode: selectedVoice.lang || voiceCode, voice: selectedVoice };
+      }
+    }
 
     // Prefer Google's voices where available — noticeably clearer and calmer
     // than most default OS voices, which tends to matter most for Hindi.
@@ -322,6 +334,52 @@ function useSpeechAnnouncer(voicesRef: React.MutableRefObject<SpeechSynthesisVoi
     speakOnce(1);
   };
 
+  const selectVoice = (voiceName: string) => {
+    setSelectedVoiceName(voiceName);
+    localStorage.setItem("nexturn-display-voice", voiceName);
+
+    if (!voiceName || !("speechSynthesis" in window)) return;
+
+    const voice = voicesRef.current.find((v) => v.name === voiceName);
+    if (!voice) return;
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance("Voice selected.");
+    utterance.voice = voice;
+    utterance.lang = voice.lang || DEFAULT_VOICE_LOCALE;
+    utterance.rate = 0.85;
+    utterance.volume = 1;
+
+    try {
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.error("VOICE TEST ERROR:", err);
+    }
+  };
+
+  const testVoice = (locale: DisplayLanguage) => {
+    if (!("speechSynthesis" in window)) return;
+
+    const { voiceCode, voice } = findVoice(locale);
+    const text = locale === "HI"
+      ? "यह नेक्सटर्न वॉइस टेस्ट है।"
+      : "This is a NexTurn voice test.";
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = voiceCode;
+    utterance.rate = locale === "HI" ? 0.72 : 0.85;
+    utterance.pitch = locale === "HI" ? 0.95 : 1;
+    utterance.volume = 1;
+    if (voice) utterance.voice = voice;
+
+    try {
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.error("VOICE TEST ERROR:", err);
+    }
+  };
+
   const activate = () => {
     if (!("speechSynthesis" in window)) {
       alert("Speech synthesis is not supported in this browser.");
@@ -352,7 +410,15 @@ function useSpeechAnnouncer(voicesRef: React.MutableRefObject<SpeechSynthesisVoi
     [],
   );
 
-  return { enabled, speak, activate };
+  return {
+    enabled,
+    speak,
+    activate,
+    voices: voicesRef.current,
+    selectedVoiceName,
+    selectVoice,
+    testVoice,
+  };
 }
 
 // Hook: derives voice announcements from display state changes
@@ -461,6 +527,15 @@ const DisplayBoard = () => {
         <TopBar display={display} time={time} date={date} doctorName={doctorName} doctorOnline={doctorOnline} />
 
         {display.voiceEnabled && !announcer.enabled && <VoicePrompt onEnable={announcer.activate} />}
+
+        <VoiceSettings
+          enabled={announcer.enabled}
+          voices={announcer.voices}
+          selectedVoiceName={announcer.selectedVoiceName}
+          displayLanguage={display.displayLanguage}
+          onSelectVoice={announcer.selectVoice}
+          onTestVoice={announcer.testVoice}
+        />
 
         <main className="grid flex-1 grid-cols-1 gap-5 p-4 md:p-6 lg:grid-cols-[1fr_380px] lg:gap-6 lg:p-8">
           <div className="flex flex-col gap-5 lg:gap-6">
@@ -634,6 +709,92 @@ function VoicePrompt({ onEnable }: { onEnable: () => void }) {
         className="rounded-lg bg-blue-950 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-blue-900"
       >
         Enable voice
+      </button>
+    </div>
+  );
+}
+
+function VoiceSettings({
+  enabled,
+  voices,
+  selectedVoiceName,
+  displayLanguage,
+  onSelectVoice,
+  onTestVoice,
+}: {
+  enabled: boolean;
+  voices: SpeechSynthesisVoice[];
+  selectedVoiceName: string;
+  displayLanguage: DisplayLanguage;
+  onSelectVoice: (voiceName: string) => void;
+  onTestVoice: (locale: DisplayLanguage) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (!enabled || voices.length === 0) return null;
+
+  const sortedVoices = [...voices].sort((a, b) =>
+    `${a.lang} ${a.name}`.localeCompare(`${b.lang} ${b.name}`),
+  );
+
+  return (
+    <div className="fixed bottom-16 right-4 z-30 md:bottom-20 md:right-6">
+      {open && (
+        <div className="mb-3 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-white p-4 text-slate-900 shadow-2xl">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold">Voice settings</p>
+              <p className="mt-0.5 text-xs text-slate-500">Choose the voice used for announcements.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="rounded-lg px-2 py-1 text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Close voice settings"
+            >
+              ×
+            </button>
+          </div>
+
+          <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Voice
+          </label>
+          <select
+            value={selectedVoiceName}
+            onChange={(event) => onSelectVoice(event.target.value)}
+            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          >
+            <option value="">Automatic — best voice for language</option>
+            {sortedVoices.map((voice) => (
+              <option key={`${voice.name}-${voice.lang}`} value={voice.name}>
+                {voice.name} ({voice.lang})
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={() => onTestVoice(displayLanguage)}
+            className="mt-3 w-full rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-800"
+          >
+            🔊 Test selected voice
+          </button>
+
+          <p className="mt-2 text-[11px] leading-4 text-slate-400">
+            The available voices depend on the browser/device. Your selection is saved on this display device.
+          </p>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex items-center gap-2 rounded-full border border-white/15 bg-blue-950/90 px-4 py-2.5 text-xs font-bold text-white shadow-lg backdrop-blur-md transition hover:bg-blue-900"
+        aria-label="Open voice settings"
+      >
+        <span className="text-base">🔊</span>
+        <span>Voice</span>
+        <span className="text-blue-300">⚙</span>
       </button>
     </div>
   );
