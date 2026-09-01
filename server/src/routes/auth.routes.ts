@@ -11,11 +11,14 @@ import {
 
 const router = Router();
 
+router.post("/login-test", (req, res) => {
+  console.log("🔥 LOGIN TEST HIT");
+  console.log("BODY:", req.body);
 
-router.get("/test", (_req, res) => {
-  res.json({
+  return res.status(200).json({
     success: true,
-    message: "AUTH ROUTES ARE WORKING",
+    message: "Production login route works",
+    body: req.body,
   });
 });
 
