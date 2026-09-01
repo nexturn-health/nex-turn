@@ -11,6 +11,14 @@ import {
 
 const router = Router();
 
+
+router.get("/test", (_req, res) => {
+  res.json({
+    success: true,
+    message: "AUTH ROUTES ARE WORKING",
+  });
+});
+
 router.post("/register-hospital", registerHospital);
 
 router.post("/login", login);
