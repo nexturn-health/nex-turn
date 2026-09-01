@@ -1,21 +1,48 @@
 import {
-    getIO,
-} from "../sockets/socket";
+  getIO,
+} from "../config/socket";
+
+/* =========================================================
+   EMIT QUEUE UPDATED
+========================================================= */
 
 export const emitQueueUpdated = (
-    hospitalId: string,
-    departmentId: string,
+  hospitalId: string,
+  departmentId: string,
 ) => {
+  try {
     const room =
-        `queue:${hospitalId}:${departmentId}`;
+      `hospital:${hospitalId}`;
 
-    getIO().to(room).emit(
+    getIO()
+      .to(room)
+      .emit(
         "queue:updated",
         {
-            hospitalId,
-            departmentId,
-            timestamp:
-                new Date().toISOString(),
+          hospitalId,
+          departmentId,
+          timestamp:
+            new Date().toISOString(),
         },
+      );
+
+    console.log(
+      "📡 Queue update emitted",
     );
+
+    console.log(
+      "ROOM:",
+      room,
+    );
+
+    console.log(
+      "DEPARTMENT:",
+      departmentId,
+    );
+  } catch (error) {
+    console.error(
+      "❌ Queue socket emit failed:",
+      error,
+    );
+  }
 };
