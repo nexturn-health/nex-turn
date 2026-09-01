@@ -1,3 +1,4 @@
+
 import {
   sendWhatsApp,
 } from "./whatsapp.service";
@@ -16,23 +17,18 @@ import {
 
 export interface PatientNotificationData {
   phone?: string;
-
   email?: string;
 
   patientName: string;
-
   tokenLabel: string;
 
   hospitalName?: string;
-
   departmentName?: string;
-
   doctorName?: string;
 
   trackingUrl?: string;
 
   patientsAhead?: number;
-
   estimatedWaitTime?: number;
 }
 
@@ -88,6 +84,10 @@ export const sendPatientNotification = async (
     email || "NOT PROVIDED",
   );
   console.log(
+    "TEST EMAIL:",
+    TEST_PATIENT_EMAIL || "NOT CONFIGURED",
+  );
+  console.log(
     "HOSPITAL:",
     hospitalName || "NOT PROVIDED",
   );
@@ -102,7 +102,7 @@ export const sendPatientNotification = async (
   console.log("TOKEN:", tokenLabel);
   console.log(
     "ESTIMATED WAIT:",
-    estimatedWaitTime,
+    estimatedWaitTime ?? "NOT PROVIDED",
   );
   console.log(
     "TRACKING URL:",
@@ -110,9 +110,9 @@ export const sendPatientNotification = async (
   );
   console.log("=================================");
 
-  /* =====================================
+  /* =====================================================
      CREATE MESSAGE
-  ===================================== */
+  ===================================================== */
 
   let message = "";
 
@@ -121,7 +121,8 @@ export const sendPatientNotification = async (
       `Hello ${patientName}, your NexTurn token is ${tokenLabel}.`;
 
     if (
-      estimatedWaitTime !== undefined
+      estimatedWaitTime !== undefined &&
+      estimatedWaitTime !== null
     ) {
       message +=
         ` Estimated waiting time is approximately ${estimatedWaitTime} minutes.`;
@@ -151,33 +152,23 @@ export const sendPatientNotification = async (
       `Please proceed to the doctor's room.`;
   }
 
-  /* =====================================
-     VALIDATION
-  ===================================== */
+  /* =====================================================
+     RESULTS
+  ===================================================== */
 
-  if (
-    !phone &&
-    !email &&
-    !TEST_PATIENT_EMAIL
-  ) {
-    return {
-      success: false,
-      channel: "NONE",
-      message:
-        "Patient contact information missing",
-    };
-  }
+  const successfulChannels: string[] = [];
+  const failedChannels: string[] = [];
 
-  /* =====================================
-     WHATSAPP
-  ===================================== */
+  /* =====================================================
+     1. WHATSAPP
+  ===================================================== */
 
   if (phone) {
     try {
-      console.log(
-        "📱 Trying WhatsApp:",
-        phone,
-      );
+      console.log("=================================");
+      console.log("📱 Trying WhatsApp");
+      console.log("TO:", phone);
+      console.log("=================================");
 
       const whatsappResult =
         await sendWhatsApp({
@@ -185,38 +176,44 @@ export const sendPatientNotification = async (
           message,
         });
 
-      if (
-        whatsappResult.success
-      ) {
+      if (whatsappResult.success) {
         console.log(
           "✅ WhatsApp notification sent",
         );
 
-        return {
-          success: true,
-          channel: "WHATSAPP",
-        };
-      }
+        successfulChannels.push("WHATSAPP");
+      } else {
+        console.log(
+          "⚠️ WhatsApp failed",
+        );
 
-      console.log(
-        "⚠️ WhatsApp failed → trying SMS",
-      );
+        failedChannels.push("WHATSAPP");
+      }
     } catch (error) {
       console.error(
         "❌ WhatsApp error:",
         error,
       );
+
+      failedChannels.push("WHATSAPP");
     }
+  }
 
-    /* ===================================
-       SMS FALLBACK
-    =================================== */
+  /* =====================================================
+     2. SMS
+     
+     SMS is attempted when WhatsApp failed.
+  ===================================================== */
 
+  if (
+    phone &&
+    !successfulChannels.includes("WHATSAPP")
+  ) {
     try {
-      console.log(
-        "📤 Trying SMS:",
-        phone,
-      );
+      console.log("=================================");
+      console.log("📤 Trying SMS");
+      console.log("TO:", phone);
+      console.log("=================================");
 
       const smsResult =
         await sendSMS({
@@ -224,56 +221,72 @@ export const sendPatientNotification = async (
           message,
         });
 
-      if (
-        smsResult.success
-      ) {
+      if (smsResult.success) {
         console.log(
           "✅ SMS notification sent",
         );
 
-        return {
-          success: true,
-          channel: "SMS",
-        };
-      }
+        successfulChannels.push("SMS");
+      } else {
+        console.log(
+          "⚠️ SMS failed",
+        );
 
-      console.log(
-        "⚠️ SMS failed → checking email",
-      );
+        failedChannels.push("SMS");
+      }
     } catch (error) {
       console.error(
         "❌ SMS error:",
         error,
       );
+
+      failedChannels.push("SMS");
     }
   }
 
-  /* =====================================
-     EMAIL
-  ===================================== */
+  /* =====================================================
+     3. EMAIL
+     
+     IMPORTANT:
+     
+     TOKEN_CREATED email is independent of WhatsApp/SMS.
+     
+     Even if WhatsApp succeeds, email will still be sent.
+  ===================================================== */
 
-  if (
-    type === "TOKEN_CREATED"
-  ) {
+  if (type === "TOKEN_CREATED") {
     const recipientEmail =
-      email ||
-      TEST_PATIENT_EMAIL;
+      email || TEST_PATIENT_EMAIL;
+
+    console.log("=================================");
+    console.log("📧 PATIENT TOKEN EMAIL");
+    console.log(
+      "PATIENT EMAIL:",
+      email || "NOT PROVIDED",
+    );
+    console.log(
+      "TEST EMAIL:",
+      TEST_PATIENT_EMAIL || "NOT CONFIGURED",
+    );
+    console.log(
+      "FINAL RECIPIENT:",
+      recipientEmail || "NONE",
+    );
+    console.log("=================================");
 
     if (recipientEmail) {
       try {
-        console.log(
-          "📧 Trying Patient Token Email",
-        );
-
-        console.log(
-          "TO:",
-          recipientEmail,
-        );
+        if (!trackingUrl) {
+          console.warn(
+            "⚠️ Tracking URL missing for patient email",
+          );
+        }
 
         const emailResult =
           await sendPatientTrackingEmail({
-            email:
-              recipientEmail,
+            email: recipientEmail,
+
+            phone,
 
             patientName,
 
@@ -290,45 +303,91 @@ export const sendPatientNotification = async (
             doctorName,
 
             trackingUrl:
-              trackingUrl ||
-              "",
+              trackingUrl || "",
 
             estimatedWaitTime,
-
           });
 
         if (emailResult) {
+          console.log("=================================");
           console.log(
-            "✅ Patient token email sent",
+            "✅ PATIENT TOKEN EMAIL SENT",
+          );
+          console.log(
+            "TO:",
+            recipientEmail,
+          );
+          console.log(
+            "TOKEN:",
+            tokenLabel,
+          );
+          console.log("=================================");
+
+          successfulChannels.push("EMAIL");
+        } else {
+          console.error(
+            "❌ PATIENT TOKEN EMAIL FAILED",
           );
 
-          return {
-            success: true,
-            channel: "EMAIL",
-          };
+          failedChannels.push("EMAIL");
         }
-
-        console.error(
-          "❌ Patient token email failed",
-        );
       } catch (error) {
+        console.error("=================================");
         console.error(
-          "❌ Email error:",
-          error,
+          "❌ PATIENT TOKEN EMAIL ERROR",
         );
+        console.error("TO:", recipientEmail);
+        console.error("ERROR:", error);
+        console.error("=================================");
+
+        failedChannels.push("EMAIL");
       }
+    } else {
+      console.warn(
+        "⚠️ No patient email and TEST_PATIENT_EMAIL is not configured",
+      );
+
+      failedChannels.push("EMAIL");
     }
   }
 
-  /* =====================================
-     ALL FAILED
-  ===================================== */
+  /* =====================================================
+     FINAL RESULT
+  ===================================================== */
+
+  const success =
+    successfulChannels.length > 0;
+
+  console.log("=================================");
+  console.log("📊 NOTIFICATION RESULT");
+  console.log(
+    "SUCCESS:",
+    success,
+  );
+  console.log(
+    "SUCCESSFUL CHANNELS:",
+    successfulChannels,
+  );
+  console.log(
+    "FAILED CHANNELS:",
+    failedChannels,
+  );
+  console.log("=================================");
 
   return {
-    success: false,
-    channel: "NONE",
-    message:
-      "All notification channels failed",
+    success,
+
+    channel:
+      successfulChannels.join(",") ||
+      "NONE",
+
+    successfulChannels,
+
+    failedChannels,
+
+    message: success
+      ? "Notification sent successfully"
+      : "All notification channels failed",
   };
 };
 
