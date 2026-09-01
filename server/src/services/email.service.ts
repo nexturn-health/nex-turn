@@ -68,17 +68,23 @@ if (!SMTP_PASS) {
 
 const transporter = nodemailer.createTransport({
   host: SMTP_HOST,
-  port: SMTP_PORT,
-  secure: SMTP_SECURE,
+  port: 587,
+  secure: false,
 
   auth: {
     user: SMTP_USER!,
     pass: SMTP_PASS!,
   },
 
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 20000,
+  requireTLS: true,
+
+  connectionTimeout: 15000,
+  greetingTimeout: 15000,
+  socketTimeout: 30000,
+
+  tls: {
+    servername: "smtp.gmail.com",
+  },
 });
 // =========================================================
 // FROM ADDRESS
