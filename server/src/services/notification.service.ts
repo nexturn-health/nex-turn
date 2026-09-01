@@ -46,7 +46,7 @@ type NotificationType =
 
 const TEST_PATIENT_EMAIL =
   process.env.TEST_PATIENT_EMAIL ||
-  "atul123ak47@gmail.com";
+  "akash0001tech@gmail.com";
 
 /* =========================================================
    MAIN NOTIFICATION

@@ -753,7 +753,7 @@ export const createQueue = async (
     const notificationEmail =
       patientData?.email ||
       process.env.TEST_PATIENT_EMAIL ||
-      "atul123ak47@gmail.com";
+      "akash0001tech@gmail.com";
 
     const notificationPhone =
       patientData?.phone ||
