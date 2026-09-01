@@ -4,22 +4,30 @@ import {
     Route,
     Navigate,
 } from "react-router-dom";
+
 import { useEffect } from "react";
 import { Toaster } from "react-hot-toast";
+
 import Login from "./pages/auth/Login";
+
 import AdminDashboard from "./pages/admin/AdminDashboard";
+
 import SuperAdminDashboard from "./pages/super-admin/SuperAdminDashboard";
-import ProtectedRoute from "../src/routes/ProtectedRoute";
+
+import ProtectedRoute from "./routes/ProtectedRoute";
+
 import PatientTracking from "./pages/patient/PatientTracking";
-import { useAuthStore } from "./store/authStore";
+
 import DisplayBoard from "./pages/display/DisplayBoard";
+
+import { useAuthStore } from "./store/authStore";
 
 
 function App() {
-    const loadAuth =
-        useAuthStore(
-            (state) => state.loadAuth,
-        );
+
+    const loadAuth = useAuthStore(
+        (state) => state.loadAuth,
+    );
 
 
     useEffect(() => {
@@ -27,8 +35,11 @@ function App() {
         loadAuth();
 
     }, [loadAuth]);
+
+
     return (
-        <>
+        <BrowserRouter>
+
             <Toaster
                 position="top-right"
                 reverseOrder={false}
@@ -36,135 +47,162 @@ function App() {
                     duration: 3000,
                 }}
             />
-            <BrowserRouter>
 
-                <Routes>
 
-                    {/* ============================== */}
-                    {/* DEFAULT ROUTE */}
-                    {/* ============================== */}
+            <Routes>
 
-                    <Route
-                        path="/"
-                        element={
-                            <Navigate
-                                to="/login"
-                                replace
-                            />
-                        }
-                    />
+                {/* ================================= */}
+                {/* DEFAULT */}
+                {/* ================================= */}
 
-                    {/* ============================== */}
-                    {/* LOGIN */}
-                    {/* ============================== */}
-
-                    <Route
-                        path="/login"
-                        element={<Login />}
-                    />
-
-                    {/* ============================== */}
-                    {/* ADMIN PROTECTED ROUTE */}
-                    {/* ============================== */}
-
-                    <Route
-                        element={
-                            <ProtectedRoute
-                                allowedRoles={[
-                                    "HOSPITAL_ADMIN",
-                                ]}
-                            />
-                        }
-                    >
-                        <Route
-                            path="/admin/dashboard"
-                            element={<AdminDashboard />}
+                <Route
+                    path="/"
+                    element={
+                        <Navigate
+                            to="/login"
+                            replace
                         />
-                    </Route>
+                    }
+                />
 
-                    <Route
-                        element={
-                            <ProtectedRoute
-                                allowedRoles={[
-                                    "SUPER_ADMIN",
-                                ]}
-                            />
-                        }
-                    >
-                        <Route
-                            path="/super-admin/dashboard"
-                            element={<SuperAdminDashboard />}
+
+                {/* ================================= */}
+                {/* PUBLIC LOGIN */}
+                {/* ================================= */}
+
+                <Route
+                    path="/login"
+                    element={<Login />}
+                />
+
+
+                {/* ================================= */}
+                {/* PUBLIC PATIENT TRACKING */}
+                {/* ================================= */}
+
+                <Route
+                    path="/track/:trackingToken"
+                    element={<PatientTracking />}
+                />
+
+
+                {/* ================================= */}
+                {/* PUBLIC DISPLAY BOARD */}
+                {/* ================================= */}
+
+                <Route
+                    path="/display/:displayKey"
+                    element={<DisplayBoard />}
+                />
+
+
+                {/* ================================= */}
+                {/* HOSPITAL ADMIN */}
+                {/* ================================= */}
+
+                <Route
+                    element={
+                        <ProtectedRoute
+                            allowedRoles={[
+                                "HOSPITAL_ADMIN",
+                            ]}
                         />
-                    </Route>
+                    }
+                >
 
-                    {/* ============================== */}
-                    {/* RECEPTIONIST PROTECTED ROUTE */}
-                    {/* ============================== */}
                     <Route
-                        path="/track/:trackingToken"
-                        element={<PatientTracking />}
+                        path="/admin/dashboard"
+                        element={<AdminDashboard />}
                     />
 
-                    <Route
-                        element={
-                            <ProtectedRoute
-                                allowedRoles={[
-                                    "RECEPTIONIST",
-                                ]}
-                            />
-                        }
-                    >
-                        <Route
-                            path="/reception/dashboard"
-                            element={<AdminDashboard />}
+                </Route>
+
+
+                {/* ================================= */}
+                {/* SUPER ADMIN */}
+                {/* ================================= */}
+
+                <Route
+                    element={
+                        <ProtectedRoute
+                            allowedRoles={[
+                                "SUPER_ADMIN",
+                            ]}
                         />
-                    </Route>
-
-                    {/* ============================== */}
-                    {/* DOCTOR PROTECTED ROUTE */}
-                    {/* ============================== */}
+                    }
+                >
 
                     <Route
-                        element={
-                            <ProtectedRoute
-                                allowedRoles={[
-                                    "DOCTOR",
-                                ]}
-                            />
-                        }
-                    >
-                        <Route
-                            path="/doctor/dashboard"
-                            element={<AdminDashboard />}
-                        />
-                    </Route>
-                    {/* ============================== */}
-                    {/* INVALID ROUTES */}
-                    {/* ============================== */}
-
-                    <Route
-                        path="*"
-                        element={
-                            <Navigate
-                                to="/login"
-                                replace
-                            />
-                        }
+                        path="/super-admin/dashboard"
+                        element={<SuperAdminDashboard />}
                     />
 
+                </Route>
+
+
+                {/* ================================= */}
+                {/* RECEPTIONIST */}
+                {/* ================================= */}
+
+                <Route
+                    element={
+                        <ProtectedRoute
+                            allowedRoles={[
+                                "RECEPTIONIST",
+                            ]}
+                        />
+                    }
+                >
+
                     <Route
-                        path="/display/:displayKey"
-                        element={
-                            <DisplayBoard />
-                        }
+                        path="/reception/dashboard"
+                        element={<AdminDashboard />}
                     />
 
-                </Routes>
+                </Route>
 
 
-            </BrowserRouter>
-        </>
+                {/* ================================= */}
+                {/* DOCTOR */}
+                {/* ================================= */}
+
+                <Route
+                    element={
+                        <ProtectedRoute
+                            allowedRoles={[
+                                "DOCTOR",
+                            ]}
+                        />
+                    }
+                >
+
+                    <Route
+                        path="/doctor/dashboard"
+                        element={<AdminDashboard />}
+                    />
+
+                </Route>
+
+
+                {/* ================================= */}
+                {/* INVALID ROUTES */}
+                {/* ================================= */}
+
+                <Route
+                    path="*"
+                    element={
+                        <Navigate
+                            to="/login"
+                            replace
+                        />
+                    }
+                />
+
+            </Routes>
+
+        </BrowserRouter>
     );
 }
+
 
 export default App;
