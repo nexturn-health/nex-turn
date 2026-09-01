@@ -1,6 +1,5 @@
-
 import nodemailer from "nodemailer";
-
+import type SMTPTransport from "nodemailer/lib/smtp-transport";
 // =========================================================
 // SMTP CONFIG
 // =========================================================
@@ -65,27 +64,21 @@ if (!SMTP_PASS) {
 // =========================================================
 // NODEMAILER TRANSPORTER
 // =========================================================
-
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
+const transportOptions: SMTPTransport.Options & { family?: number } = {
+  host: "smtp.gmail.com",
   port: 587,
   secure: false,
-
   auth: {
     user: SMTP_USER!,
     pass: SMTP_PASS!,
   },
-
-  requireTLS: true,
-
+  family: 4,
   connectionTimeout: 15000,
   greetingTimeout: 15000,
   socketTimeout: 30000,
+};
 
-  tls: {
-    servername: "smtp.gmail.com",
-  },
-});
+const transporter = nodemailer.createTransport(transportOptions);
 // =========================================================
 // FROM ADDRESS
 // =========================================================
@@ -515,7 +508,7 @@ export const sendPatientTrackingEmail =
 
     const waitDisplay =
       estimatedWaitTime !== undefined &&
-      estimatedWaitTime !== null
+        estimatedWaitTime !== null
         ? `${estimatedWaitTime} minutes`
         : "Calculating...";
 
@@ -657,8 +650,7 @@ export const sendPatientTrackingEmail =
             SMTP_FROM_EMAIL,
 
           subject:
-            `NexTurn Token ${tokenLabel} - ${
-              hospitalName || "Hospital"
+            `NexTurn Token ${tokenLabel} - ${hospitalName || "Hospital"
             }`,
 
           html: `

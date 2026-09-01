@@ -65,6 +65,7 @@ export interface PatientTrackingData {
     | null;
 
     queueDate: string;
+
 }
 interface PatientTrackingResponse {
     success: boolean;

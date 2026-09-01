@@ -4,8 +4,9 @@ export type Gender =
     | "OTHER";
 
 export interface Patient {
+    message: string;
     _id: string;
-
+    email: string
     hospitalId: string;
 
     name: string;
@@ -18,7 +19,7 @@ export interface Patient {
 
     address?: string;
 
-     patientCode: string;
+    patientCode: string;
 
     createdAt?: string;
 
