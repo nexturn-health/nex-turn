@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import {
@@ -481,13 +481,13 @@ function TopBar({
   doctorOnline: boolean;
 }) {
   return (
-    <header className="flex items-center justify-between gap-4 border-b border-blue-100 bg-white px-5 py-4 shadow-sm md:px-8">
+    <header className="flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 shadow-sm md:px-8">
       <div className="flex min-w-0 items-center gap-4">
         {display.logoUrl ? (
           <img
             src={display.logoUrl}
             alt={display.hospitalName}
-            className="h-12 w-12 shrink-0 rounded-xl border border-blue-100 object-contain p-1"
+            className="h-12 w-12 shrink-0 rounded-xl border border-slate-100 object-contain p-1"
           />
         ) : (
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#0757B8] text-lg font-bold text-white">
@@ -531,14 +531,12 @@ function DoctorPill({ doctorName, doctorOnline }: { doctorName: string; doctorOn
 
 function VoicePrompt({ onEnable }: { onEnable: () => void }) {
   return (
-    <div className="flex flex-wrap items-center justify-center gap-4 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-      <span>
-        Turn on voice announcements for this screen
-      </span>
+    <div className="flex flex-wrap items-center justify-center gap-4 bg-amber-400 px-4 py-2.5 text-sm font-semibold text-amber-950">
+      <span>Turn on voice announcements for this screen</span>
       <button
         type="button"
         onClick={onEnable}
-        className="rounded-xl bg-[#172554] px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-blue-950"
+        className="rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-slate-800"
       >
         Enable voice
       </button>
@@ -743,7 +741,7 @@ function Ticker({ items, time }: { items: TickerItem[]; time: string }) {
       </div>
 
       <div className="hidden shrink-0 border-l border-slate-200 px-5 text-xs text-slate-400 md:block">
-        NexTurn Smart Hospital OPD Queue
+        NexTurn Smart Hospital Queue
       </div>
     </footer>
   );
