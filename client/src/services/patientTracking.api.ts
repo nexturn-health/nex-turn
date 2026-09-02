@@ -1,4 +1,4 @@
-import api from "./api";
+import publicApi from "./publicApi";
 
 
 export interface QueueDoctor {
@@ -75,7 +75,7 @@ export const trackPatientQueue =
         trackingToken: string,
     ): Promise<PatientTrackingData> => {
         const response =
-            await api.get<PatientTrackingResponse>(
+            await publicApi.get<PatientTrackingResponse>(
                 `/queues/track/${trackingToken}`,
             );
 
