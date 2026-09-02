@@ -251,20 +251,99 @@ export const connectSocket = (
 
 export const disconnectSocket = () => {
     console.log(
-        "FRONTEND SOCKET DISCONNECTING",
+        "================================",
     );
+
+    console.log(
+        "🔴 FRONTEND DOCTOR LOGOUT",
+    );
+
+    console.log(
+        "================================",
+    );
+
+    // ------------------------------------------
+    // Stop heartbeat first
+    // ------------------------------------------
 
     stopDoctorHeartbeat();
 
-    if (socket.connected) {
-        socket.disconnect();
+    // ------------------------------------------
+    // Keep these values BEFORE clearing them
+    // ------------------------------------------
+
+    const userId = currentUserId;
+    const hospitalId = currentHospitalId;
+
+    console.log(
+        "LOGOUT SOCKET DATA:",
+        {
+            userId,
+            hospitalId,
+            connected: socket.connected,
+            socketId: socket.id,
+        },
+    );
+
+    // ------------------------------------------
+    // Tell backend doctor is OFFLINE
+    // ------------------------------------------
+
+    if (
+        socket.connected &&
+        userId &&
+        hospitalId
+    ) {
+        console.log(
+            "📤 SENDING user:offline",
+            {
+                userId,
+                hospitalId,
+            },
+        );
+
+        socket.emit(
+            "user:offline",
+            {
+                userId,
+                hospitalId,
+            },
+        );
+
+        // --------------------------------------
+        // Give Socket.IO time to send event
+        // --------------------------------------
+
+        setTimeout(() => {
+            console.log(
+                "🔌 DISCONNECTING SOCKET:",
+                socket.id,
+            );
+
+            if (socket.connected) {
+                socket.disconnect();
+            }
+        }, 300);
+    } else {
+        console.log(
+            "⚠️ Socket already disconnected or user data missing",
+        );
+
+        if (socket.connected) {
+            socket.disconnect();
+        }
     }
 
-    currentUserId =
-        undefined;
+    // ------------------------------------------
+    // Clear current doctor AFTER capturing data
+    // ------------------------------------------
 
-    currentHospitalId =
-        undefined;
+    currentUserId = undefined;
+    currentHospitalId = undefined;
+
+    console.log(
+        "✅ FRONTEND SOCKET CLEANUP COMPLETE",
+    );
 };
 
 // ============================================================

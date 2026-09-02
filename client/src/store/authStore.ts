@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import type { User } from "../types/auth";
+import { disconnectSocket } from "../socket/socket";
 
 interface AuthState {
     user: User | null;
@@ -116,6 +117,20 @@ export const useAuthStore = create<AuthState>()(
                 );
 
 
+                // ==================================================
+                // IMPORTANT:
+                // Tell Socket.IO that doctor is offline FIRST.
+                //
+                // Do this BEFORE removing localStorage.
+                // ==================================================
+
+                console.log(
+                    "🔴 Calling disconnectSocket() BEFORE logout",
+                );
+
+                disconnectSocket();
+
+
                 // ------------------------------------------
                 // Remove authentication
                 // ------------------------------------------
@@ -138,6 +153,11 @@ export const useAuthStore = create<AuthState>()(
                     user: null,
                     isAuthenticated: false,
                 });
+
+
+                console.log(
+                    "✅ ZUSTAND LOGOUT COMPLETE",
+                );
             },
 
 
