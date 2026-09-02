@@ -41,6 +41,8 @@ export interface IUser extends Document {
     createdAt: Date;
 
     updatedAt: Date;
+
+    shiftStartTime?: string | null;
 }
 
 const UserSchema = new Schema<IUser>(
@@ -113,6 +115,12 @@ const UserSchema = new Schema<IUser>(
         lastSeenAt: {
             type: Date,
             default: undefined,
+        },
+
+        shiftStartTime: {
+            type: String,
+            default: null,
+            trim: true,
         },
 
         // ========================================

@@ -569,20 +569,14 @@ export const createQueue = async (
     // FIND DEPARTMENT DOCTOR
     // ==================================================
 
-    const departmentDoctor = await User.findOne({
-      hospitalId,
-      departmentId,
-      role: "DOCTOR",
-      isActive: true,
-    })
-      .select("name email isOnline shiftStartTime")
-      .lean() as {
-        _id: mongoose.Types.ObjectId;
-        name: string;
-        email: string;
-        isOnline: boolean;
-        shiftStartTime?: string | null;
-      } | null;
+const departmentDoctor = await User.findOne({
+  hospitalId,
+  departmentId,
+  role: "DOCTOR",
+  isActive: true,
+})
+  .select("name email isOnline shiftStartTime")
+  .lean();
 
     // ==================================================
     // COUNT ACTIVE PATIENTS
