@@ -48,6 +48,91 @@ interface PopulatedDoctor {
   email?: string;
 }
 
+// ======================================================
+// CONSULTATION / OPD ESTIMATION HELPERS
+// ======================================================
+
+const DEFAULT_CONSULTATION_MINUTES = 10;
+const MAX_HISTORY_FOR_AVERAGE = 20;
+
+/**
+ * Calculate a doctor's real average consultation time from completed
+ * consultations. Only positive, recorded service durations are used.
+ */
+const getDoctorAverageConsultationMinutes = async (
+  doctorId?: mongoose.Types.ObjectId,
+): Promise<number | null> => {
+  if (!doctorId) return null;
+
+  const completedQueues = await Queue.find({
+    doctorId,
+    status: "COMPLETED",
+    serviceDurationMinutes: { $gt: 0 },
+  })
+    .sort({ completedAt: -1 })
+    .limit(MAX_HISTORY_FOR_AVERAGE)
+    .select("serviceDurationMinutes")
+    .lean();
+
+  const durations = completedQueues
+    .map((queue: any) => Number(queue.serviceDurationMinutes))
+    .filter((minutes) => Number.isFinite(minutes) && minutes > 0);
+
+  if (!durations.length) return null;
+
+  const average =
+    durations.reduce((sum, minutes) => sum + minutes, 0) /
+    durations.length;
+
+  return Math.max(1, Math.round(average));
+};
+
+/**
+ * Calculate the recent department average when a doctor has no history.
+ */
+const getDepartmentAverageConsultationMinutes = async (
+  hospitalId: string | mongoose.Types.ObjectId,
+  departmentId: string | mongoose.Types.ObjectId,
+): Promise<number | null> => {
+  const completedQueues = await Queue.find({
+    hospitalId,
+    departmentId,
+    status: "COMPLETED",
+    serviceDurationMinutes: { $gt: 0 },
+  })
+    .sort({ completedAt: -1 })
+    .limit(MAX_HISTORY_FOR_AVERAGE)
+    .select("serviceDurationMinutes")
+    .lean();
+
+  const durations = completedQueues
+    .map((queue: any) => Number(queue.serviceDurationMinutes))
+    .filter((minutes) => Number.isFinite(minutes) && minutes > 0);
+
+  if (!durations.length) return null;
+
+  const average =
+    durations.reduce((sum, minutes) => sum + minutes, 0) /
+    durations.length;
+
+  return Math.max(1, Math.round(average));
+};
+
+/**
+ * Convert today's OPD start time (HH:mm) into a Date in the server's
+ * local timezone. Returns null when no valid time is configured.
+ */
+const getTodayOpdStartTime = (shiftStartTime?: string | null): Date | null => {
+  if (!shiftStartTime || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(shiftStartTime)) {
+    return null;
+  }
+
+  const [hours, minutes] = shiftStartTime.split(":").map(Number);
+  const start = new Date();
+  start.setHours(hours, minutes, 0, 0);
+  return start;
+};
+
 
 // ======================================================
 // GET QUEUES
@@ -451,7 +536,24 @@ export const createQueue = async (
       ).padStart(3, "0")}`;
 
     // ==================================================
-    // COUNT ACTIVE PATIENTS
+    // FIND DEPARTMENT DOCTOR
+    // ==================================================
+    // A newly generated token normally has no doctorId yet. We therefore
+    // find the active doctor assigned to this department and use that
+    // doctor's real consultation history for the estimate.
+
+    const departmentDoctor =
+      await User.findOne({
+        hospitalId,
+        departmentId,
+        role: "DOCTOR",
+        isActive: true,
+      })
+        .select("name email isOnline shiftStartTime")
+        .lean();
+
+    // ==================================================
+    // COUNT ACTIVE PATIENTS AHEAD
     // ==================================================
 
     const waitingPatients =
@@ -469,26 +571,74 @@ export const createQueue = async (
       });
 
     // ==================================================
-    // ESTIMATED WAIT
+    // REAL AVERAGE CONSULTATION TIME
     // ==================================================
+    // Priority: doctor's own history -> department history -> fallback.
+    // The fallback is used only when there is not enough historical data.
+
+    const doctorAverage =
+      departmentDoctor?._id
+        ? await getDoctorAverageConsultationMinutes(
+            departmentDoctor._id,
+          )
+        : null;
+
+    const departmentAverage =
+      doctorAverage === null
+        ? await getDepartmentAverageConsultationMinutes(
+            hospitalId,
+            departmentId,
+          )
+        : null;
 
     const averageConsultationMinutes =
-      10;
+      doctorAverage ??
+      departmentAverage ??
+      DEFAULT_CONSULTATION_MINUTES;
 
-    const estimatedWaitTime =
+    // ==================================================
+    // OPD START TIME + ESTIMATED WAIT
+    // ==================================================
+    // Example: token generated at 08:00, OPD starts at 10:00.
+    // The patient sees 10:00 as the earliest possible start, then the
+    // number of patients ahead is multiplied by the doctor's real average.
+
+    const now = new Date();
+    const shiftStartTime =
+      typeof (departmentDoctor as any)?.shiftStartTime === "string"
+        ? (departmentDoctor as any).shiftStartTime
+        : null;
+
+    const opdStartDate =
+      getTodayOpdStartTime(shiftStartTime);
+
+    const doctorOnline =
+      (departmentDoctor as any)?.isOnline === true;
+
+    const processingStart =
+      opdStartDate && opdStartDate.getTime() > now.getTime()
+        ? opdStartDate
+        : now;
+
+    const estimatedWaitFromPatients =
       waitingPatients *
       averageConsultationMinutes;
 
-    // ==================================================
-    // ESTIMATED TURN TIME
-    // ==================================================
-
     const estimatedTurnTime =
       new Date(
-        Date.now() +
-        estimatedWaitTime *
+        processingStart.getTime() +
+        estimatedWaitFromPatients *
         60 *
         1000,
+      );
+
+    const estimatedWaitTime =
+      Math.max(
+        0,
+        Math.ceil(
+          (estimatedTurnTime.getTime() - now.getTime()) /
+          (60 * 1000),
+        ),
       );
 
     // ==================================================
@@ -621,27 +771,15 @@ export const createQueue = async (
     let doctorData:
       PopulatedDoctor | null = null;
 
-    if (departmentId) {
-      const departmentDoctor =
-        await User.findOne({
-          hospitalId,
-          departmentId,
-          role: "DOCTOR",
-          isActive: true,
-        })
-          .select("name email")
-          .lean();
-
-      if (departmentDoctor) {
-        doctorData = {
-          _id:
-            departmentDoctor._id,
-          name:
-            departmentDoctor.name,
-          email:
-            departmentDoctor.email,
-        };
-      }
+    if (departmentDoctor) {
+      doctorData = {
+        _id:
+          departmentDoctor._id,
+        name:
+          departmentDoctor.name,
+        email:
+          departmentDoctor.email,
+      };
     }
 
     // ==================================================
@@ -728,8 +866,33 @@ export const createQueue = async (
     );
 
     console.log(
+      "Patients Ahead:",
+      waitingPatients,
+    );
+
+    console.log(
+      "Doctor Online:",
+      doctorOnline,
+    );
+
+    console.log(
+      "OPD Start Time:",
+      shiftStartTime || "Not configured",
+    );
+
+    console.log(
+      "Average Consultation:",
+      `${averageConsultationMinutes} min`,
+    );
+
+    console.log(
       "Estimated Wait:",
       estimatedWaitTime,
+    );
+
+    console.log(
+      "Estimated Turn Time:",
+      estimatedTurnTime,
     );
 
     console.log(
@@ -781,6 +944,12 @@ export const createQueue = async (
       trackingUrl,
 
       estimatedWaitTime,
+
+      // Helpful for notification templates if you want to show
+      // the expected OPD start time later.
+      doctorShiftStartTime: shiftStartTime,
+
+      averageConsultationMinutes,
     };
 
     console.log("=================================");
@@ -882,6 +1051,14 @@ export const createQueue = async (
         estimatedWaitTime,
 
         estimatedTurnTime,
+
+        patientsAhead: waitingPatients,
+
+        averageConsultationMinutes,
+
+        doctorOnline,
+
+        doctorShiftStartTime: shiftStartTime,
       },
     });
   } catch (error) {

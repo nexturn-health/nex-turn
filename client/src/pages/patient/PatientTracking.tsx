@@ -25,6 +25,29 @@ import {
 
 import { socket } from "../../socket/socket";
 
+// =====================================
+// SHIFT TIME FORMATTING
+//
+// Backend is expected to send doctorShiftStartTime as 24-hour "HH:mm"
+// (e.g. "10:00"). Formats it into a friendly 12-hour string for display.
+// =====================================
+
+const formatShiftTime = (time24?: string): string | null => {
+    if (!time24) return null;
+
+    const [hoursStr, minutesStr] = time24.split(":");
+    const hours = Number(hoursStr);
+    const minutes = Number(minutesStr);
+
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+
+    const period = hours >= 12 ? "PM" : "AM";
+    const displayHours = hours % 12 === 0 ? 12 : hours % 12;
+    const displayMinutes = minutes.toString().padStart(2, "0");
+
+    return `${displayHours}:${displayMinutes} ${period}`;
+};
+
 const PatientTracking = () => {
     const {
         trackingToken,
@@ -73,11 +96,6 @@ const PatientTracking = () => {
                         trackingToken,
                     );
 
-                console.log(
-                    "PATIENT TRACKING DATA:",
-                    data,
-                );
-
                 setQueue(data);
                 setError("");
             } catch (error: any) {
@@ -117,85 +135,34 @@ const PatientTracking = () => {
 
         let isMounted = true;
 
-        console.log(
-            "🔌 Setting up patient tracking:",
-            trackingToken,
-        );
-
-        // =====================================
-        // SOCKET CONNECT
-        // =====================================
-
         const handleConnect = () => {
             if (!isMounted) {
                 return;
             }
 
-            console.log(
-                "🟢 PATIENT SOCKET CONNECTED:",
-                socket.id,
-            );
-
             setIsLive(true);
 
-            // Join patient's private queue room
             socket.emit(
                 "queue:join",
                 {
                     trackingToken,
                 },
             );
-
-            console.log(
-                "📡 PATIENT JOINED:",
-                `queue:${trackingToken}`,
-            );
         };
-
-        // =====================================
-        // SOCKET DISCONNECT
-        // =====================================
 
         const handleDisconnect = () => {
             if (!isMounted) {
                 return;
             }
 
-            console.log(
-                "🔴 PATIENT SOCKET DISCONNECTED",
-            );
-
             setIsLive(false);
         };
 
-        // =====================================
-        // QUEUE STATUS EVENT
-        // =====================================
-
-        const handleQueueStatus = (
-            data: any,
-        ) => {
-
-            console.log(
-                "🚨 LIVE QUEUE STATUS RECEIVED:",
-                data,
-            );
-
-            // Immediately get latest database state
+        const handleQueueStatus = () => {
             loadQueue();
         };
 
-        // =====================================
-        // QUEUE UPDATED EVENT
-        // =====================================
-
         const handleQueueUpdated = (data: any) => {
-
-            console.log(
-                "🚨 LIVE QUEUE UPDATED:",
-                data,
-            );
-
             if (
                 data?.trackingToken &&
                 data.trackingToken !== trackingToken
@@ -206,122 +173,37 @@ const PatientTracking = () => {
             loadQueue();
         };
 
-        // =====================================
-        // REGISTER SOCKET EVENTS
-        // =====================================
-
-        socket.on(
-            "connect",
-            handleConnect,
-        );
-
-        socket.on(
-            "disconnect",
-            handleDisconnect,
-        );
-
-        socket.on(
-            "queue:status",
-            handleQueueStatus,
-        );
-
-        socket.on(
-            "queue:updated",
-            handleQueueUpdated,
-        );
-
-        // =====================================
-        // CONNECT SOCKET
-        // =====================================
+        socket.on("connect", handleConnect);
+        socket.on("disconnect", handleDisconnect);
+        socket.on("queue:status", handleQueueStatus);
+        socket.on("queue:updated", handleQueueUpdated);
 
         if (socket.connected) {
-
             handleConnect();
-
         } else {
-
-            console.log(
-                "🔌 Connecting patient socket...",
-            );
-
             socket.connect();
         }
 
-        // =====================================
-        // AUTOMATIC FALLBACK REFRESH
-        // =====================================
-        //
-        // This makes sure the patient page
-        // always receives fresh queue data.
-        //
-        // Socket = instant
-        // Polling = reliable fallback
-        //
-
-        const refreshInterval = window.setInterval(
-            () => {
-
-                if (!isMounted) {
-                    return;
-                }
-
-                console.log(
-                    "🔄 Automatic queue refresh...",
-                );
-
-                loadQueue();
-
-            },
-            3000,
-        );
-
-        // =====================================
-        // CLEANUP
-        // =====================================
+        // Polling fallback in case a socket event is missed.
+        const refreshInterval = window.setInterval(() => {
+            if (!isMounted) return;
+            loadQueue();
+        }, 3000);
 
         return () => {
-
             isMounted = false;
 
-            console.log(
-                "🧹 Cleaning patient tracking socket",
-            );
+            window.clearInterval(refreshInterval);
 
-            window.clearInterval(
-                refreshInterval,
-            );
+            socket.emit("queue:leave", { trackingToken });
 
-            // Leave patient room
-            socket.emit(
-                "queue:leave",
-                {
-                    trackingToken,
-                },
-            );
-
-            socket.off(
-                "connect",
-                handleConnect,
-            );
-
-            socket.off(
-                "disconnect",
-                handleDisconnect,
-            );
-
-            socket.off(
-                "queue:status",
-                handleQueueStatus,
-            );
-
-            socket.off(
-                "queue:updated",
-                handleQueueUpdated,
-            );
+            socket.off("connect", handleConnect);
+            socket.off("disconnect", handleDisconnect);
+            socket.off("queue:status", handleQueueStatus);
+            socket.off("queue:updated", handleQueueUpdated);
 
             setIsLive(false);
         };
-
     }, [
         trackingToken,
         loadQueue,
@@ -405,6 +287,15 @@ const PatientTracking = () => {
         queue.doctorId?.name ||
         "your doctor";
 
+    // NOTE: doctorOnline / doctorShiftStartTime are new fields — add them to
+    // PatientTrackingData in services/patientTracking.api.ts once the
+    // backend sends them.
+    const doctorOnline =
+        (queue as any).doctorOnline === true;
+
+    const doctorShiftStartTime =
+        formatShiftTime((queue as any).doctorShiftStartTime);
+
     // =====================================
     // MAIN
     // =====================================
@@ -474,10 +365,50 @@ const PatientTracking = () => {
             <main className="mx-auto w-full max-w-3xl px-3 py-3 sm:px-6 sm:py-8">
 
                 {/* ================================= */}
+                {/* DOCTOR STATUS */}
+                {/* ================================= */}
+
+                <section
+                    className={`rounded-2xl border p-3.5 sm:rounded-3xl sm:p-5 ${doctorOnline
+                            ? "border-emerald-200 bg-emerald-50"
+                            : "border-amber-200 bg-amber-50"
+                        }`}
+                >
+                    <div className="flex items-start gap-3">
+                        <span
+                            className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${doctorOnline
+                                    ? "animate-pulse bg-emerald-500"
+                                    : "bg-amber-500"
+                                }`}
+                        />
+
+                        <div>
+                            <p
+                                className={`text-sm font-bold sm:text-base ${doctorOnline
+                                        ? "text-emerald-900"
+                                        : "text-amber-900"
+                                    }`}
+                            >
+                                Dr. {doctorName} is{" "}
+                                {doctorOnline ? "online and seeing patients" : "not online yet"}
+                            </p>
+
+                            {!doctorOnline && (
+                                <p className="mt-1 text-xs leading-5 text-amber-800 sm:text-sm">
+                                    {doctorShiftStartTime
+                                        ? `OPD usually starts around ${doctorShiftStartTime}. Your token is saved and this page will update automatically once the doctor starts.`
+                                        : "Your token is saved and this page will update automatically once the doctor comes online."}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                </section>
+
+                {/* ================================= */}
                 {/* APPOINTMENT CARD */}
                 {/* ================================= */}
 
-                <section className="rounded-2xl border border-slate-200 bg-white shadow-sm sm:rounded-3xl">
+                <section className="mt-3 rounded-2xl border border-slate-200 bg-white shadow-sm sm:mt-5 sm:rounded-3xl">
 
                     <div className="p-4 sm:p-8">
 
