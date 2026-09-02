@@ -21,6 +21,7 @@ import PatientTracking from "./pages/patient/PatientTracking";
 import DisplayBoard from "./pages/display/DisplayBoard";
 
 import { useAuthStore } from "./store/authStore";
+import Home from "./pages/home/Home";
 
 
 function App() {
@@ -55,7 +56,7 @@ function App() {
                 {/* DEFAULT */}
                 {/* ================================= */}
 
-                <Route
+                {/* <Route
                     path="/"
                     element={
                         <Navigate
@@ -63,6 +64,11 @@ function App() {
                             replace
                         />
                     }
+                /> */}
+
+                <Route
+                    path="/"
+                    element={<Home />}
                 />
 
 
