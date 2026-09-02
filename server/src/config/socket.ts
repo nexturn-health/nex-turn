@@ -5,588 +5,422 @@ import mongoose from "mongoose";
 import { User } from "../models/User.model";
 import { Queue } from "../models/Queue.model";
 
-// ============================================================
-// SOCKET INSTANCE
-// ============================================================
-
 let io: Server | null = null;
 
-// ============================================================
-// TRACK CONNECTED SOCKETS PER USER
-//
-// This prevents a doctor from becoming offline when one browser
-// tab disconnects while another tab is still connected.
-// ============================================================
+/* =========================================================
+   DOCTOR SOCKET CONNECTIONS
+   One doctor can have multiple browser tabs/devices.
+   We only mark offline when ALL connections are gone.
+========================================================= */
 
-const userSockets = new Map<string, Set<string>>();
+const doctorSockets = new Map<string, Set<string>>();
 
-// ============================================================
-// HELPERS
-// ============================================================
+/* =========================================================
+   DATABASE
+========================================================= */
 
-const addUserSocket = (
-    userId: string,
-    socketId: string,
-) => {
-    let sockets = userSockets.get(userId);
-
-    if (!sockets) {
-        sockets = new Set<string>();
-
-        userSockets.set(
-            userId,
-            sockets,
-        );
-    }
-
-    sockets.add(socketId);
-};
-
-const removeUserSocket = (
-    userId: string,
-    socketId: string,
-) => {
-    const sockets =
-        userSockets.get(userId);
-
-    if (!sockets) {
-        return 0;
-    }
-
-    sockets.delete(socketId);
-
-    if (sockets.size === 0) {
-        userSockets.delete(userId);
-
-        return 0;
-    }
-
-    return sockets.size;
-};
-
-const getUserSocketCount = (
-    userId: string,
-) => {
-    return (
-        userSockets.get(userId)?.size ||
-        0
-    );
-};
-
-// ============================================================
-// EMIT DOCTOR STATUS TO PATIENT QUEUES
-// ============================================================
-
-const emitDoctorStatusToPatientQueues = async ({
-    doctorId,
-    hospitalId,
-    doctorName,
-    isOnline,
-    lastSeenAt,
-    offlineSince,
-}: {
-    doctorId: string;
-    hospitalId: string;
-    doctorName: string;
-    isOnline: boolean;
-    lastSeenAt: Date;
-    offlineSince: Date | null;
-}) => {
-    if (!io) {
-        return;
-    }
-
+const connectDB = async (): Promise<void> => {
     try {
-        // Find active queues belonging to this doctor.
-        const queues = await Queue.find({
-            doctorId,
-            hospitalId,
-            status: {
-                $in: [
-                    "WAITING",
-                    "CALLED",
-                    "SERVING",
-                ],
-            },
-            trackingToken: {
-                $exists: true,
-                $ne: "",
-            },
-        })
-            .select("trackingToken")
-            .lean();
+        const mongoURI = process.env.MONGO_URI;
 
-        for (const queue of queues) {
-            if (!queue.trackingToken) {
-                continue;
-            }
-
-            const room =
-                `queue:${queue.trackingToken}`;
-
-            io.to(room).emit(
-                "doctor:status",
-                {
-                    doctorId,
-                    role: "DOCTOR",
-                    doctorName,
-                    isOnline,
-                    lastSeenAt,
-                    offlineSince,
-                },
+        if (!mongoURI) {
+            throw new Error(
+                "MONGO_URI is not defined in environment variables"
             );
         }
+
+        console.log("Connecting to MongoDB...");
+
+        await mongoose.connect(mongoURI);
+
+        console.log("✅ MongoDB connected successfully");
     } catch (error) {
-        console.error(
-            "Failed to emit doctor status to patient queues:",
-            error,
-        );
+        console.error("❌ MongoDB connection failed:", error);
+        process.exit(1);
     }
 };
 
-// ============================================================
-// EMIT DOCTOR STATUS
-// ============================================================
+/* =========================================================
+   INITIALIZE SOCKET
+========================================================= */
 
-export const emitDoctorStatus = ({
-    hospitalId,
-    userId,
-    doctorName,
-    isOnline,
-    lastSeenAt,
-    offlineSince = null,
-}: {
-    hospitalId: string;
-    userId: string;
-    doctorName: string;
-    isOnline: boolean;
-    lastSeenAt: Date;
-    offlineSince?: Date | null;
-}) => {
-    if (!io) {
-        console.error(
-            "Socket.IO is not initialized",
+export const initializeSocket = (httpServer: HttpServer) => {
+    io = new Server(httpServer, {
+        cors: {
+            origin:
+                process.env.CLIENT_URL ||
+                "http://localhost:5173",
+            credentials: true,
+        },
+
+        transports: ["websocket", "polling"],
+    });
+
+    io.on("connection", (socket) => {
+        console.log("=================================");
+        console.log("🟢 SOCKET CONNECTED:", socket.id);
+        console.log("=================================");
+
+        /* =====================================================
+           JOIN HOSPITAL ROOM
+        ===================================================== */
+
+        socket.on(
+            "join:hospital",
+            (hospitalId: string) => {
+                if (!hospitalId) {
+                    console.log(
+                        "❌ JOIN HOSPITAL FAILED: missing hospitalId"
+                    );
+                    return;
+                }
+
+                const room = `hospital:${hospitalId}`;
+
+                socket.join(room);
+
+                socket.data.hospitalId = hospitalId;
+
+                console.log(
+                    `🏥 SOCKET ${socket.id} JOINED ${room}`
+                );
+            }
         );
 
-        return;
-    }
+        /* =====================================================
+           PATIENT QUEUE ROOM
+        ===================================================== */
 
-    const room =
-        `hospital:${hospitalId}`;
+        socket.on(
+            "queue:join",
+            (
+                payload:
+                    | string
+                    | {
+                        trackingToken?: string;
+                    }
+            ) => {
+                const trackingToken =
+                    typeof payload === "string"
+                        ? payload
+                        : payload?.trackingToken;
 
-    console.log(
-        "========================================",
-    );
+                if (!trackingToken) {
+                    console.log(
+                        "❌ QUEUE JOIN FAILED: missing trackingToken"
+                    );
+                    return;
+                }
 
-    console.log(
-        "EMITTING DOCTOR STATUS",
-    );
+                const room = `queue:${trackingToken}`;
 
-    console.log({
-        room,
-        userId,
-        doctorName,
-        isOnline,
-        lastSeenAt,
-        offlineSince,
-    });
+                socket.join(room);
 
-    console.log(
-        "========================================",
-    );
+                socket.data.trackingToken =
+                    trackingToken;
 
-    // --------------------------------------------------------
-    // Hospital room
-    // --------------------------------------------------------
+                console.log(
+                    `🎫 SOCKET ${socket.id} JOINED ${room}`
+                );
+            }
+        );
 
-    io.to(room).emit(
-        "user:status",
-        {
-            userId,
-            role: "DOCTOR",
-            doctorName,
-            isOnline,
-            lastSeenAt,
-            offlineSince,
-        },
-    );
+        /* =====================================================
+           PATIENT LEAVE QUEUE
+        ===================================================== */
 
-    // --------------------------------------------------------
-    // Patient queue rooms
-    // --------------------------------------------------------
+        socket.on(
+            "queue:leave",
+            (
+                payload:
+                    | string
+                    | {
+                        trackingToken?: string;
+                    }
+            ) => {
+                const trackingToken =
+                    typeof payload === "string"
+                        ? payload
+                        : payload?.trackingToken;
 
-    void emitDoctorStatusToPatientQueues({
-        doctorId: userId,
-        hospitalId,
-        doctorName,
-        isOnline,
-        lastSeenAt,
-        offlineSince,
-    });
-};
+                if (!trackingToken) return;
 
-// ============================================================
-// INITIALIZE SOCKET
-// ============================================================
+                const room = `queue:${trackingToken}`;
 
-export const initializeSocket = (
-    httpServer: HttpServer,
-) => {
-    io = new Server(
-        httpServer,
-        {
-            cors: {
-                origin:
-                    process.env.CLIENT_URL ||
-                    "http://localhost:5173",
+                socket.leave(room);
 
-                credentials: true,
-            },
+                console.log(
+                    `🚪 SOCKET ${socket.id} LEFT ${room}`
+                );
+            }
+        );
 
-            transports: [
-                "websocket",
-                "polling",
-            ],
-        },
-    );
+        /* =====================================================
+           DOCTOR ONLINE
+        ===================================================== */
 
-    // ========================================================
-    // CONNECTION
-    // ========================================================
-
-    io.on(
-        "connection",
-        (socket) => {
-            console.log(
-                "SOCKET CONNECTED:",
-                socket.id,
-            );
-
-            // =================================================
-            // USER ONLINE
-            // =================================================
-
-            socket.on(
-                "user:online",
-                async (data) => {
-                    try {
-                        const {
-                            userId,
-                            hospitalId,
-                        } = data || {};
-
-                        if (
-                            !userId ||
-                            !hospitalId
-                        ) {
-                            console.log(
-                                "USER ONLINE FAILED: missing userId or hospitalId",
-                            );
-
-                            return;
-                        }
-
-                        // Save user information on socket.
-                        socket.data.userId =
-                            String(userId);
-
-                        socket.data.hospitalId =
-                            String(hospitalId);
-
-                        // ------------------------------------------------
-                        // Join hospital room
-                        // ------------------------------------------------
-
-                        const hospitalRoom =
-                            `hospital:${hospitalId}`;
-
-                        socket.join(
-                            hospitalRoom,
-                        );
-
-                        // ------------------------------------------------
-                        // Track this socket
-                        // ------------------------------------------------
-
-                        addUserSocket(
-                            String(userId),
-                            socket.id,
-                        );
-
-                        // ------------------------------------------------
-                        // Update doctor status
-                        // ------------------------------------------------
-
-                        const user =
-                            await User.findById(
+        socket.on(
+            "user:online",
+            async ({
+                userId,
+                hospitalId,
+            }: {
+                userId?: string;
+                hospitalId?: string;
+            }) => {
+                try {
+                    if (!userId || !hospitalId) {
+                        console.log(
+                            "❌ USER ONLINE FAILED:",
+                            {
                                 userId,
-                            );
-
-                        if (!user) {
-                            console.log(
-                                "USER ONLINE FAILED: user not found",
-                            );
-
-                            return;
-                        }
-
-                        socket.data.role =
-                            user.role;
-
-                        const now =
-                            new Date();
-
-                        // Only doctors should have
-                        // doctor online status.
-                        if (
-                            user.role ===
-                            "DOCTOR"
-                        ) {
-                            user.isOnline =
-                                true;
-
-                            user.lastSeenAt =
-                                now;
-
-                            user.offlineSince =
-                                null;
-
-                            await user.save();
-
-                            emitDoctorStatus({
-                                hospitalId:
-                                    String(
-                                        user.hospitalId,
-                                    ),
-
-                                userId:
-                                    String(
-                                        user._id,
-                                    ),
-
-                                doctorName:
-                                    user.name,
-
-                                isOnline: true,
-
-                                lastSeenAt:
-                                    now,
-
-                                offlineSince:
-                                    null,
-                            });
-                        }
-
-                        console.log(
-                            `USER ONLINE: ${user.name} (${user.role})`,
-                        );
-
-                        console.log(
-                            `SOCKET: ${socket.id}`,
-                        );
-
-                        console.log(
-                            `USER SOCKET COUNT: ${getUserSocketCount(
-                                String(user._id),
-                            )}`,
-                        );
-                    } catch (error) {
-                        console.error(
-                            "USER ONLINE ERROR:",
-                            error,
-                        );
-                    }
-                },
-            );
-
-            // =================================================
-            // DOCTOR HEARTBEAT
-            //
-            // Frontend sends this every 15 seconds.
-            // =================================================
-
-            socket.on(
-                "doctor:heartbeat",
-                async (data) => {
-                    try {
-                        const userId =
-                            data?.userId ||
-                            socket.data.userId;
-
-                        if (!userId) {
-                            return;
-                        }
-
-                        const now =
-                            new Date();
-
-                        const user =
-                            await User.findOneAndUpdate(
-                                {
-                                    _id: userId,
-                                    role: "DOCTOR",
-                                },
-                                {
-                                    $set: {
-                                        isOnline:
-                                            true,
-
-                                        lastSeenAt:
-                                            now,
-
-                                        offlineSince:
-                                            null,
-                                    },
-                                },
-                                {
-                                    new: true,
-                                },
-                            );
-
-                        if (!user) {
-                            return;
-                        }
-                    } catch (error) {
-                        console.error(
-                            "DOCTOR HEARTBEAT ERROR:",
-                            error,
-                        );
-                    }
-                },
-            );
-
-            // =================================================
-            // JOIN HOSPITAL
-            // =================================================
-
-            socket.on(
-                "join:hospital",
-                (
-                    hospitalId: string,
-                ) => {
-                    if (!hospitalId) {
-                        console.log(
-                            "JOIN HOSPITAL FAILED: missing hospitalId",
+                                hospitalId,
+                            }
                         );
 
                         return;
                     }
 
-                    const room =
-                        `hospital:${hospitalId}`;
+                    if (
+                        !mongoose.Types.ObjectId.isValid(
+                            userId
+                        )
+                    ) {
+                        console.log(
+                            "❌ INVALID USER ID:",
+                            userId
+                        );
 
-                    socket.join(room);
+                        return;
+                    }
 
+                    socket.data.userId = userId;
                     socket.data.hospitalId =
-                        String(
+                        hospitalId;
+                    socket.data.role = "DOCTOR";
+
+                    /* ================================
+                       JOIN HOSPITAL ROOM
+                    ================================= */
+
+                    socket.join(
+                        `hospital:${hospitalId}`
+                    );
+
+                    /* ================================
+                       STORE SOCKET
+                    ================================= */
+
+                    let connections =
+                        doctorSockets.get(userId);
+
+                    if (!connections) {
+                        connections = new Set<string>();
+
+                        doctorSockets.set(
+                            userId,
+                            connections
+                        );
+                    }
+
+                    connections.add(socket.id);
+
+                    /* ================================
+                       FIND DOCTOR
+                    ================================= */
+
+                    const doctor =
+                        await User.findOne({
+                            _id: userId,
                             hospitalId,
-                        );
+                            role: "DOCTOR",
+                        });
 
-                    console.log(
-                        `SOCKET ${socket.id} JOINED ${room}`,
-                    );
-                },
-            );
-
-            // =================================================
-            // QUEUE TRACKING
-            //
-            // Accept BOTH:
-            //
-            // socket.emit("queue:join", trackingToken)
-            //
-            // and
-            //
-            // socket.emit("queue:join", {
-            //     trackingToken
-            // })
-            //
-            // =================================================
-
-            socket.on(
-                "queue:join",
-                (
-                    data:
-                        | string
-                        | {
-                              trackingToken?: string;
-                          },
-                ) => {
-                    const trackingToken =
-                        typeof data ===
-                        "string"
-                            ? data
-                            : data?.trackingToken;
-
-                    if (!trackingToken) {
+                    if (!doctor) {
                         console.log(
-                            "QUEUE JOIN FAILED: missing trackingToken",
+                            "❌ DOCTOR NOT FOUND:",
+                            userId
                         );
 
                         return;
                     }
 
-                    const room =
-                        `queue:${trackingToken}`;
+                    const wasOnline =
+                        doctor.isOnline === true;
 
-                    socket.join(room);
+                    const now = new Date();
 
-                    socket.data.trackingToken =
-                        trackingToken;
+                    doctor.isOnline = true;
+                    doctor.lastSeenAt = now;
+
+                    await doctor.save();
 
                     console.log(
-                        `SOCKET ${socket.id} JOINED ${room}`,
+                        "🟢 DOCTOR ONLINE:",
+                        doctor.name,
+                        doctor._id.toString()
                     );
-                },
-            );
 
-            // =================================================
-            // QUEUE LEAVE
-            // =================================================
+                    /* ================================
+                       EMIT ONLY WHEN STATUS CHANGED
+                    ================================= */
 
-            socket.on(
-                "queue:leave",
-                (
-                    data:
-                        | string
-                        | {
-                              trackingToken?: string;
-                          },
-                ) => {
-                    const trackingToken =
-                        typeof data ===
-                        "string"
-                            ? data
-                            : data?.trackingToken;
+                    if (!wasOnline) {
+                        await emitDoctorStatus({
+                            hospitalId,
+                            userId,
+                            doctorName:
+                                doctor.name,
+                            isOnline: true,
+                            lastSeenAt: now,
+                        });
+                    }
+                } catch (error) {
+                    console.error(
+                        "❌ USER ONLINE ERROR:",
+                        error
+                    );
+                }
+            }
+        );
 
-                    if (!trackingToken) {
+        /* =====================================================
+           DOCTOR HEARTBEAT
+           Frontend should send this every ~15 seconds.
+        ===================================================== */
+
+        socket.on(
+            "user:heartbeat",
+            async ({
+                userId,
+            }: {
+                userId?: string;
+            }) => {
+                try {
+                    if (!userId) return;
+
+                    if (
+                        !mongoose.Types.ObjectId.isValid(
+                            userId
+                        )
+                    ) {
                         return;
                     }
 
-                    const room =
-                        `queue:${trackingToken}`;
-
-                    socket.leave(room);
-
-                    console.log(
-                        `SOCKET ${socket.id} LEFT ${room}`,
+                    await User.findByIdAndUpdate(
+                        userId,
+                        {
+                            isOnline: true,
+                            lastSeenAt: new Date(),
+                        }
                     );
-                },
-            );
+                } catch (error) {
+                    console.error(
+                        "❌ HEARTBEAT ERROR:",
+                        error
+                    );
+                }
+            }
+        );
 
-            // =================================================
-            // DISCONNECT
-            // =================================================
+        /* =====================================================
+           EXPLICIT DOCTOR OFFLINE
+           Called during logout.
+        ===================================================== */
 
-            socket.on(
-                "disconnect",
-                async (
-                    reason,
-                ) => {
+        socket.on(
+            "user:offline",
+            async ({
+                userId,
+                hospitalId,
+            }: {
+                userId?: string;
+                hospitalId?: string;
+            }) => {
+                try {
+                    if (!userId || !hospitalId) {
+                        return;
+                    }
+
                     console.log(
-                        "SOCKET DISCONNECTED:",
+                        "🔴 USER OFFLINE EVENT:",
+                        userId
+                    );
+
+                    const now = new Date();
+
+                    const doctor =
+                        await User.findOne({
+                            _id: userId,
+                            hospitalId,
+                            role: "DOCTOR",
+                        });
+
+                    if (!doctor) return;
+
+                    doctor.isOnline = false;
+                    doctor.lastSeenAt = now;
+
+                    await doctor.save();
+
+                    /* Remove this socket */
+
+                    const connections =
+                        doctorSockets.get(userId);
+
+                    if (connections) {
+                        connections.delete(
+                            socket.id
+                        );
+
+                        /*
+                         * Important:
+                         * If another browser/tab is still
+                         * connected, don't mark offline.
+                         */
+
+                        if (
+                            connections.size === 0
+                        ) {
+                            doctorSockets.delete(
+                                userId
+                            );
+                        }
+                    }
+
+                    /*
+                     * Notify patient tracking pages
+                     */
+
+                    await emitDoctorStatus({
+                        hospitalId,
+                        userId,
+                        doctorName:
+                            doctor.name,
+                        isOnline: false,
+                        lastSeenAt: now,
+                    });
+                } catch (error) {
+                    console.error(
+                        "❌ USER OFFLINE ERROR:",
+                        error
+                    );
+                }
+            }
+        );
+
+        /* =====================================================
+           DISCONNECT
+        ===================================================== */
+
+        socket.on(
+            "disconnect",
+            async (reason) => {
+                try {
+                    console.log(
+                        "🔴 SOCKET DISCONNECTED:",
                         socket.id,
-                        reason,
+                        reason
                     );
 
                     const userId =
@@ -595,120 +429,202 @@ export const initializeSocket = (
                     const hospitalId =
                         socket.data.hospitalId;
 
-                    const role =
-                        socket.data.role;
-
-                    if (
-                        !userId ||
-                        role !== "DOCTOR"
-                    ) {
+                    if (!userId || !hospitalId) {
                         return;
                     }
 
-                    // Remove this socket.
-                    const remainingSockets =
-                        removeUserSocket(
-                            String(
-                                userId,
-                            ),
-                            socket.id,
+                    const connections =
+                        doctorSockets.get(userId);
+
+                    if (connections) {
+                        connections.delete(
+                            socket.id
                         );
 
-                    console.log(
-                        "REMAINING DOCTOR SOCKETS:",
-                        remainingSockets,
-                    );
+                        /*
+                         * Another socket is still active.
+                         */
 
-                    // Another tab/device is still connected.
-                    if (
-                        remainingSockets >
-                        0
-                    ) {
-                        return;
-                    }
-
-                    try {
-                        const now =
-                            new Date();
-
-                        const user =
-                            await User.findOneAndUpdate(
-                                {
-                                    _id: userId,
-                                    role: "DOCTOR",
-                                },
-                                {
-                                    $set: {
-                                        isOnline:
-                                            false,
-
-                                        lastSeenAt:
-                                            now,
-
-                                        offlineSince:
-                                            now,
-                                    },
-                                },
-                                {
-                                    new: true,
-                                },
+                        if (
+                            connections.size > 0
+                        ) {
+                            console.log(
+                                "Doctor still has active socket:",
+                                userId
                             );
 
-                        if (!user) {
                             return;
                         }
 
-                        console.log(
-                            `DOCTOR OFFLINE: ${user.name}`,
-                        );
-
-                        emitDoctorStatus({
-                            hospitalId:
-                                String(
-                                    hospitalId ||
-                                        user.hospitalId,
-                                ),
-
-                            userId:
-                                String(
-                                    user._id,
-                                ),
-
-                            doctorName:
-                                user.name,
-
-                            isOnline: false,
-
-                            lastSeenAt:
-                                now,
-
-                            offlineSince:
-                                now,
-                        });
-                    } catch (error) {
-                        console.error(
-                            "DOCTOR DISCONNECT STATUS ERROR:",
-                            error,
+                        doctorSockets.delete(
+                            userId
                         );
                     }
-                },
-            );
-        },
-    );
+
+                    const doctor =
+                        await User.findOne({
+                            _id: userId,
+                            hospitalId,
+                            role: "DOCTOR",
+                        });
+
+                    if (!doctor) return;
+
+                    /*
+                     * Only mark offline if the doctor
+                     * was actually online.
+                     */
+
+                    if (doctor.isOnline) {
+                        const now = new Date();
+
+                        doctor.isOnline = false;
+                        doctor.lastSeenAt = now;
+
+                        await doctor.save();
+
+                        console.log(
+                            "🔴 DOCTOR OFFLINE:",
+                            doctor.name
+                        );
+
+                        await emitDoctorStatus({
+                            hospitalId,
+                            userId,
+                            doctorName:
+                                doctor.name,
+                            isOnline: false,
+                            lastSeenAt: now,
+                        });
+                    }
+                } catch (error) {
+                    console.error(
+                        "❌ DISCONNECT ERROR:",
+                        error
+                    );
+                }
+            }
+        );
+    });
 
     return io;
 };
 
-// ============================================================
-// GET SOCKET
-// ============================================================
+/* =========================================================
+   GET SOCKET
+========================================================= */
 
 export const getIO = (): Server => {
     if (!io) {
         throw new Error(
-            "Socket.IO is not initialized",
+            "Socket.IO is not initialized"
         );
     }
 
     return io;
 };
+
+/* =========================================================
+   EMIT DOCTOR STATUS
+========================================================= */
+
+export const emitDoctorStatus = async ({
+    hospitalId,
+    userId,
+    doctorName,
+    isOnline,
+    lastSeenAt,
+}: {
+    hospitalId: string;
+    userId: string;
+    doctorName: string;
+    isOnline: boolean;
+    lastSeenAt: Date;
+}) => {
+    const socketIO = getIO();
+
+
+    const payload = {
+        doctorId: userId,
+        role: "DOCTOR",
+        doctorName,
+        isOnline,
+        lastSeenAt,
+        offlineSince: isOnline
+            ? null
+            : lastSeenAt,
+    };
+
+
+    /* =====================================================
+       HOSPITAL ROOM
+       Doctors/receptionists/dashboard
+    ===================================================== */
+
+    socketIO
+        .to(`hospital:${hospitalId}`)
+        .emit(
+            "user:status",
+            payload
+        );
+
+    /* =====================================================
+       PATIENT TRACKING ROOMS
+
+       Find active queues belonging to this doctor.
+    ===================================================== */
+
+    try {
+        const activeQueues =
+            await Queue.find({
+                doctorId: userId,
+
+                status: {
+                    $in: [
+                        "WAITING",
+                        "CALLED",
+                        "SERVING",
+                    ],
+                },
+
+                trackingToken: {
+                    $exists: true,
+                    $ne: "",
+                },
+            }).select(
+                "trackingToken"
+            );
+
+        for (const queue of activeQueues) {
+            if (!queue.trackingToken) {
+                continue;
+            }
+
+            socketIO
+                .to(
+                    `queue:${queue.trackingToken}`
+                )
+                .emit(
+                    "user:status",
+                    payload
+                );
+        }
+
+        console.log(
+            "📡 DOCTOR STATUS SENT TO PATIENTS:",
+            {
+                doctorName,
+                isOnline,
+                patientQueues:
+                    activeQueues.length,
+            }
+        );
+    } catch (error) {
+        console.error(
+            "❌ PATIENT STATUS EMIT ERROR:",
+            error
+        );
+    }
+};
+
+export { connectDB };

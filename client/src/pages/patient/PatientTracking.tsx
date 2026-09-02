@@ -23,30 +23,57 @@ import {
     type PatientTrackingData,
 } from "../../services/patientTracking.api";
 
-import { socket, joinPatientQueue,leavePatientQueue, } from "../../socket/socket";
+import {
+    socket,
+    joinPatientQueue,
+    leavePatientQueue,
+} from "../../socket/socket";
 
-// =====================================
+// ============================================================
 // SHIFT TIME FORMATTING
-//
-// Backend is expected to send doctorShiftStartTime as 24-hour "HH:mm"
-// (e.g. "10:00"). Formats it into a friendly 12-hour string for display.
-// =====================================
+// ============================================================
 
-const formatShiftTime = (time24?: string): string | null => {
-    if (!time24) return null;
+const formatShiftTime = (
+    time24?: string,
+): string | null => {
+    if (!time24) {
+        return null;
+    }
 
-    const [hoursStr, minutesStr] = time24.split(":");
+    const [hoursStr, minutesStr] =
+        time24.split(":");
+
     const hours = Number(hoursStr);
     const minutes = Number(minutesStr);
 
-    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+    if (
+        Number.isNaN(hours) ||
+        Number.isNaN(minutes)
+    ) {
+        return null;
+    }
 
-    const period = hours >= 12 ? "PM" : "AM";
-    const displayHours = hours % 12 === 0 ? 12 : hours % 12;
-    const displayMinutes = minutes.toString().padStart(2, "0");
+    const period =
+        hours >= 12
+            ? "PM"
+            : "AM";
+
+    const displayHours =
+        hours % 12 === 0
+            ? 12
+            : hours % 12;
+
+    const displayMinutes =
+        minutes
+            .toString()
+            .padStart(2, "0");
 
     return `${displayHours}:${displayMinutes} ${period}`;
 };
+
+// ============================================================
+// PATIENT TRACKING
+// ============================================================
 
 const PatientTracking = () => {
     const {
@@ -55,12 +82,14 @@ const PatientTracking = () => {
         trackingToken: string;
     }>();
 
-    // =====================================
+    // ========================================================
     // STATE
-    // =====================================
+    // ========================================================
 
     const [queue, setQueue] =
-        useState<PatientTrackingData | null>(null);
+        useState<PatientTrackingData | null>(
+            null,
+        );
 
     const [loading, setLoading] =
         useState(true);
@@ -74,15 +103,21 @@ const PatientTracking = () => {
     const [isLive, setIsLive] =
         useState(false);
 
-    // =====================================
+    // ========================================================
     // LOAD QUEUE
-    // =====================================
+    // ========================================================
 
     const loadQueue = useCallback(
-        async (showRefreshing = false) => {
+        async (
+            showRefreshing = false,
+        ) => {
             if (!trackingToken) {
-                setError("Invalid tracking link");
+                setError(
+                    "Invalid tracking link",
+                );
+
                 setLoading(false);
+
                 return;
             }
 
@@ -97,6 +132,7 @@ const PatientTracking = () => {
                     );
 
                 setQueue(data);
+
                 setError("");
             } catch (error: any) {
                 console.error(
@@ -105,8 +141,9 @@ const PatientTracking = () => {
                 );
 
                 setError(
-                    error?.response?.data?.message ||
-                    "Unable to load queue",
+                    error?.response
+                        ?.data?.message ||
+                        "Unable to load queue",
                 );
             } finally {
                 setLoading(false);
@@ -116,17 +153,17 @@ const PatientTracking = () => {
         [trackingToken],
     );
 
-    // =====================================
+    // ========================================================
     // INITIAL LOAD
-    // =====================================
+    // ========================================================
 
     useEffect(() => {
         loadQueue();
     }, [loadQueue]);
 
-    // =====================================
-    // SOCKET.IO + AUTO REFRESH
-    // =====================================
+    // ========================================================
+    // SOCKET + LIVE TRACKING
+    // ========================================================
 
     useEffect(() => {
         if (!trackingToken) {
@@ -135,43 +172,198 @@ const PatientTracking = () => {
 
         let isMounted = true;
 
+        // ====================================================
+        // SOCKET CONNECT
+        // ====================================================
+
         const handleConnect = () => {
             if (!isMounted) {
                 return;
             }
 
+            console.log(
+                "PATIENT TRACKING SOCKET CONNECTED",
+            );
+
             setIsLive(true);
 
-           joinPatientQueue(trackingToken);
+            // Join this patient's private queue room.
+            joinPatientQueue(
+                trackingToken,
+            );
+
+            // Reload immediately after reconnect.
+            loadQueue();
         };
+
+        // ====================================================
+        // SOCKET DISCONNECT
+        // ====================================================
 
         const handleDisconnect = () => {
             if (!isMounted) {
                 return;
             }
 
+            console.log(
+                "PATIENT TRACKING SOCKET DISCONNECTED",
+            );
+
             setIsLive(false);
         };
 
+        // ====================================================
+        // QUEUE STATUS
+        // ====================================================
+
         const handleQueueStatus = () => {
+            if (!isMounted) {
+                return;
+            }
+
+            console.log(
+                "QUEUE STATUS UPDATE RECEIVED",
+            );
+
             loadQueue();
         };
 
-        const handleQueueUpdated = (data: any) => {
+        // ====================================================
+        // QUEUE UPDATED
+        // ====================================================
+
+        const handleQueueUpdated = (
+            data: any,
+        ) => {
+            if (!isMounted) {
+                return;
+            }
+
+            // If the event belongs to another
+            // patient queue, ignore it.
             if (
                 data?.trackingToken &&
-                data.trackingToken !== trackingToken
+                data.trackingToken !==
+                    trackingToken
             ) {
                 return;
             }
 
+            console.log(
+                "QUEUE UPDATED EVENT RECEIVED:",
+                data,
+            );
+
             loadQueue();
         };
 
-        socket.on("connect", handleConnect);
-        socket.on("disconnect", handleDisconnect);
-        socket.on("queue:status", handleQueueStatus);
-        socket.on("queue:updated", handleQueueUpdated);
+        // ====================================================
+        // DOCTOR STATUS
+        // ====================================================
+
+        const handleDoctorStatus = (
+            data: {
+                doctorId: string;
+                doctorName?: string;
+                isOnline: boolean;
+                lastSeenAt?: string;
+                offlineSince?:
+                    | string
+                    | null;
+            },
+        ) => {
+            if (!isMounted) {
+                return;
+            }
+
+            // We need a loaded queue to know
+            // which doctor belongs to this patient.
+            const currentDoctorId =
+                queue?.doctorId?._id;
+
+            if (
+                currentDoctorId &&
+                data.doctorId !==
+                    currentDoctorId
+            ) {
+                return;
+            }
+
+            console.log(
+                "DOCTOR STATUS UPDATE:",
+                data,
+            );
+
+            // ------------------------------------------------
+            // Update UI immediately.
+            // ------------------------------------------------
+
+            setQueue(
+                (previous) => {
+                    if (!previous) {
+                        return previous;
+                    }
+
+                    return {
+                        ...previous,
+
+                        doctorOnline:
+                            data.isOnline,
+
+                        doctorOfflineSince:
+                            data.offlineSince ??
+                            null,
+                    };
+                },
+            );
+
+            // ------------------------------------------------
+            // Reload from backend.
+            //
+            // Backend recalculates:
+            //
+            // - patients ahead
+            // - average consultation time
+            // - offline duration
+            // - estimated wait
+            // - estimated turn time
+            // ------------------------------------------------
+
+            loadQueue();
+        };
+
+        // ====================================================
+        // LISTENERS
+        // ====================================================
+
+        socket.on(
+            "connect",
+            handleConnect,
+        );
+
+        socket.on(
+            "disconnect",
+            handleDisconnect,
+        );
+
+        socket.on(
+            "queue:status",
+            handleQueueStatus,
+        );
+
+        socket.on(
+            "queue:updated",
+            handleQueueUpdated,
+        );
+
+        socket.on(
+            "doctor:status",
+            handleDoctorStatus,
+        );
+
+        // ====================================================
+        // CONNECT / RECONNECT
+        // ====================================================
 
         if (socket.connected) {
             handleConnect();
@@ -179,23 +371,67 @@ const PatientTracking = () => {
             socket.connect();
         }
 
-        // Polling fallback in case a socket event is missed.
-        const refreshInterval = window.setInterval(() => {
-            if (!isMounted) return;
-            loadQueue();
-        }, 3000);
+        // ====================================================
+        // FALLBACK POLLING
+        //
+        // Socket.IO is primary.
+        // Polling is only a safety net.
+        // ====================================================
+
+        const refreshInterval =
+            window.setInterval(() => {
+                if (!isMounted) {
+                    return;
+                }
+
+                // Don't constantly hit the API
+                // while Socket.IO is working.
+                if (!socket.connected) {
+                    loadQueue();
+                }
+            }, 10000);
+
+        // ====================================================
+        // CLEANUP
+        // ====================================================
 
         return () => {
             isMounted = false;
 
-            window.clearInterval(refreshInterval);
+            window.clearInterval(
+                refreshInterval,
+            );
 
-           leavePatientQueue(trackingToken);
+            // Leave patient queue room.
+            leavePatientQueue(
+                trackingToken,
+            );
 
-            socket.off("connect", handleConnect);
-            socket.off("disconnect", handleDisconnect);
-            socket.off("queue:status", handleQueueStatus);
-            socket.off("queue:updated", handleQueueUpdated);
+            // Remove listeners.
+            socket.off(
+                "connect",
+                handleConnect,
+            );
+
+            socket.off(
+                "disconnect",
+                handleDisconnect,
+            );
+
+            socket.off(
+                "queue:status",
+                handleQueueStatus,
+            );
+
+            socket.off(
+                "queue:updated",
+                handleQueueUpdated,
+            );
+
+            socket.off(
+                "doctor:status",
+                handleDoctorStatus,
+            );
 
             setIsLive(false);
         };
@@ -204,42 +440,53 @@ const PatientTracking = () => {
         loadQueue,
     ]);
 
-    // =====================================
+    // ========================================================
     // LOADING
-    // =====================================
+    // ========================================================
 
     if (loading) {
         return (
             <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
                 <div className="text-center">
+
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50">
+
                         <Loader2
                             size={25}
                             className="animate-spin text-blue-600"
                         />
+
                     </div>
 
                     <p className="mt-3 text-sm font-medium text-slate-500">
                         Loading your appointment...
                     </p>
+
                 </div>
             </div>
         );
     }
 
-    // =====================================
+    // ========================================================
     // ERROR
-    // =====================================
+    // ========================================================
 
-    if (error || !queue) {
+    if (
+        error ||
+        !queue
+    ) {
         return (
             <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+
                 <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-7 text-center shadow-sm">
+
                     <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50">
+
                         <AlertCircle
                             size={28}
                             className="text-red-500"
                         />
+
                     </div>
 
                     <h1 className="mt-4 text-xl font-bold text-slate-900">
@@ -250,55 +497,68 @@ const PatientTracking = () => {
                         {error ||
                             "This tracking link is no longer valid."}
                     </p>
+
                 </div>
+
             </div>
         );
     }
 
-    // =====================================
-    // STATUS
-    // =====================================
+    // ========================================================
+    // QUEUE STATUS
+    // ========================================================
 
     const isWaiting =
-        queue.status === "WAITING";
+        queue.status ===
+        "WAITING";
 
     const isCalled =
-        queue.status === "CALLED";
+        queue.status ===
+        "CALLED";
 
     const isServing =
-        queue.status === "SERVING";
+        queue.status ===
+        "SERVING";
 
     const isCompleted =
-        queue.status === "COMPLETED";
+        queue.status ===
+        "COMPLETED";
 
     const isSkipped =
-        queue.status === "SKIPPED";
+        queue.status ===
+        "SKIPPED";
 
-    // =====================================
+    // ========================================================
     // DOCTOR
-    // =====================================
+    // ========================================================
 
     const doctorName =
         queue.doctorId?.name ||
         "your doctor";
 
-    // NOTE: doctorOnline / doctorShiftStartTime are new fields — add them to
-    // PatientTrackingData in services/patientTracking.api.ts once the
-    // backend sends them.
-    const doctorOnline = queue.doctorOnline === true;
+    const doctorOnline =
+        queue.doctorOnline === true;
 
-    const doctorShiftStartTime = formatShiftTime(queue.doctorShiftStartTime ?? undefined);
+    const doctorShiftStartTime =
+        formatShiftTime(
+            queue.doctorShiftStartTime ??
+                undefined,
+        );
 
-    // =====================================
+    const offlineMinutes =
+        queue.offlineMinutes ??
+        0;
+
+    // ========================================================
     // MAIN
-    // =====================================
+    // ========================================================
 
     return (
         <div className="min-h-screen bg-slate-50">
 
-            {/* ================================= */}
+            {/* ================================================= */}
             {/* HEADER */}
-            {/* ================================= */}
+            {/* ================================================= */}
 
             <header className="border-b border-slate-200 bg-white">
 
@@ -307,12 +567,15 @@ const PatientTracking = () => {
                     <div className="flex items-center gap-2.5">
 
                         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 sm:h-10 sm:w-10 sm:rounded-xl">
+
                             <span className="text-sm sm:text-lg">
                                 🏥
                             </span>
+
                         </div>
 
                         <div>
+
                             <h1 className="text-sm font-bold text-slate-900 sm:text-base">
                                 NexTurn
                             </h1>
@@ -320,17 +583,19 @@ const PatientTracking = () => {
                             <p className="hidden text-xs text-slate-500 sm:block">
                                 Patient Queue
                             </p>
+
                         </div>
 
                     </div>
 
-                    {/* LIVE */}
+                    {/* LIVE CONNECTION */}
 
                     <div
-                        className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold sm:gap-2 sm:px-3 sm:py-1.5 sm:text-xs ${isLive
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-600"
-                            : "border-slate-200 bg-slate-50 text-slate-500"
-                            }`}
+                        className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold sm:gap-2 sm:px-3 sm:py-1.5 sm:text-xs ${
+                            isLive
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-600"
+                                : "border-slate-200 bg-slate-50 text-slate-500"
+                        }`}
                     >
 
                         {isLive ? (
@@ -351,63 +616,116 @@ const PatientTracking = () => {
 
             </header>
 
-            {/* ================================= */}
+            {/* ================================================= */}
             {/* MAIN */}
-            {/* ================================= */}
+            {/* ================================================= */}
 
             <main className="mx-auto w-full max-w-3xl px-3 py-3 sm:px-6 sm:py-8">
 
-                {/* ================================= */}
+                {/* ================================================= */}
                 {/* DOCTOR STATUS */}
-                {/* ================================= */}
+                {/* ================================================= */}
 
                 <section
-                    className={`rounded-2xl border p-3.5 sm:rounded-3xl sm:p-5 ${doctorOnline
-                        ? "border-emerald-200 bg-emerald-50"
-                        : "border-amber-200 bg-amber-50"
-                        }`}
+                    className={`rounded-2xl border p-3.5 sm:rounded-3xl sm:p-5 ${
+                        doctorOnline
+                            ? "border-emerald-200 bg-emerald-50"
+                            : "border-red-200 bg-red-50"
+                    }`}
                 >
+
                     <div className="flex items-start gap-3">
+
                         <span
-                            className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${doctorOnline
-                                ? "animate-pulse bg-emerald-500"
-                                : "bg-amber-500"
-                                }`}
+                            className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                                doctorOnline
+                                    ? "animate-pulse bg-emerald-500"
+                                    : "bg-red-500"
+                            }`}
                         />
 
-                        <div>
+                        <div className="min-w-0">
+
                             <p
-                                className={`text-sm font-bold sm:text-base ${doctorOnline
-                                    ? "text-emerald-900"
-                                    : "text-amber-900"
-                                    }`}
+                                className={`text-sm font-bold sm:text-base ${
+                                    doctorOnline
+                                        ? "text-emerald-900"
+                                        : "text-red-900"
+                                }`}
                             >
                                 Dr. {doctorName} is{" "}
-                                {doctorOnline ? "online and seeing patients" : "not online yet"}
+                                {doctorOnline
+                                    ? "online and seeing patients"
+                                    : "offline"}
                             </p>
 
-                            {!doctorOnline && (
-                                <p className="mt-1 text-xs leading-5 text-amber-800 sm:text-sm">
-                                    {doctorShiftStartTime
-                                        ? `OPD usually starts around ${doctorShiftStartTime}. Your token is saved and this page will update automatically once the doctor starts.`
-                                        : "Your token is saved and this page will update automatically once the doctor comes online."}
+                            {/* ===================================== */}
+                            {/* DOCTOR ONLINE */}
+                            {/* ===================================== */}
+
+                            {doctorOnline && (
+                                <p className="mt-1 text-xs leading-5 text-emerald-800 sm:text-sm">
+                                    The doctor is currently
+                                    available. Your queue
+                                    will update automatically.
                                 </p>
                             )}
+
+                            {/* ===================================== */}
+                            {/* DOCTOR OFFLINE */}
+                            {/* ===================================== */}
+
+                            {!doctorOnline && (
+                                <div className="mt-1">
+
+                                    <p className="text-xs leading-5 text-red-800 sm:text-sm">
+                                        {doctorShiftStartTime
+                                            ? `OPD usually starts around ${doctorShiftStartTime}.`
+                                            : "The doctor is currently unavailable."}
+                                    </p>
+
+                                    {offlineMinutes >
+                                        0 && (
+                                        <p className="mt-1 text-xs font-semibold text-red-700 sm:text-sm">
+                                            Doctor has been
+                                            offline for
+                                            approximately{" "}
+                                            {
+                                                offlineMinutes
+                                            }{" "}
+                                            {offlineMinutes ===
+                                            1
+                                                ? "minute"
+                                                : "minutes"}
+                                            .
+                                        </p>
+                                    )}
+
+                                    <p className="mt-1 text-[11px] leading-5 text-red-600 sm:text-xs">
+                                        Your estimated
+                                        waiting time is
+                                        being adjusted
+                                        automatically.
+                                    </p>
+
+                                </div>
+                            )}
+
                         </div>
+
                     </div>
+
                 </section>
 
-                {/* ================================= */}
+                {/* ================================================= */}
                 {/* APPOINTMENT CARD */}
-                {/* ================================= */}
+                {/* ================================================= */}
 
                 <section className="mt-3 rounded-2xl border border-slate-200 bg-white shadow-sm sm:mt-5 sm:rounded-3xl">
 
                     <div className="p-4 sm:p-8">
 
-                        {/* ================================= */}
                         {/* PATIENT + DOCTOR */}
-                        {/* ================================= */}
 
                         <div>
 
@@ -431,9 +749,7 @@ const PatientTracking = () => {
 
                         </div>
 
-                        {/* ================================= */}
                         {/* DEPARTMENT + TOKEN */}
-                        {/* ================================= */}
 
                         <div className="mt-3 grid grid-cols-2 gap-2.5 sm:mt-6 sm:gap-3">
 
@@ -467,16 +783,18 @@ const PatientTracking = () => {
 
                         </div>
 
-                        {/* ================================= */}
                         {/* REFRESH */}
-                        {/* ================================= */}
 
                         <button
                             type="button"
                             onClick={() =>
-                                loadQueue(true)
+                                loadQueue(
+                                    true,
+                                )
                             }
-                            disabled={refreshing}
+                            disabled={
+                                refreshing
+                            }
                             className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:mt-5 sm:rounded-2xl sm:px-5 sm:py-4 sm:text-sm"
                         >
 
@@ -499,9 +817,9 @@ const PatientTracking = () => {
 
                 </section>
 
-                {/* ================================= */}
+                {/* ================================================= */}
                 {/* CURRENTLY SERVING */}
-                {/* ================================= */}
+                {/* ================================================= */}
 
                 {!isSkipped &&
                     !isCompleted && (
@@ -527,9 +845,9 @@ const PatientTracking = () => {
                         </section>
                     )}
 
-                {/* ================================= */}
+                {/* ================================================= */}
                 {/* QUEUE STATS */}
-                {/* ================================= */}
+                {/* ================================================= */}
 
                 {isWaiting && (
                     <div className="mt-3 grid grid-cols-2 gap-2.5 sm:mt-5 sm:gap-4">
@@ -548,15 +866,13 @@ const PatientTracking = () => {
                             </div>
 
                             <p className="mt-2.5 text-[9px] font-bold uppercase tracking-wide text-slate-400 sm:mt-4 sm:text-xs">
-
                                 Patients Ahead
-
                             </p>
 
                             <p className="mt-0.5 text-2xl font-black text-slate-900 sm:mt-1 sm:text-3xl">
-
-                                {queue.patientsAhead}
-
+                                {
+                                    queue.patientsAhead
+                                }
                             </p>
 
                         </div>
@@ -575,15 +891,15 @@ const PatientTracking = () => {
                             </div>
 
                             <p className="mt-2.5 text-[9px] font-bold uppercase tracking-wide text-slate-400 sm:mt-4 sm:text-xs">
-
                                 Estimated Wait
-
                             </p>
 
                             <p className="mt-0.5 text-2xl font-black text-slate-900 sm:mt-1 sm:text-3xl">
 
-                                {queue.estimatedWaitTime ??
-                                    0}
+                                {
+                                    queue.estimatedWaitTime ??
+                                    0
+                                }
 
                                 <span className="ml-1 text-[10px] font-normal text-slate-400 sm:text-sm">
                                     min
@@ -596,21 +912,75 @@ const PatientTracking = () => {
                     </div>
                 )}
 
-                {/* ================================= */}
+                {/* ================================================= */}
+                {/* OFFLINE WAIT INFORMATION */}
+                {/* ================================================= */}
+
+                {isWaiting &&
+                    !doctorOnline &&
+                    offlineMinutes >
+                        0 && (
+                        <section className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3.5 sm:mt-5 sm:rounded-3xl sm:p-5">
+
+                            <div className="flex items-start gap-3">
+
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 sm:h-10 sm:w-10 sm:rounded-xl">
+
+                                    <WifiOff
+                                        size={16}
+                                        className="text-red-600 sm:size-[20px]"
+                                    />
+
+                                </div>
+
+                                <div>
+
+                                    <p className="text-xs font-bold text-red-900 sm:text-sm">
+                                        Doctor currently
+                                        offline
+                                    </p>
+
+                                    <p className="mt-1 text-[11px] leading-5 text-red-700 sm:text-xs sm:leading-5">
+                                        Estimated wait has
+                                        been adjusted for
+                                        the doctor's offline
+                                        time.
+                                    </p>
+
+                                    <p className="mt-1.5 text-[11px] font-semibold text-red-800 sm:text-xs">
+                                        Offline duration:{" "}
+                                        {
+                                            offlineMinutes
+                                        }{" "}
+                                        {offlineMinutes ===
+                                        1
+                                            ? "minute"
+                                            : "minutes"}
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+                        </section>
+                    )}
+
+                {/* ================================================= */}
                 {/* STATUS CARD */}
-                {/* ================================= */}
+                {/* ================================================= */}
 
                 <section
-                    className={`mt-3 rounded-2xl border p-4 text-center shadow-sm sm:mt-5 sm:rounded-3xl sm:p-6 ${isCalled
-                        ? "border-blue-200 bg-blue-50"
-                        : isServing
-                            ? "border-emerald-200 bg-emerald-50"
-                            : isCompleted
+                    className={`mt-3 rounded-2xl border p-4 text-center shadow-sm sm:mt-5 sm:rounded-3xl sm:p-6 ${
+                        isCalled
+                            ? "border-blue-200 bg-blue-50"
+                            : isServing
                                 ? "border-emerald-200 bg-emerald-50"
-                                : isSkipped
-                                    ? "border-amber-200 bg-amber-50"
-                                    : "border-blue-100 bg-white"
-                        }`}
+                                : isCompleted
+                                    ? "border-emerald-200 bg-emerald-50"
+                                    : isSkipped
+                                        ? "border-amber-200 bg-amber-50"
+                                        : "border-blue-100 bg-white"
+                    }`}
                 >
 
                     {/* CALLED */}
@@ -632,7 +1002,8 @@ const PatientTracking = () => {
 
                             <p className="mt-1 text-[10px] text-blue-800 sm:mt-2 sm:text-sm">
                                 Please proceed to Dr.{" "}
-                                {doctorName}'s room.
+                                {doctorName}'s
+                                room.
                             </p>
                         </>
                     )}
@@ -651,12 +1022,14 @@ const PatientTracking = () => {
                             </div>
 
                             <h3 className="mt-2 text-base font-bold text-emerald-900 sm:mt-4 sm:text-xl">
-                                Your Consultation Is In Progress
+                                Your Consultation Is
+                                In Progress
                             </h3>
 
                             <p className="mt-1 text-[10px] text-emerald-800 sm:mt-2 sm:text-sm">
                                 Please proceed to Dr.{" "}
-                                {doctorName}'s room.
+                                {doctorName}'s
+                                room.
                             </p>
                         </>
                     )}
@@ -679,8 +1052,10 @@ const PatientTracking = () => {
                             </h3>
 
                             <p className="mt-1 text-[10px] text-emerald-800 sm:mt-2 sm:text-sm">
-                                Your consultation with Dr.{" "}
-                                {doctorName} has been completed.
+                                Your consultation with
+                                Dr.{" "}
+                                {doctorName} has
+                                been completed.
                             </p>
                         </>
                     )}
@@ -703,8 +1078,9 @@ const PatientTracking = () => {
                             </h3>
 
                             <p className="mt-1 text-[10px] text-amber-800 sm:mt-2 sm:text-sm">
-                                Please contact reception
-                                for further assistance.
+                                Please contact
+                                reception for
+                                further assistance.
                             </p>
                         </>
                     )}
@@ -727,18 +1103,19 @@ const PatientTracking = () => {
                             </h3>
 
                             <p className="mt-1 text-[10px] leading-4 text-slate-500 sm:mt-2 sm:text-sm sm:leading-6">
-                                Please wait for your turn.
-                                Your queue position will
-                                update automatically.
+                                Please wait for your
+                                turn. Your queue
+                                position will update
+                                automatically.
                             </p>
                         </>
                     )}
 
                 </section>
 
-                {/* ================================= */}
+                {/* ================================================= */}
                 {/* PRIORITY + LIVE */}
-                {/* ================================= */}
+                {/* ================================================= */}
 
                 <div className="mt-3 flex items-center justify-between sm:mt-5">
 
@@ -752,14 +1129,15 @@ const PatientTracking = () => {
                             </span>
 
                             <span
-                                className={`rounded-full px-2.5 py-1 text-[9px] font-bold sm:px-3 sm:text-xs ${queue.priority ===
+                                className={`rounded-full px-2.5 py-1 text-[9px] font-bold sm:px-3 sm:text-xs ${
+                                    queue.priority ===
                                     "EMERGENCY"
-                                    ? "bg-red-50 text-red-600"
-                                    : "bg-slate-100 text-slate-600"
-                                    }`}
+                                        ? "bg-red-50 text-red-600"
+                                        : "bg-slate-100 text-slate-600"
+                                }`}
                             >
                                 {queue.priority ===
-                                    "EMERGENCY"
+                                "EMERGENCY"
                                     ? "Emergency"
                                     : "Normal"}
                             </span>
@@ -772,17 +1150,19 @@ const PatientTracking = () => {
                     {/* LIVE STATUS */}
 
                     <div
-                        className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[9px] font-semibold sm:gap-2 sm:px-3 sm:py-1.5 sm:text-xs ${isLive
-                            ? "bg-emerald-50 text-emerald-600"
-                            : "bg-slate-100 text-slate-500"
-                            }`}
+                        className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[9px] font-semibold sm:gap-2 sm:px-3 sm:py-1.5 sm:text-xs ${
+                            isLive
+                                ? "bg-emerald-50 text-emerald-600"
+                                : "bg-slate-100 text-slate-500"
+                        }`}
                     >
 
                         <span
-                            className={`h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2 ${isLive
-                                ? "animate-pulse bg-emerald-500"
-                                : "bg-slate-400"
-                                }`}
+                            className={`h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2 ${
+                                isLive
+                                    ? "animate-pulse bg-emerald-500"
+                                    : "bg-slate-400"
+                            }`}
                         />
 
                         {isLive
@@ -793,12 +1173,13 @@ const PatientTracking = () => {
 
                 </div>
 
-                {/* ================================= */}
+                {/* ================================================= */}
                 {/* FOOTER */}
-                {/* ================================= */}
+                {/* ================================================= */}
 
                 <p className="mt-2 text-center text-[9px] text-slate-400 sm:mt-3 sm:text-[11px]">
-                    Queue information updates automatically.
+                    Queue information updates
+                    automatically.
                 </p>
 
             </main>
