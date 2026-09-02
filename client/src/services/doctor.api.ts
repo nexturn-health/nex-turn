@@ -56,54 +56,31 @@ export interface QueueDoctor {
 
 export interface DoctorQueueItem {
     _id: string;
+
     tokenNumber: number;
     tokenLabel: string;
 
     priority: QueuePriority;
-
     status: QueueStatus;
 
-    /*
-     * Patient may be missing if backend
-     * does not populate patientId.
-     */
     patient: QueuePatient;
 
-    /*
-     * Some backend responses may return
-     * patientId instead of patient.
-     */
-    patientId?:QueuePatient;
+    patientId?: QueuePatient;
 
-    /*
-     * Department can be populated object
-     * or ObjectId string.
-     */
-    departmentId?:
-    | QueueDepartment;
+    departmentId?: QueueDepartment;
 
-    /*
-     * Doctor can be populated object
-     * or ObjectId string.
-     */
-    doctorId?:
-    | QueueDoctor;
+    doctorId?: QueueDoctor;
 
     estimatedWaitMinutes?: number;
-
     estimatedTurnTime?: string;
 
     calledAt?: string;
-
     servingAt?: string;
-
     completedAt?: string;
 
     createdAt?: string;
-
     updatedAt?: string;
 }
-
 /* =========================================================
    QUEUE API RESPONSE
 ========================================================= */

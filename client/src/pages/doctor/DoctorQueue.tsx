@@ -29,6 +29,8 @@ import {
   type DoctorQueueItem,
 } from "../../services/doctor.api";
 
+import { useAuthStore } from "../../store/authStore";
+
 // ============================================================
 // DOCTOR QUEUE
 // ============================================================
@@ -39,6 +41,9 @@ const DoctorQueue = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const { user } = useAuthStore();
+
+  const currentDoctorId = user?.id;
   // ==========================================================
   // LOAD QUEUE
   // ==========================================================
@@ -77,13 +82,19 @@ const DoctorQueue = () => {
   // CURRENT PATIENT
   // ==========================================================
 
-  const currentPatient = useMemo(() => {
-    return queues.find(
-      (queue) =>
-        queue.status === "CALLED" ||
-        queue.status === "SERVING",
-    );
-  }, [queues]);
+const currentPatient = useMemo(() => {
+  if (!currentDoctorId) {
+    return undefined;
+  }
+
+  return queues.find(
+    (queue) =>
+      (queue.status === "CALLED" ||
+        queue.status === "SERVING") &&
+      String(queue.doctorId?._id) ===
+        String(currentDoctorId),
+  );
+}, [queues, currentDoctorId]);
 
   // ==========================================================
   // WAITING PATIENTS
@@ -405,7 +416,7 @@ const DoctorQueue = () => {
                         </span>
                       )}
 
-                  
+
 
                   </div>
                 </>
