@@ -23,7 +23,7 @@ import {
     type PatientTrackingData,
 } from "../../services/patientTracking.api";
 
-import { socket } from "../../socket/socket";
+import { socket, joinPatientQueue,leavePatientQueue, } from "../../socket/socket";
 
 // =====================================
 // SHIFT TIME FORMATTING
@@ -142,12 +142,7 @@ const PatientTracking = () => {
 
             setIsLive(true);
 
-            socket.emit(
-                "queue:join",
-                {
-                    trackingToken,
-                },
-            );
+           joinPatientQueue(trackingToken);
         };
 
         const handleDisconnect = () => {
@@ -195,7 +190,7 @@ const PatientTracking = () => {
 
             window.clearInterval(refreshInterval);
 
-            socket.emit("queue:leave", { trackingToken });
+           leavePatientQueue(trackingToken);
 
             socket.off("connect", handleConnect);
             socket.off("disconnect", handleDisconnect);

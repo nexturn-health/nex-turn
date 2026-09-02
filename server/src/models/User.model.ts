@@ -30,6 +30,15 @@ export interface IUser extends Document {
 
     lastSeenAt?: Date;
 
+    createdAt: Date;
+
+    updatedAt: Date;
+    offlineSince?: Date | null;
+
+    averageConsultationMinutes: number;
+
+    shiftStartTime?: string | null;
+
     // ========================================
     // PASSWORD RESET
     // ========================================
@@ -38,11 +47,6 @@ export interface IUser extends Document {
 
     resetPasswordExpires?: Date;
 
-    createdAt: Date;
-
-    updatedAt: Date;
-
-    shiftStartTime?: string | null;
 }
 
 const UserSchema = new Schema<IUser>(
@@ -117,12 +121,22 @@ const UserSchema = new Schema<IUser>(
             default: undefined,
         },
 
+        offlineSince: {
+            type: Date,
+            default: null,
+        },
+
+        averageConsultationMinutes: {
+            type: Number,
+            default: 8,
+            min: 1,
+        },
+
         shiftStartTime: {
             type: String,
             default: null,
             trim: true,
         },
-
         // ========================================
         // PASSWORD RESET
         // ========================================

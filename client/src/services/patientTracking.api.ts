@@ -20,12 +20,12 @@ export interface PatientTrackingData {
     tokenLabel: string;
 
     status:
-        | "WAITING"
-        | "CALLED"
-        | "SERVING"
-        | "COMPLETED"
-        | "SKIPPED"
-        | "CANCELLED";
+    | "WAITING"
+    | "CALLED"
+    | "SERVING"
+    | "COMPLETED"
+    | "SKIPPED"
+    | "CANCELLED";
 
     priority: "NORMAL" | "EMERGENCY";
 
@@ -52,6 +52,7 @@ export interface PatientTrackingData {
     doctorShiftStartTime?: string | null;
 
     patientsAhead: number;
+    offlineMinutes?: number;
 
     averageConsultationMinutes: number;
 
