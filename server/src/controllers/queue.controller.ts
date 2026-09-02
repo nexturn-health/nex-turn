@@ -21,6 +21,121 @@ import {
 
 
 // ======================================================
+// CONSULTATION / OPD ESTIMATION HELPERS
+// ======================================================
+
+const DEFAULT_CONSULTATION_MINUTES = 10;
+const MAX_HISTORY_FOR_AVERAGE = 20;
+
+const getDoctorAverageConsultationMinutes = async (
+  doctorId?: mongoose.Types.ObjectId,
+): Promise<number | null> => {
+  if (!doctorId) return null;
+
+  const completedQueues = await Queue.find({
+    doctorId,
+    status: "COMPLETED",
+    $or: [
+      { serviceDurationMinutes: { $gt: 0 } },
+      { servingAt: { $exists: true }, completedAt: { $exists: true } },
+    ],
+  })
+    .sort({ completedAt: -1 })
+    .limit(MAX_HISTORY_FOR_AVERAGE)
+    .select("serviceDurationMinutes servingAt completedAt")
+    .lean();
+
+  const durations = completedQueues
+    .map((queue: any) => {
+      const stored = Number(queue.serviceDurationMinutes);
+      if (Number.isFinite(stored) && stored > 0) return stored;
+
+      if (queue.servingAt && queue.completedAt) {
+        const minutes =
+          (new Date(queue.completedAt).getTime() -
+            new Date(queue.servingAt).getTime()) /
+          (60 * 1000);
+
+        if (Number.isFinite(minutes) && minutes > 0) {
+          return minutes;
+        }
+      }
+
+      return 0;
+    })
+    .filter((minutes) => minutes > 0);
+
+  if (!durations.length) return null;
+
+  return Math.max(
+    1,
+    Math.round(
+      durations.reduce((sum, minutes) => sum + minutes, 0) / durations.length,
+    ),
+  );
+};
+
+const getDepartmentAverageConsultationMinutes = async (
+  hospitalId: string | mongoose.Types.ObjectId,
+  departmentId: string | mongoose.Types.ObjectId,
+): Promise<number | null> => {
+  const completedQueues = await Queue.find({
+    hospitalId,
+    departmentId,
+    status: "COMPLETED",
+    $or: [
+      { serviceDurationMinutes: { $gt: 0 } },
+      { servingAt: { $exists: true }, completedAt: { $exists: true } },
+    ],
+  })
+    .sort({ completedAt: -1 })
+    .limit(MAX_HISTORY_FOR_AVERAGE)
+    .select("serviceDurationMinutes servingAt completedAt")
+    .lean();
+
+  const durations = completedQueues
+    .map((queue: any) => {
+      const stored = Number(queue.serviceDurationMinutes);
+      if (Number.isFinite(stored) && stored > 0) return stored;
+
+      if (queue.servingAt && queue.completedAt) {
+        const minutes =
+          (new Date(queue.completedAt).getTime() -
+            new Date(queue.servingAt).getTime()) /
+          (60 * 1000);
+
+        if (Number.isFinite(minutes) && minutes > 0) {
+          return minutes;
+        }
+      }
+
+      return 0;
+    })
+    .filter((minutes) => minutes > 0);
+
+  if (!durations.length) return null;
+
+  return Math.max(
+    1,
+    Math.round(
+      durations.reduce((sum, minutes) => sum + minutes, 0) / durations.length,
+    ),
+  );
+};
+
+const getTodayOpdStartTime = (shiftStartTime?: string | null): Date | null => {
+  if (!shiftStartTime || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(shiftStartTime)) {
+    return null;
+  }
+
+  const [hours, minutes] = shiftStartTime.split(":").map(Number);
+  const start = new Date();
+  start.setHours(hours, minutes, 0, 0);
+  return start;
+};
+
+
+// ======================================================
 // HELPER TYPES
 // ======================================================
 
@@ -47,91 +162,6 @@ interface PopulatedDoctor {
   name: string;
   email?: string;
 }
-
-// ======================================================
-// CONSULTATION / OPD ESTIMATION HELPERS
-// ======================================================
-
-const DEFAULT_CONSULTATION_MINUTES = 10;
-const MAX_HISTORY_FOR_AVERAGE = 20;
-
-/**
- * Calculate a doctor's real average consultation time from completed
- * consultations. Only positive, recorded service durations are used.
- */
-const getDoctorAverageConsultationMinutes = async (
-  doctorId?: mongoose.Types.ObjectId,
-): Promise<number | null> => {
-  if (!doctorId) return null;
-
-  const completedQueues = await Queue.find({
-    doctorId,
-    status: "COMPLETED",
-    serviceDurationMinutes: { $gt: 0 },
-  })
-    .sort({ completedAt: -1 })
-    .limit(MAX_HISTORY_FOR_AVERAGE)
-    .select("serviceDurationMinutes")
-    .lean();
-
-  const durations = completedQueues
-    .map((queue: any) => Number(queue.serviceDurationMinutes))
-    .filter((minutes) => Number.isFinite(minutes) && minutes > 0);
-
-  if (!durations.length) return null;
-
-  const average =
-    durations.reduce((sum, minutes) => sum + minutes, 0) /
-    durations.length;
-
-  return Math.max(1, Math.round(average));
-};
-
-/**
- * Calculate the recent department average when a doctor has no history.
- */
-const getDepartmentAverageConsultationMinutes = async (
-  hospitalId: string | mongoose.Types.ObjectId,
-  departmentId: string | mongoose.Types.ObjectId,
-): Promise<number | null> => {
-  const completedQueues = await Queue.find({
-    hospitalId,
-    departmentId,
-    status: "COMPLETED",
-    serviceDurationMinutes: { $gt: 0 },
-  })
-    .sort({ completedAt: -1 })
-    .limit(MAX_HISTORY_FOR_AVERAGE)
-    .select("serviceDurationMinutes")
-    .lean();
-
-  const durations = completedQueues
-    .map((queue: any) => Number(queue.serviceDurationMinutes))
-    .filter((minutes) => Number.isFinite(minutes) && minutes > 0);
-
-  if (!durations.length) return null;
-
-  const average =
-    durations.reduce((sum, minutes) => sum + minutes, 0) /
-    durations.length;
-
-  return Math.max(1, Math.round(average));
-};
-
-/**
- * Convert today's OPD start time (HH:mm) into a Date in the server's
- * local timezone. Returns null when no valid time is configured.
- */
-const getTodayOpdStartTime = (shiftStartTime?: string | null): Date | null => {
-  if (!shiftStartTime || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(shiftStartTime)) {
-    return null;
-  }
-
-  const [hours, minutes] = shiftStartTime.split(":").map(Number);
-  const start = new Date();
-  start.setHours(hours, minutes, 0, 0);
-  return start;
-};
 
 
 // ======================================================
@@ -538,108 +568,89 @@ export const createQueue = async (
     // ==================================================
     // FIND DEPARTMENT DOCTOR
     // ==================================================
-    // A newly generated token normally has no doctorId yet. We therefore
-    // find the active doctor assigned to this department and use that
-    // doctor's real consultation history for the estimate.
 
-    const departmentDoctor =
-      await User.findOne({
-        hospitalId,
-        departmentId,
-        role: "DOCTOR",
-        isActive: true,
-      })
-        .select("name email isOnline shiftStartTime")
-        .lean();
-
-    // ==================================================
-    // COUNT ACTIVE PATIENTS AHEAD
-    // ==================================================
-
-    const waitingPatients =
-      await Queue.countDocuments({
-        hospitalId,
-        departmentId,
-        queueDate,
-        status: {
-          $in: [
-            "WAITING",
-            "CALLED",
-            "SERVING",
-          ],
-        },
-      });
+    const departmentDoctor = await User.findOne({
+      hospitalId,
+      departmentId,
+      role: "DOCTOR",
+      isActive: true,
+    })
+      .select("name email isOnline shiftStartTime")
+      .lean() as {
+        _id: mongoose.Types.ObjectId;
+        name: string;
+        email: string;
+        isOnline: boolean;
+        shiftStartTime?: string | null;
+      } | null;
 
     // ==================================================
-    // REAL AVERAGE CONSULTATION TIME
+    // COUNT ACTIVE PATIENTS
     // ==================================================
-    // Priority: doctor's own history -> department history -> fallback.
-    // The fallback is used only when there is not enough historical data.
 
-    const doctorAverage =
-      departmentDoctor?._id
-        ? await getDoctorAverageConsultationMinutes(
-            departmentDoctor._id,
-          )
-        : null;
+    const waitingPatients = await Queue.countDocuments({
+      hospitalId,
+      departmentId,
+      queueDate,
+      status: { $in: ["WAITING", "CALLED", "SERVING"] },
+    });
 
-    const departmentAverage =
-      doctorAverage === null
-        ? await getDepartmentAverageConsultationMinutes(
-            hospitalId,
-            departmentId,
-          )
-        : null;
+    // ==================================================
+    // REAL CONSULTATION AVERAGE
+    // ==================================================
+
+    const doctorAverage = departmentDoctor?._id
+      ? await getDoctorAverageConsultationMinutes(departmentDoctor._id)
+      : null;
+
+    const departmentAverage = doctorAverage === null
+      ? await getDepartmentAverageConsultationMinutes(hospitalId, departmentId)
+      : null;
 
     const averageConsultationMinutes =
-      doctorAverage ??
-      departmentAverage ??
-      DEFAULT_CONSULTATION_MINUTES;
+      doctorAverage ?? departmentAverage ?? DEFAULT_CONSULTATION_MINUTES;
 
     // ==================================================
-    // OPD START TIME + ESTIMATED WAIT
+    // OPD START + ESTIMATED TURN
     // ==================================================
-    // Example: token generated at 08:00, OPD starts at 10:00.
-    // The patient sees 10:00 as the earliest possible start, then the
-    // number of patients ahead is multiplied by the doctor's real average.
 
     const now = new Date();
     const shiftStartTime =
-      typeof (departmentDoctor as any)?.shiftStartTime === "string"
-        ? (departmentDoctor as any).shiftStartTime
+      typeof departmentDoctor?.shiftStartTime === "string"
+        ? departmentDoctor.shiftStartTime
         : null;
 
-    const opdStartDate =
-      getTodayOpdStartTime(shiftStartTime);
-
-    const doctorOnline =
-      (departmentDoctor as any)?.isOnline === true;
+    const opdStartDate = getTodayOpdStartTime(shiftStartTime);
+    const doctorOnline = departmentDoctor?.isOnline === true;
 
     const processingStart =
-      opdStartDate && opdStartDate.getTime() > now.getTime()
+      !doctorOnline && opdStartDate && opdStartDate.getTime() > now.getTime()
         ? opdStartDate
         : now;
 
-    const estimatedWaitFromPatients =
-      waitingPatients *
-      averageConsultationMinutes;
+    const estimatedTurnTime = new Date(
+      processingStart.getTime() +
+      waitingPatients * averageConsultationMinutes * 60 * 1000,
+    );
 
-    const estimatedTurnTime =
-      new Date(
-        processingStart.getTime() +
-        estimatedWaitFromPatients *
-        60 *
-        1000,
-      );
+    const estimatedWaitTime = Math.max(
+      0,
+      Math.ceil(
+        (estimatedTurnTime.getTime() - now.getTime()) / (60 * 1000),
+      ),
+    );
 
-    const estimatedWaitTime =
-      Math.max(
-        0,
-        Math.ceil(
-          (estimatedTurnTime.getTime() - now.getTime()) /
-          (60 * 1000),
-        ),
-      );
+    console.log("=================================");
+    console.log("🎫 QUEUE ESTIMATION");
+    console.log("Token:", tokenLabel);
+    console.log("Doctor:", departmentDoctor?.name || "Not assigned");
+    console.log("Doctor Online:", doctorOnline);
+    console.log("OPD Start:", shiftStartTime || "Not configured");
+    console.log("Patients Ahead:", waitingPatients);
+    console.log("Average Consultation:", `${averageConsultationMinutes} min`);
+    console.log("Estimated Wait:", estimatedWaitTime);
+    console.log("Estimated Turn:", estimatedTurnTime);
+    console.log("=================================");
 
     // ==================================================
     // SECURE TRACKING TOKEN
@@ -773,12 +784,9 @@ export const createQueue = async (
 
     if (departmentDoctor) {
       doctorData = {
-        _id:
-          departmentDoctor._id,
-        name:
-          departmentDoctor.name,
-        email:
-          departmentDoctor.email,
+        _id: departmentDoctor._id,
+        name: departmentDoctor.name,
+        email: departmentDoctor.email,
       };
     }
 
@@ -866,33 +874,8 @@ export const createQueue = async (
     );
 
     console.log(
-      "Patients Ahead:",
-      waitingPatients,
-    );
-
-    console.log(
-      "Doctor Online:",
-      doctorOnline,
-    );
-
-    console.log(
-      "OPD Start Time:",
-      shiftStartTime || "Not configured",
-    );
-
-    console.log(
-      "Average Consultation:",
-      `${averageConsultationMinutes} min`,
-    );
-
-    console.log(
       "Estimated Wait:",
       estimatedWaitTime,
-    );
-
-    console.log(
-      "Estimated Turn Time:",
-      estimatedTurnTime,
     );
 
     console.log(
@@ -945,8 +928,6 @@ export const createQueue = async (
 
       estimatedWaitTime,
 
-      // Helpful for notification templates if you want to show
-      // the expected OPD start time later.
       doctorShiftStartTime: shiftStartTime,
 
       averageConsultationMinutes,

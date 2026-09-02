@@ -50,7 +50,11 @@ export interface IQueue extends Document {
 
   estimatedTurnTime?: Date | null;
 
-  serviceDurationMinutes?: number;
+  // ===================================
+  // REAL CONSULTATION DURATION
+  // ===================================
+
+  serviceDurationMinutes?: number | null;
 
   // ===================================
   // SECURE PATIENT TRACKING
@@ -212,6 +216,20 @@ const queueSchema = new Schema<IQueue>(
     },
 
     // =================================
+    // REAL CONSULTATION DURATION
+    //
+    // Saved when doctor completes a patient.
+    // This is used to calculate the doctor's
+    // real average consultation time.
+    // =================================
+
+    serviceDurationMinutes: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
+    // =================================
     // SECURE PATIENT TRACKING
     // =================================
 
@@ -255,7 +273,7 @@ const queueSchema = new Schema<IQueue>(
     },
 
     // =================================
-    // TIMESTAMPS
+    // QUEUE TIMESTAMPS
     // =================================
 
     calledAt: {
@@ -307,6 +325,21 @@ queueSchema.index({
   doctorId: 1,
   queueDate: 1,
   status: 1,
+});
+
+queueSchema.index({
+  hospitalId: 1,
+  departmentId: 1,
+  queueDate: 1,
+  status: 1,
+  serviceDurationMinutes: 1,
+});
+
+queueSchema.index({
+  hospitalId: 1,
+  doctorId: 1,
+  status: 1,
+  completedAt: -1,
 });
 
 queueSchema.index({

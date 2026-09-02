@@ -290,11 +290,9 @@ const PatientTracking = () => {
     // NOTE: doctorOnline / doctorShiftStartTime are new fields — add them to
     // PatientTrackingData in services/patientTracking.api.ts once the
     // backend sends them.
-    const doctorOnline =
-        (queue as any).doctorOnline === true;
+    const doctorOnline = queue.doctorOnline === true;
 
-    const doctorShiftStartTime =
-        formatShiftTime((queue as any).doctorShiftStartTime);
+    const doctorShiftStartTime = formatShiftTime(queue.doctorShiftStartTime ?? undefined);
 
     // =====================================
     // MAIN
@@ -335,8 +333,8 @@ const PatientTracking = () => {
 
                     <div
                         className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold sm:gap-2 sm:px-3 sm:py-1.5 sm:text-xs ${isLive
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-600"
-                                : "border-slate-200 bg-slate-50 text-slate-500"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-600"
+                            : "border-slate-200 bg-slate-50 text-slate-500"
                             }`}
                     >
 
@@ -370,23 +368,23 @@ const PatientTracking = () => {
 
                 <section
                     className={`rounded-2xl border p-3.5 sm:rounded-3xl sm:p-5 ${doctorOnline
-                            ? "border-emerald-200 bg-emerald-50"
-                            : "border-amber-200 bg-amber-50"
+                        ? "border-emerald-200 bg-emerald-50"
+                        : "border-amber-200 bg-amber-50"
                         }`}
                 >
                     <div className="flex items-start gap-3">
                         <span
                             className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${doctorOnline
-                                    ? "animate-pulse bg-emerald-500"
-                                    : "bg-amber-500"
+                                ? "animate-pulse bg-emerald-500"
+                                : "bg-amber-500"
                                 }`}
                         />
 
                         <div>
                             <p
                                 className={`text-sm font-bold sm:text-base ${doctorOnline
-                                        ? "text-emerald-900"
-                                        : "text-amber-900"
+                                    ? "text-emerald-900"
+                                    : "text-amber-900"
                                     }`}
                             >
                                 Dr. {doctorName} is{" "}
@@ -609,14 +607,14 @@ const PatientTracking = () => {
 
                 <section
                     className={`mt-3 rounded-2xl border p-4 text-center shadow-sm sm:mt-5 sm:rounded-3xl sm:p-6 ${isCalled
-                            ? "border-blue-200 bg-blue-50"
-                            : isServing
+                        ? "border-blue-200 bg-blue-50"
+                        : isServing
+                            ? "border-emerald-200 bg-emerald-50"
+                            : isCompleted
                                 ? "border-emerald-200 bg-emerald-50"
-                                : isCompleted
-                                    ? "border-emerald-200 bg-emerald-50"
-                                    : isSkipped
-                                        ? "border-amber-200 bg-amber-50"
-                                        : "border-blue-100 bg-white"
+                                : isSkipped
+                                    ? "border-amber-200 bg-amber-50"
+                                    : "border-blue-100 bg-white"
                         }`}
                 >
 
@@ -760,9 +758,9 @@ const PatientTracking = () => {
 
                             <span
                                 className={`rounded-full px-2.5 py-1 text-[9px] font-bold sm:px-3 sm:text-xs ${queue.priority ===
-                                        "EMERGENCY"
-                                        ? "bg-red-50 text-red-600"
-                                        : "bg-slate-100 text-slate-600"
+                                    "EMERGENCY"
+                                    ? "bg-red-50 text-red-600"
+                                    : "bg-slate-100 text-slate-600"
                                     }`}
                             >
                                 {queue.priority ===
@@ -780,15 +778,15 @@ const PatientTracking = () => {
 
                     <div
                         className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[9px] font-semibold sm:gap-2 sm:px-3 sm:py-1.5 sm:text-xs ${isLive
-                                ? "bg-emerald-50 text-emerald-600"
-                                : "bg-slate-100 text-slate-500"
+                            ? "bg-emerald-50 text-emerald-600"
+                            : "bg-slate-100 text-slate-500"
                             }`}
                     >
 
                         <span
                             className={`h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2 ${isLive
-                                    ? "animate-pulse bg-emerald-500"
-                                    : "bg-slate-400"
+                                ? "animate-pulse bg-emerald-500"
+                                : "bg-slate-400"
                                 }`}
                         />
 

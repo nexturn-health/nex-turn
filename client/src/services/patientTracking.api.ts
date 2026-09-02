@@ -13,59 +13,56 @@ export type PatientQueueStatus =
     | "COMPLETED"
     | "SKIPPED"
     | "CANCELLED";
-
 export interface PatientTrackingData {
-    queueId: string;
-
-    hospitalId: string;
-    doctorId?: QueueDoctor;
-
-
-    tokenLabel: string;
+    _id: string;
 
     tokenNumber: number;
+    tokenLabel: string;
 
     status:
-    | "WAITING"
-    | "CALLED"
-    | "SERVING"
-    | "COMPLETED"
-    | "SKIPPED"
-    | "CANCELLED";
+        | "WAITING"
+        | "CALLED"
+        | "SERVING"
+        | "COMPLETED"
+        | "SKIPPED"
+        | "CANCELLED";
 
-    priority:
-    | "NORMAL"
-    | "EMERGENCY";
+    priority: "NORMAL" | "EMERGENCY";
 
     patient: {
         _id: string;
         name: string;
-        phone: string;
-        patientCode?: string;
-        age?: number;
-        gender?: string;
+        phone?: string;
+        email?: string;
     };
+
     department: {
         _id: string;
         name: string;
-        description?: string;
-        tokenPrefix?: string;
     };
 
-    currentServingToken:
-    | string
-    | null;
+    doctorId?: {
+        _id: string;
+        name: string;
+        email?: string;
+    } | null;
+
+    doctorOnline: boolean;
+
+    doctorShiftStartTime?: string | null;
 
     patientsAhead: number;
 
+    averageConsultationMinutes: number;
+
     estimatedWaitTime: number;
 
-    estimatedTurnTime:
-    | string
-    | null;
+    estimatedTurnTime?: string | null;
 
-    queueDate: string;
+    currentServingToken?: string | null;
 
+    createdAt?: string;
+    updatedAt?: string;
 }
 interface PatientTrackingResponse {
     success: boolean;
