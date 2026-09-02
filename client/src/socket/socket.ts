@@ -105,45 +105,51 @@ const stopDoctorHeartbeat = () => {
 // ============================================================
 // SOCKET CONNECT
 // ============================================================
-
 export const connectSocket = (
-    userId?: string,
-    hospitalId?: string,
+    userId: string,
+    hospitalId: string,
 ) => {
-    if (
-        !userId ||
-        !hospitalId
-    ) {
-        console.error(
-            "Socket: userId or hospitalId missing",
-        );
+    console.log(
+        "================================",
+    );
 
-        return;
-    }
+    console.log(
+        "🟢 CONNECT SOCKET CALLED",
+    );
 
-    currentUserId =
-        String(userId);
+    console.log(
+        "USER:",
+        userId,
+    );
 
-    currentHospitalId =
-        String(hospitalId);
+    console.log(
+        "HOSPITAL:",
+        hospitalId,
+    );
 
-    // ========================================================
-    // ALREADY CONNECTED
-    // ========================================================
+    console.log(
+        "SOCKET CONNECTED:",
+        socket.connected,
+    );
+
+    console.log(
+        "================================",
+    );
+
+    // VERY IMPORTANT
+    currentUserId = userId;
+    currentHospitalId = hospitalId;
 
     if (socket.connected) {
         console.log(
-            "Socket already connected",
+            "⚠️ SOCKET ALREADY CONNECTED",
         );
 
         socket.emit(
             "user:online",
             {
-                userId:
-                    currentUserId,
-
-                hospitalId:
-                    currentHospitalId,
+                userId,
+                hospitalId,
             },
         );
 
@@ -152,155 +158,77 @@ export const connectSocket = (
         return;
     }
 
-    // ========================================================
-    // CONNECT EVENT
-    // ========================================================
+    socket.off("connect");
 
-    const handleConnect = () => {
-        console.log(
-            "========================================",
-        );
-
-        console.log(
-            "FRONTEND SOCKET CONNECTED:",
-            socket.id,
-        );
-
-        console.log(
-            "USER ID:",
-            currentUserId,
-        );
-
-        console.log(
-            "HOSPITAL ID:",
-            currentHospitalId,
-        );
-
-        console.log(
-            "========================================",
-        );
-
-        // ----------------------------------------------------
-        // Tell backend that user is online.
-        // ----------------------------------------------------
-
-        socket.emit(
-            "user:online",
-            {
-                userId:
-                    currentUserId,
-
-                hospitalId:
-                    currentHospitalId,
-            },
-        );
-
-        // ----------------------------------------------------
-        // Join hospital room.
-        // ----------------------------------------------------
-
-        socket.emit(
-            "join:hospital",
-            currentHospitalId,
-        );
-
-        // ----------------------------------------------------
-        // Start heartbeat.
-        // ----------------------------------------------------
-
-        startDoctorHeartbeat();
-
-        console.log(
-            "USER ONLINE EVENT SENT",
-        );
-    };
-
-    // ========================================================
-    // CONNECT ERROR
-    // ========================================================
-
-    const handleConnectError = (
-        error: Error,
-    ) => {
-        console.error(
-            "SOCKET CONNECTION ERROR:",
-            error,
-        );
-    };
-
-    socket.once(
+    socket.on(
         "connect",
-        handleConnect,
+        () => {
+            console.log(
+                "🟢 SOCKET CONNECTED:",
+                socket.id,
+            );
+
+            console.log(
+                "📤 EMITTING user:online",
+            );
+
+            socket.emit(
+                "user:online",
+                {
+                    userId,
+                    hospitalId,
+                },
+            );
+
+            startDoctorHeartbeat();
+        },
+    );
+
+    socket.off(
+        "connect_error",
     );
 
     socket.on(
         "connect_error",
-        handleConnectError,
+        (error) => {
+            console.error(
+                "❌ SOCKET CONNECT ERROR:",
+                error,
+            );
+        },
     );
-
-    // ========================================================
-    // CONNECT
-    // ========================================================
 
     socket.connect();
 };
+
 
 // ============================================================
 // DISCONNECT
 // ============================================================
 
 export const disconnectSocket = () => {
-    console.log(
-        "================================",
-    );
-
-    console.log(
-        "🔴 FRONTEND DOCTOR LOGOUT",
-    );
-
-    console.log(
-        "================================",
-    );
-
-    // ------------------------------------------
-    // Stop heartbeat first
-    // ------------------------------------------
+    console.log("================================");
+    console.log("🔴 DISCONNECT SOCKET CALLED");
+    console.log("================================");
 
     stopDoctorHeartbeat();
-
-    // ------------------------------------------
-    // Keep these values BEFORE clearing them
-    // ------------------------------------------
 
     const userId = currentUserId;
     const hospitalId = currentHospitalId;
 
-    console.log(
-        "LOGOUT SOCKET DATA:",
-        {
-            userId,
-            hospitalId,
-            connected: socket.connected,
-            socketId: socket.id,
-        },
-    );
-
-    // ------------------------------------------
-    // Tell backend doctor is OFFLINE
-    // ------------------------------------------
+    console.log("SOCKET STATE BEFORE LOGOUT:", {
+        connected: socket.connected,
+        socketId: socket.id,
+        userId,
+        hospitalId,
+    });
 
     if (
         socket.connected &&
         userId &&
         hospitalId
     ) {
-        console.log(
-            "📤 SENDING user:offline",
-            {
-                userId,
-                hospitalId,
-            },
-        );
+        console.log("📤 EMITTING user:offline");
 
         socket.emit(
             "user:offline",
@@ -309,41 +237,32 @@ export const disconnectSocket = () => {
                 hospitalId,
             },
         );
-
-        // --------------------------------------
-        // Give Socket.IO time to send event
-        // --------------------------------------
-
-        setTimeout(() => {
-            console.log(
-                "🔌 DISCONNECTING SOCKET:",
-                socket.id,
-            );
-
-            if (socket.connected) {
-                socket.disconnect();
-            }
-        }, 300);
     } else {
+        console.warn(
+            "⚠️ Cannot emit user:offline",
+            {
+                connected:
+                    socket.connected,
+                userId,
+                hospitalId,
+            },
+        );
+    }
+
+    // Disconnect after giving Socket.IO
+    // time to send the event.
+    setTimeout(() => {
         console.log(
-            "⚠️ Socket already disconnected or user data missing",
+            "🔌 DISCONNECTING SOCKET",
         );
 
         if (socket.connected) {
             socket.disconnect();
         }
-    }
 
-    // ------------------------------------------
-    // Clear current doctor AFTER capturing data
-    // ------------------------------------------
-
-    currentUserId = undefined;
-    currentHospitalId = undefined;
-
-    console.log(
-        "✅ FRONTEND SOCKET CLEANUP COMPLETE",
-    );
+        currentUserId = undefined;
+        currentHospitalId = undefined;
+    }, 500);
 };
 
 // ============================================================

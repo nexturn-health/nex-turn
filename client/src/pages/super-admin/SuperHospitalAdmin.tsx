@@ -43,6 +43,7 @@ import socket, {
     connectSocket,
     disconnectSocket,
 } from "../../socket/socket";
+import { useAuthStore } from "../../store/authStore";
 
 /* =========================================================
    TYPES
@@ -63,10 +64,6 @@ type ModalType =
    SAFE STRING HELPERS
 ========================================================= */
 
-/**
- * Converts any possible backend value into
- * something safe to render in React.
- */
 const safeString = (
     value: unknown,
     fallback = "",
@@ -92,19 +89,6 @@ const safeString = (
 const getHospitalName = (
     admin: HospitalAdmin,
 ): string => {
-    /*
-     * hospitalName can be:
-     *
-     * "Apollo Hospital"
-     *
-     * OR
-     *
-     * {
-     *   _id: "...",
-     *   name: "Apollo Hospital"
-     * }
-     */
-
     if (
         typeof admin.hospitalName === "string" &&
         admin.hospitalName.trim()
@@ -178,6 +162,7 @@ const getHospitalId = (
 ========================================================= */
 
 const SuperHospitalAdmin = () => {
+
     /* =======================================================
        ADMIN STATE
     ======================================================= */
@@ -291,159 +276,39 @@ const SuperHospitalAdmin = () => {
        INITIAL LOAD + SOCKET
     ======================================================= */
 
-    useEffect(() => {
-        loadAdmins();
-        loadHospitals();
+const { user } = useAuthStore();
 
-        connectSocket();
+useEffect(() => {
+    loadAdmins();
+    loadHospitals();
 
-        const handleAdminCreated = (
-            admin: HospitalAdmin,
-        ): void => {
-            setAdmins(
-                (current) => {
-                    const exists =
-                        current.some(
-                            (item) =>
-                                item._id ===
-                                admin._id,
-                        );
+    if (user?.id && user?.hospitalId) {
+        connectSocket(user.id, user.hospitalId);
+    }
 
-                    if (exists) {
-                        return current;
-                    }
+    // socket listeners...
 
-                    return [
-                        admin,
-                        ...current,
-                    ];
-                },
-            );
-        };
-
-        const handleAdminUpdated = (
-            admin: HospitalAdmin,
-        ): void => {
-            setAdmins(
-                (current) =>
-                    current.map(
-                        (item) =>
-                            item._id ===
-                            admin._id
-                                ? admin
-                                : item,
-                    ),
-            );
-
-            setSelectedAdmin(
-                (current) =>
-                    current?._id ===
-                    admin._id
-                        ? admin
-                        : current,
-            );
-        };
-
-        const handleAdminStatusChanged = (
-            admin: HospitalAdmin,
-        ): void => {
-            setAdmins(
-                (current) =>
-                    current.map(
-                        (item) =>
-                            item._id ===
-                            admin._id
-                                ? admin
-                                : item,
-                    ),
-            );
-
-            setSelectedAdmin(
-                (current) =>
-                    current?._id ===
-                    admin._id
-                        ? admin
-                        : current,
-            );
-        };
-
-        const handleAdminDeleted = (
-            adminId: string,
-        ): void => {
-            setAdmins(
-                (current) =>
-                    current.filter(
-                        (admin) =>
-                            admin._id !==
-                            adminId,
-                    ),
-            );
-
-            setSelectedAdmin(
-                (current) =>
-                    current?._id ===
-                    adminId
-                        ? null
-                        : current,
-            );
-        };
-
-        socket.on(
-            "hospital-admin:created",
-            handleAdminCreated,
-        );
-
-        socket.on(
-            "hospital-admin:updated",
-            handleAdminUpdated,
-        );
-
-        socket.on(
-            "hospital-admin:statusChanged",
-            handleAdminStatusChanged,
-        );
-
-        socket.on(
-            "hospital-admin:deleted",
-            handleAdminDeleted,
-        );
-
-        return () => {
-            socket.off(
-                "hospital-admin:created",
-                handleAdminCreated,
-            );
-
-            socket.off(
-                "hospital-admin:updated",
-                handleAdminUpdated,
-            );
-
-            socket.off(
-                "hospital-admin:statusChanged",
-                handleAdminStatusChanged,
-            );
-
-            socket.off(
-                "hospital-admin:deleted",
-                handleAdminDeleted,
-            );
-
-            disconnectSocket();
-        };
-    }, [
-        loadAdmins,
-        loadHospitals,
-    ]);
+    return () => {
+        // socket listeners cleanup...
+        disconnectSocket();
+    };
+}, [
+    loadAdmins,
+    loadHospitals,
+    user?.id,
+    user?.hospitalId,
+]);
 
     /* =======================================================
        SOCKET DEBUG
     ======================================================= */
 
     useEffect(() => {
+
         const handleConnect = () => {
+
             console.log(
-                "Super Admin Socket connected:",
+                "🟢 Super Admin Socket connected:",
                 socket.id,
             );
         };
@@ -451,8 +316,9 @@ const SuperHospitalAdmin = () => {
         const handleDisconnect = (
             reason: string,
         ) => {
+
             console.log(
-                "Super Admin Socket disconnected:",
+                "🔴 Super Admin Socket disconnected:",
                 reason,
             );
         };
@@ -460,8 +326,9 @@ const SuperHospitalAdmin = () => {
         const handleConnectError = (
             error: Error,
         ) => {
+
             console.error(
-                "Socket connection error:",
+                "❌ Socket connection error:",
                 error.message,
             );
         };
@@ -482,6 +349,7 @@ const SuperHospitalAdmin = () => {
         );
 
         return () => {
+
             socket.off(
                 "connect",
                 handleConnect,
@@ -497,6 +365,7 @@ const SuperHospitalAdmin = () => {
                 handleConnectError,
             );
         };
+
     }, []);
 
     /* =======================================================
@@ -524,6 +393,7 @@ const SuperHospitalAdmin = () => {
 
     const filteredAdmins =
         useMemo(() => {
+
             const query =
                 search
                     .trim()
@@ -531,6 +401,7 @@ const SuperHospitalAdmin = () => {
 
             return admins.filter(
                 (admin) => {
+
                     const hospitalName =
                         getHospitalName(
                             admin,
@@ -566,6 +437,7 @@ const SuperHospitalAdmin = () => {
                     );
                 },
             );
+
         }, [
             admins,
             search,
@@ -580,6 +452,7 @@ const SuperHospitalAdmin = () => {
         async (
             admin: HospitalAdmin,
         ): Promise<void> => {
+
             const newStatus: AdminStatus =
                 admin.status === "ACTIVE"
                     ? "INACTIVE"
@@ -600,6 +473,7 @@ const SuperHospitalAdmin = () => {
             }
 
             try {
+
                 setSaving(true);
 
                 const updatedAdmin =
@@ -613,7 +487,7 @@ const SuperHospitalAdmin = () => {
                         current.map(
                             (item) =>
                                 item._id ===
-                                updatedAdmin._id
+                                    updatedAdmin._id
                                     ? updatedAdmin
                                     : item,
                         ),
@@ -622,11 +496,13 @@ const SuperHospitalAdmin = () => {
                 setSelectedAdmin(
                     (current) =>
                         current?._id ===
-                        updatedAdmin._id
+                            updatedAdmin._id
                             ? updatedAdmin
                             : current,
                 );
+
             } catch (error) {
+
                 console.error(
                     "Status update failed:",
                     error,
@@ -635,8 +511,11 @@ const SuperHospitalAdmin = () => {
                 window.alert(
                     "Unable to update admin status.",
                 );
+
             } finally {
+
                 setSaving(false);
+
             }
         };
 
@@ -647,6 +526,7 @@ const SuperHospitalAdmin = () => {
     const handleView = (
         admin: HospitalAdmin,
     ) => {
+
         setSelectedAdmin(admin);
         setModal("DETAILS");
     };
@@ -658,6 +538,7 @@ const SuperHospitalAdmin = () => {
     const handleEdit = (
         admin: HospitalAdmin,
     ) => {
+
         setSelectedAdmin(admin);
         setModal("EDIT");
     };
@@ -669,7 +550,9 @@ const SuperHospitalAdmin = () => {
     const handleCreate = async (
         formPayload: CreateAdminFormPayload,
     ): Promise<void> => {
+
         try {
+
             setSaving(true);
 
             if (
@@ -681,23 +564,23 @@ const SuperHospitalAdmin = () => {
             }
 
             const payload: CreateHospitalAdminPayload =
-                {
-                    name:
-                        formPayload.name.trim(),
+            {
+                name:
+                    formPayload.name.trim(),
 
-                    email:
-                        formPayload.email.trim(),
+                email:
+                    formPayload.email.trim(),
 
-                    phone:
-                        formPayload.phone.trim() ||
-                        undefined,
+                phone:
+                    formPayload.phone.trim() ||
+                    undefined,
 
-                    password:
-                        formPayload.password,
+                password:
+                    formPayload.password,
 
-                    hospitalId:
-                        formPayload.hospitalId,
-                };
+                hospitalId:
+                    formPayload.hospitalId,
+            };
 
             const newAdmin =
                 await createHospitalAdmin(
@@ -706,6 +589,7 @@ const SuperHospitalAdmin = () => {
 
             setAdmins(
                 (current) => {
+
                     const exists =
                         current.some(
                             (admin) =>
@@ -725,15 +609,20 @@ const SuperHospitalAdmin = () => {
             );
 
             setModal("NONE");
+
         } catch (error) {
+
             console.error(
                 "Create admin failed:",
                 error,
             );
 
             throw error;
+
         } finally {
+
             setSaving(false);
+
         }
     };
 
@@ -744,28 +633,30 @@ const SuperHospitalAdmin = () => {
     const handleUpdate = async (
         formPayload: CreateAdminFormPayload,
     ): Promise<void> => {
+
         if (!selectedAdmin) {
             return;
         }
 
         try {
+
             setSaving(true);
 
             const payload: UpdateHospitalAdminPayload =
-                {
-                    name:
-                        formPayload.name.trim(),
+            {
+                name:
+                    formPayload.name.trim(),
 
-                    email:
-                        formPayload.email.trim(),
+                email:
+                    formPayload.email.trim(),
 
-                    phone:
-                        formPayload.phone.trim() ||
-                        undefined,
+                phone:
+                    formPayload.phone.trim() ||
+                    undefined,
 
-                    hospitalId:
-                        formPayload.hospitalId,
-                };
+                hospitalId:
+                    formPayload.hospitalId,
+            };
 
             const updatedAdmin =
                 await updateHospitalAdmin(
@@ -778,7 +669,7 @@ const SuperHospitalAdmin = () => {
                     current.map(
                         (admin) =>
                             admin._id ===
-                            updatedAdmin._id
+                                updatedAdmin._id
                                 ? updatedAdmin
                                 : admin,
                     ),
@@ -789,15 +680,20 @@ const SuperHospitalAdmin = () => {
             );
 
             setModal("NONE");
+
         } catch (error) {
+
             console.error(
                 "Update admin failed:",
                 error,
             );
 
             throw error;
+
         } finally {
+
             setSaving(false);
+
         }
     };
 
@@ -810,15 +706,21 @@ const SuperHospitalAdmin = () => {
             {/* HEADER */}
 
             <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
                 <div>
+
                     <div className="flex items-center gap-2">
+
                         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                            <ShieldCheck size={21} />
+                            <ShieldCheck
+                                size={21}
+                            />
                         </div>
 
                         <h1 className="text-2xl font-bold text-slate-900">
                             Hospital Admin Management
                         </h1>
+
                     </div>
 
                     <p className="mt-2 text-sm text-slate-500">
@@ -826,6 +728,7 @@ const SuperHospitalAdmin = () => {
                         and their access across
                         NexTurn hospitals.
                     </p>
+
                 </div>
 
                 <button
@@ -838,6 +741,7 @@ const SuperHospitalAdmin = () => {
                     <Plus size={18} />
                     Add Admin
                 </button>
+
             </div>
 
             {/* ERROR */}
@@ -851,29 +755,42 @@ const SuperHospitalAdmin = () => {
             {/* CONTENT */}
 
             {loading ? (
+
                 <div className="flex min-h-[300px] items-center justify-center">
+
                     <Loader2
                         size={30}
                         className="animate-spin text-blue-600"
                     />
+
                 </div>
+
             ) : (
+
                 <>
+
                     {/* STATS */}
 
                     <div className="mb-6 grid gap-4 sm:grid-cols-3">
+
                         <AdminStat
                             title="Total Admins"
-                            value={totalAdmins}
+                            value={
+                                totalAdmins
+                            }
                             icon={
-                                <Users size={21} />
+                                <Users
+                                    size={21}
+                                />
                             }
                             className="bg-blue-50 text-blue-600"
                         />
 
                         <AdminStat
                             title="Active Admins"
-                            value={activeAdmins}
+                            value={
+                                activeAdmins
+                            }
                             icon={
                                 <CheckCircle2
                                     size={21}
@@ -884,19 +801,27 @@ const SuperHospitalAdmin = () => {
 
                         <AdminStat
                             title="Inactive Admins"
-                            value={inactiveAdmins}
+                            value={
+                                inactiveAdmins
+                            }
                             icon={
-                                <XCircle size={21} />
+                                <XCircle
+                                    size={21}
+                                />
                             }
                             className="bg-red-50 text-red-600"
                         />
+
                     </div>
 
                     {/* SEARCH */}
 
                     <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4">
+
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
                             <div className="relative w-full lg:max-w-md">
+
                                 <Search
                                     size={19}
                                     className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
@@ -904,21 +829,26 @@ const SuperHospitalAdmin = () => {
 
                                 <input
                                     type="text"
-                                    value={search}
+                                    value={
+                                        search
+                                    }
                                     onChange={(
                                         event,
                                     ) =>
                                         setSearch(
-                                            event.target
+                                            event
+                                                .target
                                                 .value,
                                         )
                                     }
                                     placeholder="Search admin..."
                                     className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
                                 />
+
                             </div>
 
                             <div className="flex flex-wrap gap-2">
+
                                 <FilterButton
                                     label="All"
                                     count={
@@ -966,21 +896,32 @@ const SuperHospitalAdmin = () => {
                                         )
                                     }
                                 />
+
                             </div>
+
                         </div>
+
                     </div>
 
                     {/* TABLE */}
 
                     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
                         {filteredAdmins.length ===
                         0 ? (
+
                             <EmptyState />
+
                         ) : (
+
                             <div className="overflow-x-auto">
+
                                 <table className="w-full min-w-[1050px]">
+
                                     <thead>
+
                                         <tr className="border-b border-slate-200 bg-slate-50">
+
                                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                                                 Admin
                                             </th>
@@ -1004,14 +945,18 @@ const SuperHospitalAdmin = () => {
                                             <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                                                 Actions
                                             </th>
+
                                         </tr>
+
                                     </thead>
 
                                     <tbody className="divide-y divide-slate-100">
+
                                         {filteredAdmins.map(
                                             (
                                                 admin,
                                             ) => (
+
                                                 <AdminRow
                                                     key={
                                                         admin._id
@@ -1029,20 +974,29 @@ const SuperHospitalAdmin = () => {
                                                         handleStatusChange
                                                     }
                                                 />
+
                                             ),
                                         )}
+
                                     </tbody>
+
                                 </table>
+
                             </div>
+
                         )}
+
                     </div>
+
                 </>
+
             )}
 
             {/* DETAILS */}
 
             {modal === "DETAILS" &&
                 selectedAdmin && (
+
                     <AdminDetailsModal
                         admin={
                             selectedAdmin
@@ -1057,18 +1011,24 @@ const SuperHospitalAdmin = () => {
                             setModal("EDIT")
                         }
                     />
+
                 )}
 
             {/* CREATE */}
 
             {modal === "CREATE" && (
+
                 <AdminFormModal
                     title="Add Hospital Admin"
-                    hospitals={hospitals}
+                    hospitals={
+                        hospitals
+                    }
                     hospitalsLoading={
                         hospitalsLoading
                     }
-                    saving={saving}
+                    saving={
+                        saving
+                    }
                     onClose={() =>
                         setModal("NONE")
                     }
@@ -1076,22 +1036,28 @@ const SuperHospitalAdmin = () => {
                         handleCreate
                     }
                 />
+
             )}
 
             {/* EDIT */}
 
             {modal === "EDIT" &&
                 selectedAdmin && (
+
                     <AdminFormModal
                         title="Edit Hospital Admin"
                         admin={
                             selectedAdmin
                         }
-                        hospitals={hospitals}
+                        hospitals={
+                            hospitals
+                        }
                         hospitalsLoading={
                             hospitalsLoading
                         }
-                        saving={saving}
+                        saving={
+                            saving
+                        }
                         onClose={() =>
                             setModal("NONE")
                         }
@@ -1099,7 +1065,9 @@ const SuperHospitalAdmin = () => {
                             handleUpdate
                         }
                     />
+
                 )}
+
         </>
     );
 };
@@ -1121,7 +1089,9 @@ const AdminStat = ({
     icon: React.ReactNode;
     className: string;
 }) => (
+
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+
         <div
             className={`flex h-10 w-10 items-center justify-center rounded-xl ${className}`}
         >
@@ -1135,6 +1105,7 @@ const AdminStat = ({
         <p className="mt-1 text-3xl font-bold text-slate-900">
             {value.toLocaleString()}
         </p>
+
     </div>
 );
 
@@ -1153,6 +1124,7 @@ const FilterButton = ({
     active: boolean;
     onClick: () => void;
 }) => (
+
     <button
         type="button"
         onClick={onClick}
@@ -1167,6 +1139,7 @@ const FilterButton = ({
         <span className="ml-1 opacity-75">
             {count}
         </span>
+
     </button>
 );
 
@@ -1191,6 +1164,7 @@ const AdminRow = ({
         admin: HospitalAdmin,
     ) => void;
 }) => {
+
     const isActive =
         admin.status === "ACTIVE";
 
@@ -1201,21 +1175,28 @@ const AdminRow = ({
         getHospitalId(admin);
 
     return (
+
         <tr className="transition hover:bg-slate-50">
+
             {/* ADMIN */}
 
             <td className="px-6 py-5">
+
                 <div className="flex items-center gap-3">
+
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 font-bold text-blue-600">
+
                         {safeString(
                             admin.name,
                             "A",
                         )
                             .charAt(0)
                             .toUpperCase()}
+
                     </div>
 
                     <div>
+
                         <p className="font-semibold text-slate-900">
                             {safeString(
                                 admin.name,
@@ -1226,14 +1207,19 @@ const AdminRow = ({
                         <p className="mt-1 text-xs text-slate-500">
                             Hospital Admin
                         </p>
+
                     </div>
+
                 </div>
+
             </td>
 
             {/* EMAIL */}
 
             <td className="px-6 py-5">
+
                 <div className="flex items-center gap-2">
+
                     <Mail
                         size={16}
                         className="shrink-0 text-slate-400"
@@ -1245,20 +1231,27 @@ const AdminRow = ({
                             "Not available",
                         )}
                     </span>
+
                 </div>
+
             </td>
 
             {/* HOSPITAL */}
 
             <td className="px-6 py-5">
+
                 <div className="flex items-center gap-2">
+
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+
                         <HospitalIcon
                             size={17}
                         />
+
                     </div>
 
                     <div className="min-w-0">
+
                         <p className="truncate text-sm font-semibold text-slate-800">
                             {hospitalName}
                         </p>
@@ -1268,14 +1261,19 @@ const AdminRow = ({
                                 ID: {hospitalId}
                             </p>
                         )}
+
                     </div>
+
                 </div>
+
             </td>
 
             {/* PHONE */}
 
             <td className="px-6 py-5">
+
                 <div className="flex items-center gap-2">
+
                     <Phone
                         size={16}
                         className="shrink-0 text-slate-400"
@@ -1287,12 +1285,15 @@ const AdminRow = ({
                             "Not available",
                         )}
                     </span>
+
                 </div>
+
             </td>
 
             {/* STATUS */}
 
             <td className="px-6 py-5">
+
                 <span
                     className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
                         isActive
@@ -1300,6 +1301,7 @@ const AdminRow = ({
                             : "bg-red-50 text-red-700"
                     }`}
                 >
+
                     <span
                         className={`h-2 w-2 rounded-full ${
                             isActive
@@ -1311,13 +1313,17 @@ const AdminRow = ({
                     {isActive
                         ? "Active"
                         : "Inactive"}
+
                 </span>
+
             </td>
 
             {/* ACTIONS */}
 
             <td className="px-6 py-5">
+
                 <div className="flex items-center justify-end gap-1">
+
                     <ActionButton
                         title="View admin"
                         onClick={() =>
@@ -1354,6 +1360,7 @@ const AdminRow = ({
                                 : "text-emerald-500 hover:bg-emerald-50"
                         }`}
                     >
+
                         {isActive ? (
                             <XCircle
                                 size={17}
@@ -1363,9 +1370,13 @@ const AdminRow = ({
                                 size={17}
                             />
                         )}
+
                     </button>
+
                 </div>
+
             </td>
+
         </tr>
     );
 };
@@ -1383,6 +1394,7 @@ const ActionButton = ({
     onClick: () => void;
     children: React.ReactNode;
 }) => (
+
     <button
         type="button"
         title={title}
@@ -1398,9 +1410,13 @@ const ActionButton = ({
 ========================================================= */
 
 const EmptyState = () => (
+
     <div className="px-6 py-16 text-center">
+
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+
             <UserCog size={27} />
+
         </div>
 
         <h3 className="mt-4 text-lg font-semibold text-slate-900">
@@ -1411,6 +1427,7 @@ const EmptyState = () => (
             Try changing your search or
             filter.
         </p>
+
     </div>
 );
 
@@ -1427,22 +1444,27 @@ const ModalWrapper = ({
     onClose: () => void;
     width?: string;
 }) => (
+
     <div
         className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
         onMouseDown={(event) => {
+
             if (
                 event.target ===
                 event.currentTarget
             ) {
                 onClose();
             }
+
         }}
     >
+
         <div
             className={`max-h-[90vh] w-full ${width} overflow-y-auto rounded-2xl bg-white shadow-2xl`}
         >
             {children}
         </div>
+
     </div>
 );
 
@@ -1459,6 +1481,7 @@ const AdminDetailsModal = ({
     onClose: () => void;
     onEdit: () => void;
 }) => {
+
     const hospitalName =
         getHospitalName(admin);
 
@@ -1466,22 +1489,30 @@ const AdminDetailsModal = ({
         getHospitalId(admin);
 
     return (
+
         <ModalWrapper
             onClose={onClose}
         >
+
             <div className="border-b border-slate-200 p-6">
+
                 <div className="flex items-start justify-between">
+
                     <div className="flex items-center gap-4">
+
                         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-xl font-bold text-blue-600">
+
                             {safeString(
                                 admin.name,
                                 "A",
                             )
                                 .charAt(0)
                                 .toUpperCase()}
+
                         </div>
 
                         <div>
+
                             <h2 className="text-xl font-bold text-slate-900">
                                 {safeString(
                                     admin.name,
@@ -1492,7 +1523,9 @@ const AdminDetailsModal = ({
                             <p className="mt-1 text-sm text-slate-500">
                                 Hospital Administrator
                             </p>
+
                         </div>
+
                     </div>
 
                     <button
@@ -1502,12 +1535,17 @@ const AdminDetailsModal = ({
                     >
                         <X size={21} />
                     </button>
+
                 </div>
+
             </div>
 
             <div className="p-6">
+
                 <div className="mb-6 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-4">
+
                     <div>
+
                         <p className="text-xs text-slate-500">
                             Account Status
                         </p>
@@ -1518,6 +1556,7 @@ const AdminDetailsModal = ({
                                 ? "Active"
                                 : "Inactive"}
                         </p>
+
                     </div>
 
                     <span
@@ -1528,6 +1567,7 @@ const AdminDetailsModal = ({
                                 : "bg-red-50 text-red-700"
                         }`}
                     >
+
                         <span
                             className={`h-2 w-2 rounded-full ${
                                 admin.status ===
@@ -1541,10 +1581,13 @@ const AdminDetailsModal = ({
                         "ACTIVE"
                             ? "Active"
                             : "Inactive"}
+
                     </span>
+
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
+
                     <InfoItem
                         label="Full Name"
                         value={safeString(
@@ -1622,9 +1665,11 @@ const AdminDetailsModal = ({
                                 : "Never"
                         }
                     />
+
                 </div>
 
                 <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+
                     <button
                         type="button"
                         onClick={onClose}
@@ -1641,8 +1686,11 @@ const AdminDetailsModal = ({
                         <Edit size={17} />
                         Edit Admin
                     </button>
+
                 </div>
+
             </div>
+
         </ModalWrapper>
     );
 };
@@ -1670,6 +1718,7 @@ const AdminFormModal = ({
         payload: CreateAdminFormPayload,
     ) => Promise<void>;
 }) => {
+
     const existingHospitalId =
         admin
             ? getHospitalId(admin)
@@ -1710,6 +1759,7 @@ const AdminFormModal = ({
     ======================================================= */
 
     useEffect(() => {
+
         if (
             !admin ||
             !form.hospitalId ||
@@ -1736,6 +1786,7 @@ const AdminFormModal = ({
                     selectedHospital.name,
             }),
         );
+
     }, [
         admin,
         hospitals,
@@ -1750,6 +1801,7 @@ const AdminFormModal = ({
         field: keyof CreateAdminFormPayload,
         value: string,
     ) => {
+
         setForm(
             (current) => ({
                 ...current,
@@ -1765,6 +1817,7 @@ const AdminFormModal = ({
     const handleHospitalChange = (
         hospitalId: string,
     ) => {
+
         const selectedHospital =
             hospitals.find(
                 (hospital) =>
@@ -1790,26 +1843,33 @@ const AdminFormModal = ({
     const handleSubmit = async (
         event: React.FormEvent<HTMLFormElement>,
     ) => {
+
         event.preventDefault();
 
         if (!form.name.trim()) {
+
             setError(
                 "Admin name is required.",
             );
+
             return;
         }
 
         if (!form.email.trim()) {
+
             setError(
                 "Email is required.",
             );
+
             return;
         }
 
         if (!form.hospitalId.trim()) {
+
             setError(
                 "Hospital is required.",
             );
+
             return;
         }
 
@@ -1817,17 +1877,22 @@ const AdminFormModal = ({
             !admin &&
             !form.password.trim()
         ) {
+
             setError(
                 "Password is required.",
             );
+
             return;
         }
 
         try {
+
             setError("");
 
             await onSubmit(form);
+
         } catch (error) {
+
             console.error(error);
 
             setError(
@@ -1839,12 +1904,17 @@ const AdminFormModal = ({
     };
 
     return (
+
         <ModalWrapper
             onClose={onClose}
         >
+
             <div className="border-b border-slate-200 p-6">
+
                 <div className="flex items-center justify-between">
+
                     <div>
+
                         <h2 className="text-xl font-bold text-slate-900">
                             {title}
                         </h2>
@@ -1854,6 +1924,7 @@ const AdminFormModal = ({
                                 ? "Update hospital administrator information."
                                 : "Create a new hospital administrator."}
                         </p>
+
                     </div>
 
                     <button
@@ -1863,7 +1934,9 @@ const AdminFormModal = ({
                     >
                         <X size={21} />
                     </button>
+
                 </div>
+
             </div>
 
             <form
@@ -1872,6 +1945,7 @@ const AdminFormModal = ({
                 }
                 className="space-y-5 p-6"
             >
+
                 {error && (
                     <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
                         {error}
@@ -1879,10 +1953,13 @@ const AdminFormModal = ({
                 )}
 
                 <div className="grid gap-5 sm:grid-cols-2">
+
                     <FormInput
                         label="Admin Name"
                         required
-                        value={form.name}
+                        value={
+                            form.name
+                        }
                         onChange={(value) =>
                             handleChange(
                                 "name",
@@ -1895,7 +1972,9 @@ const AdminFormModal = ({
                         label="Email"
                         type="email"
                         required
-                        value={form.email}
+                        value={
+                            form.email
+                        }
                         onChange={(value) =>
                             handleChange(
                                 "email",
@@ -1906,7 +1985,9 @@ const AdminFormModal = ({
 
                     <FormInput
                         label="Phone"
-                        value={form.phone}
+                        value={
+                            form.phone
+                        }
                         onChange={(value) =>
                             handleChange(
                                 "phone",
@@ -1918,11 +1999,15 @@ const AdminFormModal = ({
                     {/* DYNAMIC HOSPITAL */}
 
                     <div>
+
                         <label className="mb-2 block text-sm font-medium text-slate-700">
+
                             Hospital
+
                             <span className="ml-1 text-red-500">
                                 *
                             </span>
+
                         </label>
 
                         <select
@@ -1944,6 +2029,7 @@ const AdminFormModal = ({
                             }
                             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
+
                             <option value="">
                                 {hospitalsLoading
                                     ? "Loading hospitals..."
@@ -1963,6 +2049,7 @@ const AdminFormModal = ({
                                     (
                                         hospital,
                                     ) => (
+
                                         <option
                                             key={
                                                 hospital._id
@@ -1975,23 +2062,29 @@ const AdminFormModal = ({
                                                 hospital.name
                                             }
                                         </option>
+
                                     ),
                                 )}
+
                         </select>
 
                         {!hospitalsLoading &&
                             hospitals.length ===
                                 0 && (
+
                                 <p className="mt-2 text-xs text-red-500">
                                     No hospitals
                                     available.
                                 </p>
+
                             )}
+
                     </div>
 
                     {/* PASSWORD */}
 
                     {!admin && (
+
                         <FormInput
                             label="Temporary Password"
                             type="password"
@@ -2008,18 +2101,24 @@ const AdminFormModal = ({
                                 )
                             }
                         />
+
                     )}
+
                 </div>
 
                 {!admin && (
+
                     <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+
                         <div className="flex gap-3">
+
                             <ShieldCheck
                                 size={19}
                                 className="mt-0.5 shrink-0 text-blue-600"
                             />
 
                             <div>
+
                                 <p className="text-sm font-semibold text-blue-900">
                                     Admin Access
                                 </p>
@@ -2037,12 +2136,17 @@ const AdminFormModal = ({
                                     selected
                                     hospital.
                                 </p>
+
                             </div>
+
                         </div>
+
                     </div>
+
                 )}
 
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+
                     <button
                         type="button"
                         onClick={onClose}
@@ -2061,6 +2165,7 @@ const AdminFormModal = ({
                         }
                         className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
+
                         {saving && (
                             <Loader2
                                 size={17}
@@ -2071,9 +2176,13 @@ const AdminFormModal = ({
                         {admin
                             ? "Update Admin"
                             : "Create Admin"}
+
                     </button>
+
                 </div>
+
             </form>
+
         </ModalWrapper>
     );
 };
@@ -2097,8 +2206,11 @@ const FormInput = ({
     type?: string;
     required?: boolean;
 }) => (
+
     <div>
+
         <label className="mb-2 block text-sm font-medium text-slate-700">
+
             {label}
 
             {required && (
@@ -2106,6 +2218,7 @@ const FormInput = ({
                     *
                 </span>
             )}
+
         </label>
 
         <input
@@ -2119,6 +2232,7 @@ const FormInput = ({
             }
             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
         />
+
     </div>
 );
 
@@ -2135,12 +2249,15 @@ const InfoItem = ({
     value: string;
     icon?: React.ReactNode;
 }) => (
+
     <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+
         <p className="text-xs font-medium text-slate-500">
             {label}
         </p>
 
         <div className="mt-1 flex items-center gap-2">
+
             {icon && (
                 <span className="shrink-0 text-slate-400">
                     {icon}
@@ -2148,9 +2265,12 @@ const InfoItem = ({
             )}
 
             <p className="break-all text-sm font-semibold text-slate-900">
-                {value || "Not available"}
+                {value ||
+                    "Not available"}
             </p>
+
         </div>
+
     </div>
 );
 
@@ -2161,6 +2281,7 @@ const InfoItem = ({
 const formatDate = (
     date?: string,
 ): string => {
+
     if (!date) {
         return "Not available";
     }
@@ -2185,3 +2306,4 @@ const formatDate = (
         },
     );
 };
+

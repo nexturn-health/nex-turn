@@ -107,10 +107,15 @@ const Login = () => {
                 user.role === "DOCTOR"
             ) {
 
-                connectSocket(
-                    user.id,
-                    user.hospitalId,
-                );
+                if (
+                    user?.id &&
+                    user?.hospitalId
+                ) {
+                    connectSocket(
+                        user.id,
+                        user.hospitalId,
+                    );
+                }
             }
 
             // =================================================
