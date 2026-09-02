@@ -18,6 +18,14 @@ import { authorize } from "../middleware/role.middleware";
 
 const router = Router();
 
+
+
+router.get(
+    "/track/:trackingToken",
+    trackQueue,
+);
+
+
 // =====================================
 // AUTHENTICATION
 // =====================================
@@ -38,10 +46,6 @@ router.post(
   createQueue,
 );
 
-router.get(
-    "/track/:trackingToken",
-    trackQueue,
-);
 // =====================================
 // GET TODAY'S QUEUE
 // GET /api/queues
