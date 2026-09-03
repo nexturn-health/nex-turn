@@ -446,6 +446,10 @@ export const getTodayPatients = async (
   try {
     const hospitalId = req.user?.hospitalId;
 
+    // ============================================================
+    // VALIDATE HOSPITAL
+    // ============================================================
+
     if (!hospitalId) {
       return res.status(401).json({
         success: false,
@@ -460,7 +464,10 @@ export const getTodayPatients = async (
       });
     }
 
-    // India date boundaries
+    // ============================================================
+    // GET TODAY'S DATE IN INDIA
+    // ============================================================
+
     const now = new Date();
 
     const indiaDate = new Intl.DateTimeFormat("en-CA", {
@@ -470,52 +477,76 @@ export const getTodayPatients = async (
       day: "2-digit",
     }).format(now);
 
-    console.log("INDIA DATE:", indiaDate);
+    console.log("=================================");
+    console.log("GET TODAY PATIENTS");
+    console.log("Hospital ID:", hospitalId);
+    console.log("India Date:", indiaDate);
+    console.log("=================================");
 
-    // Get all patients for this hospital
-    const patients = await Patient.find({
+    // ============================================================
+    // FIND TODAY'S QUEUES
+    //
+    // IMPORTANT:
+    // Today's patient list is based on Queue records,
+    // NOT Patient.createdAt.
+    // ============================================================
+
+    const queues = await Queue.find({
       hospitalId: new mongoose.Types.ObjectId(hospitalId),
+      queueDate: indiaDate,
     })
-      .sort({
-        createdAt: -1,
-      })
+      .populate(
+        "patientId",
+        "name phone patientCode age gender address registrationDate createdAt"
+      )
       .lean();
 
-    // Filter by registrationDate OR createdAt
-    const todayPatients = patients.filter((patient) => {
+    console.log("TODAY QUEUES:", queues.length);
 
-      // First check registrationDate
-      if (patient.registrationDate === indiaDate) {
-        return true;
+    // ============================================================
+    // GET UNIQUE PATIENTS
+    //
+    // A patient can have multiple queues/tokens today.
+    // We only want to show the patient once.
+    // ============================================================
+
+    const uniquePatients = new Map<string, any>();
+
+    for (const queue of queues) {
+      const patient = queue.patientId as any;
+
+      if (!patient || !patient._id) {
+        continue;
       }
 
-      // Fallback to createdAt
-      if (patient.createdAt) {
-        const patientDate = new Intl.DateTimeFormat(
-          "en-CA",
-          {
-            timeZone: "Asia/Kolkata",
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-          }
-        ).format(new Date(patient.createdAt));
+      const patientId = String(patient._id);
 
-        return patientDate === indiaDate;
+      if (!uniquePatients.has(patientId)) {
+        uniquePatients.set(patientId, patient);
       }
+    }
 
-      return false;
-    });
-
-    console.log(
-      "ALL PATIENTS:",
-      patients.length
+    const todayPatients = Array.from(
+      uniquePatients.values()
     );
 
+    // ============================================================
+    // LOGGING
+    // ============================================================
+
     console.log(
-      "TODAY PATIENTS:",
+      "UNIQUE TODAY PATIENTS:",
       todayPatients.length
     );
+
+    console.log(
+      "TODAY PATIENT NAMES:",
+      todayPatients.map((patient) => patient.name)
+    );
+
+    // ============================================================
+    // RESPONSE
+    // ============================================================
 
     return res.status(200).json({
       success: true,
@@ -524,9 +555,8 @@ export const getTodayPatients = async (
     });
 
   } catch (error) {
-
     console.error(
-      "GET TODAY PATIENTS ERROR:",
+      "❌ GET TODAY PATIENTS ERROR:",
       error
     );
 

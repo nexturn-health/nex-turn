@@ -1,1119 +1,1679 @@
 import {
-    Plus,
-    Search,
-    Users,
-    X,
-    CalendarDays,
-    UserRound,
-    Phone,
-    Mail,
-    Loader2,
+  CalendarDays,
+  CheckCircle2,
+  Plus,
+  Search,
+  Ticket,
+  UserRound,
+  Users,
+  X,
 } from "lucide-react";
-import toast from "react-hot-toast";
-import axios from "axios";
+
+import { toast } from "react-hot-toast";
+
 import {
-    useEffect,
-    useMemo,
-    useState,
+  useEffect,
+  useMemo,
+  useState,
 } from "react";
 
 import {
-    getTodayPatients,
-    getPatients,
-    createPatient,
+  getPatients,
+  getTodayPatients,
+  createPatient,
 } from "../../services/patient.api";
 
 import type {
-    Patient,
-    CreatePatientPayload,
+  Patient,
+  CreatePatientPayload,
 } from "../../types/patient";
 
+import api from "../../services/api";
+
+/* ============================================================
+   TYPES
+============================================================ */
+
+interface Department {
+  _id: string;
+  name: string;
+  tokenPrefix?: string;
+  description?: string;
+  isActive?: boolean;
+}
+
+type Priority =
+  | "NORMAL"
+  | "EMERGENCY";
+
+/* ============================================================
+   TOKEN SUCCESS DATA
+============================================================ */
+
+interface TokenSuccessData {
+  tokenLabel: string;
+  patientName: string;
+}
+
+/* ============================================================
+   COMPONENT
+============================================================ */
+
 const Patients = () => {
-    /* ============================== */
-    /* STATE */
-    /* ============================== */
+  /* ==========================================================
+     PATIENT DATA
+  ========================================================== */
 
-    // Today's patients
-    const [patients, setPatients] =
-        useState<Patient[]>([]);
+  const [patients, setPatients] =
+    useState<Patient[]>([]);
 
-    // All hospital patients
-    const [allPatients, setAllPatients] =
-        useState<Patient[]>([]);
+  const [allPatients, setAllPatients] =
+    useState<Patient[]>([]);
 
-    // Search for today's patients
-    const [search, setSearch] =
-        useState("");
+  /* ==========================================================
+     SEARCH
+  ========================================================== */
 
-    // Search for all patients
-    const [allPatientsSearch, setAllPatientsSearch] =
-        useState("");
+  const [search, setSearch] =
+    useState("");
 
-    const [loading, setLoading] =
-        useState(true);
+  const [allPatientsSearch, setAllPatientsSearch] =
+    useState("");
 
-    const [loadingAllPatients, setLoadingAllPatients] =
-        useState(true);
+  /* ==========================================================
+     LOADING
+  ========================================================== */
 
-    const [saving, setSaving] =
-        useState(false);
+  const [loading, setLoading] =
+    useState(true);
 
-    const [showModal, setShowModal] =
-        useState(false);
+  const [saving, setSaving] =
+    useState(false);
 
-    const [error, setError] =
-        useState("");
+  const [registering, setRegistering] =
+    useState(false);
 
-    const [formData, setFormData] =
-        useState<CreatePatientPayload>({
-            name: "",
-            phone: "",
-            age: 0,
-            gender: "MALE",
-            address: "",
-            departmentId: "",
-        });
+  /* ==========================================================
+     MODALS
+  ========================================================== */
 
-    /* ============================== */
-    /* LOAD TODAY'S PATIENTS */
-    /* ============================== */
+  const [showModal, setShowModal] =
+    useState(false);
 
-    const loadPatients = async () => {
-        try {
-            setLoading(true);
+  const [showRegisterModal, setShowRegisterModal] =
+    useState(false);
 
-            const data =
-                await getTodayPatients();
+  /* ==========================================================
+     SELECTED PATIENT
+  ========================================================== */
 
-            setPatients(data || []);
-        } catch (error: unknown) {
-            console.error(
-                "Load today's patients error:",
-                error,
-            );
+  const [selectedPatient, setSelectedPatient] =
+    useState<Patient | null>(null);
 
-            const message =
-                axios.isAxiosError(error)
-                    ? error.response?.data
-                          ?.message ||
-                      "Failed to load patients"
-                    : "Failed to load patients";
+  /* ==========================================================
+     DEPARTMENTS
+  ========================================================== */
 
-            toast.error(message);
-        } finally {
-            setLoading(false);
-        }
+  const [departments, setDepartments] =
+    useState<Department[]>([]);
+
+  /* ==========================================================
+     REGISTER FORM
+  ========================================================== */
+
+  const [departmentId, setDepartmentId] =
+    useState("");
+
+  const [priority, setPriority] =
+    useState<Priority>("NORMAL");
+
+  /* ==========================================================
+     ERROR
+  ========================================================== */
+
+  const [error, setError] =
+    useState("");
+
+  /* ==========================================================
+     TOKEN SUCCESS POPUP
+  ========================================================== */
+
+  const [tokenSuccess, setTokenSuccess] =
+    useState<TokenSuccessData | null>(
+      null
+    );
+
+  /* ==========================================================
+     NEW PATIENT FORM
+  ========================================================== */
+
+  const [formData, setFormData] =
+    useState<CreatePatientPayload>({
+      name: "",
+      phone: "",
+      age: 0,
+      gender: "MALE",
+      address: "",
+      departmentId: "",
+    });
+
+  /* ==========================================================
+     LOAD PATIENTS
+  ========================================================== */
+
+  const loadPatients = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const [
+        todayData,
+        allData,
+      ] = await Promise.all([
+        getTodayPatients(),
+        getPatients(),
+      ]);
+
+      setPatients(todayData);
+      setAllPatients(allData);
+    } catch (err) {
+      console.error(
+        "❌ Failed to load patients:",
+        err
+      );
+
+      setError(
+        "Unable to load patient data."
+      );
+
+      toast.error(
+        "Failed to load patients"
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ==========================================================
+     LOAD DEPARTMENTS
+  ========================================================== */
+
+  const loadDepartments = async () => {
+    try {
+      const response =
+        await api.get("/departments");
+
+      setDepartments(
+        response.data?.data ?? []
+      );
+    } catch (error) {
+      console.error(
+        "❌ Failed to load departments:",
+        error
+      );
+
+      toast.error(
+        "Failed to load departments"
+      );
+    }
+  };
+
+  /* ==========================================================
+     INITIAL LOAD
+  ========================================================== */
+
+  useEffect(() => {
+    loadPatients();
+    loadDepartments();
+  }, []);
+
+  /* ==========================================================
+     AUTO HIDE TOKEN SUCCESS POPUP
+  ========================================================== */
+
+  useEffect(() => {
+    if (!tokenSuccess) {
+      return;
+    }
+
+    const timer =
+      window.setTimeout(() => {
+        setTokenSuccess(null);
+      }, 3000);
+
+    return () => {
+      window.clearTimeout(timer);
     };
+  }, [tokenSuccess]);
 
-    /* ============================== */
-    /* LOAD ALL PATIENTS */
-    /* ============================== */
+  /* ==========================================================
+     TODAY SEARCH
+  ========================================================== */
 
-    const loadAllPatients = async () => {
-        try {
-            setLoadingAllPatients(true);
+  const filteredPatients = useMemo(() => {
+    const value =
+      search.trim().toLowerCase();
 
-            const data =
-                await getPatients();
+    if (!value) {
+      return patients;
+    }
 
-            setAllPatients(data || []);
-        } catch (error: unknown) {
-            console.error(
-                "Load all patients error:",
-                error,
-            );
+    return patients.filter(
+      (patient) =>
+        patient.name
+          ?.toLowerCase()
+          .includes(value) ||
+        patient.phone
+          ?.toLowerCase()
+          .includes(value) ||
+        patient.patientCode
+          ?.toLowerCase()
+          .includes(value)
+    );
+  }, [patients, search]);
 
-            const message =
-                axios.isAxiosError(error)
-                    ? error.response?.data
-                          ?.message ||
-                      "Failed to load all patients"
-                    : "Failed to load all patients";
+  /* ==========================================================
+     ALL PATIENT SEARCH
+  ========================================================== */
 
-            toast.error(message);
-        } finally {
-            setLoadingAllPatients(false);
-        }
-    };
+  const filteredAllPatients = useMemo(() => {
+    const value =
+      allPatientsSearch
+        .trim()
+        .toLowerCase();
 
-    /* ============================== */
-    /* LOAD ON MOUNT */
-    /* ============================== */
+    if (!value) {
+      return allPatients;
+    }
 
-    useEffect(() => {
-        loadPatients();
-        loadAllPatients();
-    }, []);
+    return allPatients.filter(
+      (patient) =>
+        patient.name
+          ?.toLowerCase()
+          .includes(value) ||
+        patient.phone
+          ?.toLowerCase()
+          .includes(value) ||
+        patient.patientCode
+          ?.toLowerCase()
+          .includes(value) ||
+        patient._id
+          ?.toLowerCase()
+          .includes(value)
+    );
+  }, [
+    allPatients,
+    allPatientsSearch,
+  ]);
 
-    /* ============================== */
-    /* FORM CHANGE */
-    /* ============================== */
+  /* ==========================================================
+     CREATE NEW PATIENT
+  ========================================================== */
 
-    const handleChange = (
-        e: React.ChangeEvent<
-            HTMLInputElement |
-            HTMLSelectElement
-        >,
-    ) => {
-        const {
-            name,
-            value,
-        } = e.target;
+  const handleSubmit = async (
+    event: React.FormEvent
+  ) => {
+    event.preventDefault();
 
-        setFormData(
-            (previous) => ({
-                ...previous,
+    if (!formData.name.trim()) {
+      toast.error(
+        "Patient name is required"
+      );
+      return;
+    }
 
-                [name]:
-                    name === "age"
-                        ? Number(value)
-                        : value,
-            }),
+    if (!formData.phone.trim()) {
+      toast.error(
+        "Phone number is required"
+      );
+      return;
+    }
+
+    if (
+      formData.age === undefined ||
+      formData.age === null ||
+      formData.age < 0
+    ) {
+      toast.error(
+        "Please enter a valid age"
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      await createPatient(formData);
+
+      toast.success(
+        "Patient created successfully"
+      );
+
+      closeNewPatientModal();
+
+      await loadPatients();
+    } catch (error: any) {
+      console.error(
+        "❌ Create patient error:",
+        error
+      );
+
+      toast.error(
+        error?.response?.data?.message ||
+          "Failed to create patient"
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /* ==========================================================
+     OPEN REGISTER MODAL
+  ========================================================== */
+
+  const handleRegisterToday = (
+    patient: Patient
+  ) => {
+    setSelectedPatient(patient);
+
+    setDepartmentId("");
+
+    setPriority("NORMAL");
+
+    setShowRegisterModal(true);
+  };
+
+  /* ==========================================================
+     CLOSE REGISTER MODAL
+  ========================================================== */
+
+  const closeRegisterModal = () => {
+    if (registering) {
+      return;
+    }
+
+    setShowRegisterModal(false);
+
+    setSelectedPatient(null);
+
+    setDepartmentId("");
+
+    setPriority("NORMAL");
+  };
+
+  /* ==========================================================
+     GENERATE TOKEN FOR EXISTING PATIENT
+  ========================================================== */
+
+  const handleGenerateToken = async () => {
+    if (!selectedPatient) {
+      toast.error(
+        "Patient not selected"
+      );
+      return;
+    }
+
+    if (!departmentId) {
+      toast.error(
+        "Please select a department"
+      );
+      return;
+    }
+
+    try {
+      setRegistering(true);
+
+      const response =
+        await api.post(
+          "/queues",
+          {
+            patientId:
+              selectedPatient._id,
+
+            departmentId,
+
+            priority,
+          }
         );
-    };
 
-    /* ============================== */
-    /* CREATE PATIENT */
-    /* ============================== */
+      /*
+       * 200 and 201 are both successful
+       * HTTP responses for token creation.
+       */
 
-    const handleSubmit = async (
-        e: React.FormEvent,
-    ) => {
-        e.preventDefault();
-
-        try {
-            setSaving(true);
-
-            setError("");
-
-            const response =
-                await createPatient(
-                    formData,
-                );
-
-            toast.success(
-                response?.message ||
-                    "Patient registered successfully",
-            );
-
-            // Refresh both tables
-            await Promise.all([
-                loadPatients(),
-                loadAllPatients(),
-            ]);
-
-            setShowModal(false);
-
-            setFormData({
-                name: "",
-                phone: "",
-                age: 0,
-                gender: "MALE",
-                address: "",
-                departmentId: "",
-            });
-        } catch (error: unknown) {
-            console.error(
-                "Create patient error:",
-                error,
-            );
-
-            const message =
-                axios.isAxiosError(error)
-                    ? error.response?.data
-                          ?.message ||
-                      "Failed to create patient"
-                    : "Failed to create patient";
-
-            setError(message);
-
-            toast.error(message);
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    /* ============================== */
-    /* FILTER TODAY'S PATIENTS */
-    /* ============================== */
-
-    const filteredPatients =
-        patients.filter(
-            (patient) => {
-                const query =
-                    search
-                        .trim()
-                        .toLowerCase();
-
-                return (
-                    patient.name
-                        .toLowerCase()
-                        .includes(query) ||
-                    patient.phone.includes(
-                        query,
-                    )
-                );
-            },
+      if (
+        response.status !== 200 &&
+        response.status !== 201
+      ) {
+        throw new Error(
+          "Token generation failed"
         );
+      }
 
-    /* ============================== */
-    /* FILTER ALL PATIENTS */
-    /* ============================== */
+      const data =
+        response.data?.data;
 
-    const filteredAllPatients =
-        useMemo(() => {
-            const query =
-                allPatientsSearch
-                    .trim()
-                    .toLowerCase();
+      /*
+       * Depending on your Queue response,
+       * tokenLabel should be here.
+       */
 
-            if (!query) {
-                return allPatients;
-            }
+      const tokenLabel =
+        data?.tokenLabel ||
+        data?.token ||
+        data?.tokenNumber
+          ? String(
+              data?.tokenLabel ||
+                data?.token ||
+                data?.tokenNumber
+            )
+          : "Generated";
 
-            return allPatients.filter(
-                (patient) => {
-                    const name =
-                        patient.name
-                            ?.toLowerCase() ||
-                        "";
+      /* ======================================================
+         CLOSE REGISTRATION MODAL
+      ====================================================== */
 
-                    const phone =
-                        patient.phone
-                            ?.toLowerCase() ||
-                        "";
+      setShowRegisterModal(false);
 
-                    const patientCode =
-                        patient.patientCode
-                            ?.toLowerCase() ||
-                        "";
+      setSelectedPatient(null);
 
-                    return (
-                        name.includes(query) ||
-                        phone.includes(query) ||
-                        patientCode.includes(
-                            query,
-                        )
-                    );
-                },
-            );
-        }, [
-            allPatients,
-            allPatientsSearch,
-        ]);
+      setDepartmentId("");
 
-    return (
-        <div className="space-y-8">
-            {/* ============================== */}
-            {/* HEADER */}
-            {/* ============================== */}
+      setPriority("NORMAL");
 
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900">
-                        Patients
-                    </h1>
+      /* ======================================================
+         REFRESH TODAY + ALL PATIENTS
+         
+         This is the important part.
+         
+         getTodayPatients() must be backed by Queue
+         so an existing patient immediately appears
+         in Today's Patients.
+      ====================================================== */
 
-                    <p className="mt-1 text-sm text-slate-500">
-                        Register and manage hospital patients.
+      await loadPatients();
+
+      /* ======================================================
+         SHOW SUCCESS POPUP
+      ====================================================== */
+
+      setTokenSuccess({
+        tokenLabel,
+        patientName:
+          selectedPatient.name,
+      });
+    } catch (error: any) {
+      console.error(
+        "❌ Generate token error:",
+        error
+      );
+
+      const message =
+        error?.response?.data?.message ||
+        "Failed to generate token";
+
+      toast.error(message);
+    } finally {
+      setRegistering(false);
+    }
+  };
+
+  /* ==========================================================
+     CLOSE TOKEN POPUP
+  ========================================================== */
+
+  const closeTokenPopup = () => {
+    setTokenSuccess(null);
+  };
+
+  /* ==========================================================
+     DATE FORMATTER
+  ========================================================== */
+
+  const formatDate = (
+    date?: string
+  ) => {
+    if (!date) {
+      return "—";
+    }
+
+    const parsedDate =
+      new Date(date);
+
+    if (
+      Number.isNaN(
+        parsedDate.getTime()
+      )
+    ) {
+      return "—";
+    }
+
+    return parsedDate.toLocaleDateString(
+      "en-IN",
+      {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }
+    );
+  };
+
+  /* ==========================================================
+     RESET NEW PATIENT MODAL
+  ========================================================== */
+
+  const closeNewPatientModal = () => {
+    if (saving) {
+      return;
+    }
+
+    setShowModal(false);
+
+    setFormData({
+      name: "",
+      phone: "",
+      age: 0,
+      gender: "MALE",
+      address: "",
+      departmentId: "",
+    });
+  };
+
+  /* ==========================================================
+     RENDER
+  ========================================================== */
+
+  return (
+    <div className="relative space-y-6">
+
+      {/* ======================================================
+          TOKEN SUCCESS POPUP
+      ====================================================== */}
+
+      {tokenSuccess && (
+        <div className="fixed right-5 top-5 z-[100] w-[360px] max-w-[calc(100vw-40px)]">
+
+          <div className="relative overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-2xl">
+
+            {/* TOP CONTENT */}
+
+            <div className="flex items-start gap-4 p-5">
+
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+
+                <CheckCircle2
+                  size={24}
+                />
+
+              </div>
+
+              <div className="min-w-0 flex-1">
+
+                <div className="flex items-start justify-between gap-3">
+
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Token Generated
+                    </h3>
+
+                    <p className="mt-1 text-xs text-slate-500">
+                      Patient registered
+                      successfully
                     </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={
+                      closeTokenPopup
+                    }
+                    className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                    aria-label="Close notification"
+                  >
+                    <X size={18} />
+                  </button>
+
+                </div>
+
+                <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3">
+
+                  <p className="text-xs font-medium text-emerald-600">
+                    Token Number
+                  </p>
+
+                  <p className="mt-0.5 text-2xl font-black tracking-wide text-emerald-700">
+                    {tokenSuccess.tokenLabel}
+                  </p>
+
+                  <p className="mt-1 truncate text-xs text-emerald-600">
+                    {tokenSuccess.patientName}
+                  </p>
+
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* 3 SECOND PROGRESS BAR */}
+
+            <div className="h-1 w-full bg-emerald-100">
+
+              <div
+                className="h-full origin-left bg-emerald-500"
+                style={{
+                  animation:
+                    "nexturn-toast-progress 3s linear forwards",
+                }}
+              />
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
+
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
+        <div>
+
+          <div className="flex items-center gap-3">
+
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+              <Users size={22} />
+            </div>
+
+            <div>
+
+              <h1 className="text-2xl font-bold text-slate-900">
+                Patients
+              </h1>
+
+              <p className="text-sm text-slate-500">
+                Manage registered patients
+                and today's visits
+              </p>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <button
+          type="button"
+          onClick={() =>
+            setShowModal(true)
+          }
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+        >
+          <Plus size={18} />
+
+          Add New Patient
+        </button>
+
+      </div>
+
+      {/* ======================================================
+          ERROR
+      ====================================================== */}
+
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+
+      {/* ======================================================
+          TODAY'S PATIENTS
+      ====================================================== */}
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+        <div className="border-b border-slate-200 px-5 py-5">
+
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
+            <div>
+
+              <div className="flex items-center gap-2">
+
+                <CalendarDays
+                  size={19}
+                  className="text-blue-600"
+                />
+
+                <h2 className="text-lg font-bold text-slate-900">
+                  Today's Patients
+                </h2>
+
+                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-600">
+                  {patients.length}
+                </span>
+
+              </div>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Patients with a queue
+                registration today
+              </p>
+
+            </div>
+
+            <div className="relative w-full lg:w-80">
+
+              <Search
+                size={17}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+
+              <input
+                value={search}
+                onChange={(event) =>
+                  setSearch(
+                    event.target.value
+                  )
+                }
+                placeholder="Search today's patients..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
+              />
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <div className="overflow-x-auto">
+
+          <table className="w-full min-w-[850px]">
+
+            <thead>
+
+              <tr className="border-b border-slate-200 bg-slate-50">
+
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  #
+                </th>
+
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Patient
+                </th>
+
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Phone
+                </th>
+
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Age
+                </th>
+
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Gender
+                </th>
+
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Address
+                </th>
+
+              </tr>
+
+            </thead>
+
+            <tbody className="divide-y divide-slate-100">
+
+              {loading ? (
+
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-5 py-12 text-center text-sm text-slate-500"
+                  >
+                    Loading patients...
+                  </td>
+                </tr>
+
+              ) : filteredPatients.length === 0 ? (
+
+                <tr>
+
+                  <td
+                    colSpan={6}
+                    className="px-5 py-12 text-center"
+                  >
+
+                    <Users
+                      size={30}
+                      className="mx-auto text-slate-300"
+                    />
+
+                    <p className="mt-2 text-sm font-medium text-slate-500">
+                      No patients registered
+                      today
+                    </p>
+
+                  </td>
+
+                </tr>
+
+              ) : (
+
+                filteredPatients.map(
+                  (patient, index) => (
+
+                    <tr
+                      key={patient._id}
+                      className="transition hover:bg-slate-50"
+                    >
+
+                      <td className="px-5 py-4 text-sm font-semibold text-slate-500">
+                        {index + 1}
+                      </td>
+
+                      <td className="px-5 py-4">
+
+                        <div className="flex items-center gap-3">
+
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                            <UserRound
+                              size={17}
+                            />
+                          </div>
+
+                          <div>
+
+                            <p className="font-semibold text-slate-900">
+                              {patient.name}
+                            </p>
+
+                            {patient.patientCode && (
+                              <p className="text-xs text-slate-400">
+                                {patient.patientCode}
+                              </p>
+                            )}
+
+                          </div>
+
+                        </div>
+
+                      </td>
+
+                      <td className="px-5 py-4 text-sm text-slate-600">
+                        {patient.phone ||
+                          "—"}
+                      </td>
+
+                      <td className="px-5 py-4 text-sm text-slate-600">
+                        {patient.age ??
+                          "—"}
+                      </td>
+
+                      <td className="px-5 py-4 text-sm text-slate-600">
+                        {patient.gender ||
+                          "—"}
+                      </td>
+
+                      <td className="px-5 py-4 text-sm text-slate-600">
+                        {patient.address ||
+                          "—"}
+                      </td>
+
+                    </tr>
+
+                  )
+                )
+
+              )}
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </section>
+
+      {/* ======================================================
+          ALL PATIENTS
+      ====================================================== */}
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+        <div className="border-b border-slate-200 px-5 py-5">
+
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
+            <div>
+
+              <div className="flex items-center gap-2">
+
+                <Users
+                  size={19}
+                  className="text-indigo-600"
+                />
+
+                <h2 className="text-lg font-bold text-slate-900">
+                  All Patients
+                </h2>
+
+                <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-600">
+                  {allPatients.length}
+                </span>
+
+              </div>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Search existing patients
+                and register them for
+                today's queue
+              </p>
+
+            </div>
+
+            <div className="relative w-full lg:w-96">
+
+              <Search
+                size={17}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+
+              <input
+                value={
+                  allPatientsSearch
+                }
+                onChange={(event) =>
+                  setAllPatientsSearch(
+                    event.target.value
+                  )
+                }
+                placeholder="Search by name, phone or patient ID..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+              />
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <div className="overflow-x-auto">
+
+          <table className="w-full min-w-[1100px]">
+
+            <thead>
+
+              <tr className="border-b border-slate-200 bg-slate-50">
+
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  #
+                </th>
+
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Patient
+                </th>
+
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Patient ID
+                </th>
+
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Phone
+                </th>
+
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Age
+                </th>
+
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Registration Date
+                </th>
+
+                <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Action
+                </th>
+
+              </tr>
+
+            </thead>
+
+            <tbody className="divide-y divide-slate-100">
+
+              {loading ? (
+
+                <tr>
+
+                  <td
+                    colSpan={7}
+                    className="px-5 py-12 text-center text-sm text-slate-500"
+                  >
+                    Loading patients...
+                  </td>
+
+                </tr>
+
+              ) : filteredAllPatients.length === 0 ? (
+
+                <tr>
+
+                  <td
+                    colSpan={7}
+                    className="px-5 py-12 text-center"
+                  >
+
+                    <Users
+                      size={32}
+                      className="mx-auto text-slate-300"
+                    />
+
+                    <p className="mt-2 text-sm font-medium text-slate-500">
+                      No patients found
+                    </p>
+
+                  </td>
+
+                </tr>
+
+              ) : (
+
+                filteredAllPatients.map(
+                  (patient, index) => (
+
+                    <tr
+                      key={patient._id}
+                      className="transition hover:bg-slate-50"
+                    >
+
+                      <td className="px-5 py-4 text-sm font-semibold text-slate-500">
+                        {index + 1}
+                      </td>
+
+                      <td className="px-5 py-4">
+
+                        <div className="flex items-center gap-3">
+
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+                            <UserRound
+                              size={18}
+                            />
+                          </div>
+
+                          <div>
+
+                            <p className="font-semibold text-slate-900">
+                              {patient.name}
+                            </p>
+
+                            {patient.address && (
+                              <p className="max-w-[220px] truncate text-xs text-slate-400">
+                                {patient.address}
+                              </p>
+                            )}
+
+                          </div>
+
+                        </div>
+
+                      </td>
+
+                      <td className="px-5 py-4">
+
+                        <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                          {patient.patientCode ||
+                            patient._id}
+                        </span>
+
+                      </td>
+
+                      <td className="px-5 py-4 text-sm font-medium text-slate-700">
+                        {patient.phone ||
+                          "—"}
+                      </td>
+
+                      <td className="px-5 py-4 text-sm text-slate-600">
+                        {patient.age ??
+                          "—"}
+                      </td>
+
+                      <td className="px-5 py-4">
+
+                        <div className="flex items-center gap-2 text-sm text-slate-600">
+
+                          <CalendarDays
+                            size={15}
+                            className="text-slate-400"
+                          />
+
+                          {formatDate(
+                            patient.createdAt
+                          )}
+
+                        </div>
+
+                      </td>
+
+                      <td className="px-5 py-4 text-right">
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleRegisterToday(
+                              patient
+                            )
+                          }
+                          className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-blue-700"
+                        >
+
+                          <Ticket
+                            size={15}
+                          />
+
+                          Register Today
+
+                        </button>
+
+                      </td>
+
+                    </tr>
+
+                  )
+                )
+
+              )}
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </section>
+
+      {/* ======================================================
+          ADD NEW PATIENT MODAL
+      ====================================================== */}
+
+      {showModal && (
+
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
+
+              <div>
+
+                <h3 className="text-lg font-bold text-slate-900">
+                  Add New Patient
+                </h3>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Create a new patient
+                  record
+                </p>
+
+              </div>
+
+              <button
+                type="button"
+                onClick={
+                  closeNewPatientModal
+                }
+                className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X size={20} />
+              </button>
+
+            </div>
+
+            <form
+              onSubmit={handleSubmit}
+              className="space-y-5 p-6"
+            >
+
+              <div>
+
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Full Name
+                </label>
+
+                <input
+                  value={formData.name}
+                  onChange={(event) =>
+                    setFormData({
+                      ...formData,
+                      name:
+                        event.target.value,
+                    })
+                  }
+                  placeholder="Enter patient name"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+
+              </div>
+
+              <div>
+
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Phone Number
+                </label>
+
+                <input
+                  value={formData.phone}
+                  onChange={(event) =>
+                    setFormData({
+                      ...formData,
+                      phone:
+                        event.target.value,
+                    })
+                  }
+                  placeholder="Enter phone number"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+
+                <div>
+
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                    Age
+                  </label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    value={
+                      formData.age || ""
+                    }
+                    onChange={(event) =>
+                      setFormData({
+                        ...formData,
+                        age: Number(
+                          event.target.value
+                        ),
+                      })
+                    }
+                    placeholder="Age"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+
+                </div>
+
+                <div>
+
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                    Gender
+                  </label>
+
+                  <select
+                    value={
+                      formData.gender
+                    }
+                    onChange={(event) =>
+                      setFormData({
+                        ...formData,
+                        gender:
+                          event.target
+                            .value as
+                            "MALE" |
+                            "FEMALE" |
+                            "OTHER",
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  >
+
+                    <option value="MALE">
+                      Male
+                    </option>
+
+                    <option value="FEMALE">
+                      Female
+                    </option>
+
+                    <option value="OTHER">
+                      Other
+                    </option>
+
+                  </select>
+
+                </div>
+
+              </div>
+
+              <div>
+
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Address
+                </label>
+
+                <textarea
+                  value={
+                    formData.address
+                  }
+                  onChange={(event) =>
+                    setFormData({
+                      ...formData,
+                      address:
+                        event.target.value,
+                    })
+                  }
+                  rows={3}
+                  placeholder="Enter address"
+                  className="w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+
+                <button
+                  type="button"
+                  onClick={
+                    closeNewPatientModal
+                  }
+                  className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving
+                    ? "Saving..."
+                    : "Create Patient"}
+                </button>
+
+              </div>
+
+            </form>
+
+          </div>
+
+        </div>
+
+      )}
+
+      {/* ======================================================
+          REGISTER EXISTING PATIENT MODAL
+      ====================================================== */}
+
+      {showRegisterModal &&
+        selectedPatient && (
+
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+
+            <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
+
+                <div>
+
+                  <h3 className="text-lg font-bold text-slate-900">
+                    Register Patient Today
+                  </h3>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Generate a queue token
+                    for this patient
+                  </p>
+
                 </div>
 
                 <button
-                    onClick={() =>
-                        setShowModal(true)
-                    }
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+                  type="button"
+                  onClick={
+                    closeRegisterModal
+                  }
+                  disabled={registering}
+                  className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 disabled:cursor-not-allowed"
                 >
-                    <Plus size={18} />
-
-                    Add Patient
+                  <X size={20} />
                 </button>
-            </div>
 
-            {/* ============================== */}
-            {/* SUMMARY CARDS */}
-            {/* ============================== */}
+              </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-slate-500">
-                                Today's Patients
-                            </p>
+              <div className="space-y-5 p-6">
 
-                            <p className="mt-2 text-3xl font-bold text-slate-900">
-                                {patients.length}
-                            </p>
-                        </div>
+                {/* PATIENT SUMMARY */}
 
-                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                            <CalendarDays
-                                size={21}
-                            />
-                        </div>
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+
+                  <div className="flex items-center gap-3">
+
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-blue-600 shadow-sm">
+                      <UserRound
+                        size={21}
+                      />
                     </div>
+
+                    <div>
+
+                      <p className="font-bold text-slate-900">
+                        {selectedPatient.name}
+                      </p>
+
+                      <p className="text-sm text-slate-600">
+                        {selectedPatient.phone}
+                      </p>
+
+                      <p className="mt-1 text-xs font-medium text-blue-600">
+                        {selectedPatient.patientCode ||
+                          selectedPatient._id}
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+
+                    <div className="rounded-xl bg-white p-3">
+
+                      <p className="text-xs text-slate-400">
+                        Age
+                      </p>
+
+                      <p className="mt-1 text-sm font-semibold text-slate-800">
+                        {selectedPatient.age ??
+                          "—"}
+                      </p>
+
+                    </div>
+
+                    <div className="rounded-xl bg-white p-3">
+
+                      <p className="text-xs text-slate-400">
+                        Gender
+                      </p>
+
+                      <p className="mt-1 text-sm font-semibold text-slate-800">
+                        {selectedPatient.gender ||
+                          "—"}
+                      </p>
+
+                    </div>
+
+                  </div>
+
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-slate-500">
-                                Total Patients
-                            </p>
+                {/* DEPARTMENT */}
 
-                            <p className="mt-2 text-3xl font-bold text-slate-900">
-                                {
-                                    allPatients.length
-                                }
-                            </p>
-                        </div>
+                <div>
 
-                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                            <Users
-                                size={21}
-                            />
-                        </div>
-                    </div>
-                </div>
-            </div>
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                    Department
+                  </label>
 
-            {/* ================================================== */}
-            {/* TODAY'S PATIENTS */}
-            {/* ================================================== */}
+                  <select
+                    value={departmentId}
+                    onChange={(event) =>
+                      setDepartmentId(
+                        event.target.value
+                      )
+                    }
+                    disabled={registering}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50"
+                  >
 
-            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                {/* SECTION HEADER */}
+                    <option value="">
+                      Select Department
+                    </option>
 
-                <div className="border-b border-slate-200 p-5 sm:p-6">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <CalendarDays
-                                    size={19}
-                                    className="text-blue-600"
-                                />
+                    {departments
+                      .filter(
+                        (department) =>
+                          department.isActive !==
+                          false
+                      )
+                      .map(
+                        (department) => (
 
-                                <h2 className="text-lg font-bold text-slate-900">
-                                    Today's Patients
-                                </h2>
-                            </div>
-
-                            <p className="mt-1 text-sm text-slate-500">
-                                Patients registered today.
-                            </p>
-                        </div>
-
-                        {/* TODAY SEARCH */}
-
-                        <div className="relative w-full lg:w-80">
-                            <Search
-                                size={18}
-                                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                            />
-
-                            <input
-                                type="text"
-                                placeholder="Search today's patients..."
-                                value={search}
-                                onChange={(e) =>
-                                    setSearch(
-                                        e.target
-                                            .value,
-                                    )
-                                }
-                                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* TABLE */}
-
-                {loading ? (
-                    <TableLoading />
-                ) : filteredPatients.length ===
-                  0 ? (
-                    <EmptyPatients
-                        message="No patients found"
-                    />
-                ) : (
-                    <PatientTable
-                        patients={
-                            filteredPatients
-                        }
-                    />
-                )}
-            </section>
-
-            {/* ================================================== */}
-            {/* ALL PATIENTS */}
-            {/* ================================================== */}
-
-            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                {/* SECTION HEADER */}
-
-                <div className="border-b border-slate-200 p-5 sm:p-6">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <Users
-                                    size={19}
-                                    className="text-emerald-600"
-                                />
-
-                                <h2 className="text-lg font-bold text-slate-900">
-                                    All Patients
-                                </h2>
-                            </div>
-
-                            <p className="mt-1 text-sm text-slate-500">
-                                Complete patient records for your hospital.
-                            </p>
-                        </div>
-
-                        {/* ALL PATIENTS SEARCH */}
-
-                        <div className="relative w-full lg:w-96">
-                            <Search
-                                size={18}
-                                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                            />
-
-                            <input
-                                type="text"
-                                placeholder="Search by name, phone or patient ID..."
-                                value={
-                                    allPatientsSearch
-                                }
-                                onChange={(e) =>
-                                    setAllPatientsSearch(
-                                        e.target
-                                            .value,
-                                    )
-                                }
-                                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* RESULT COUNT */}
-
-                {!loadingAllPatients && (
-                    <div className="border-b border-slate-100 px-5 py-3 sm:px-6">
-                        <p className="text-xs font-medium text-slate-500">
-                            Showing{" "}
-                            <span className="font-semibold text-slate-700">
-                                {
-                                    filteredAllPatients.length
-                                }
-                            </span>{" "}
-                            of{" "}
-                            <span className="font-semibold text-slate-700">
-                                {
-                                    allPatients.length
-                                }
-                            </span>{" "}
-                            patients
-                        </p>
-                    </div>
-                )}
-
-                {/* TABLE */}
-
-                {loadingAllPatients ? (
-                    <TableLoading />
-                ) : filteredAllPatients.length ===
-                  0 ? (
-                    <EmptyPatients
-                        message={
-                            allPatientsSearch
-                                ? `No patients found for "${allPatientsSearch}"`
-                                : "No patients found"
-                        }
-                    />
-                ) : (
-                    <AllPatientsTable
-                        patients={
-                            filteredAllPatients
-                        }
-                    />
-                )}
-            </section>
-
-            {/* ============================== */}
-            {/* ADD PATIENT MODAL */}
-            {/* ============================== */}
-
-            {showModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-                    <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-xl">
-                        {/* MODAL HEADER */}
-
-                        <div className="flex items-center justify-between border-b border-slate-200 p-5">
-                            <div>
-                                <h2 className="text-lg font-bold text-slate-900">
-                                    Add Patient
-                                </h2>
-
-                                <p className="mt-1 text-sm text-slate-500">
-                                    Enter patient information.
-                                </p>
-                            </div>
-
-                            <button
-                                onClick={() =>
-                                    setShowModal(
-                                        false,
-                                    )
-                                }
-                                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                            >
-                                <X
-                                    size={20}
-                                />
-                            </button>
-                        </div>
-
-                        {/* FORM */}
-
-                        <form
-                            onSubmit={
-                                handleSubmit
+                          <option
+                            key={
+                              department._id
                             }
-                            className="space-y-5 p-5"
-                        >
-                            {error && (
-                                <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
-                                    {error}
-                                </div>
-                            )}
+                            value={
+                              department._id
+                            }
+                          >
+                            {department.name}
+                          </option>
 
-                            {/* NAME */}
+                        )
+                      )}
 
-                            <div>
-                                <label className="mb-2 block text-sm font-medium text-slate-700">
-                                    Patient Name
-                                </label>
+                  </select>
 
-                                <input
-                                    type="text"
-                                    name="name"
-                                    required
-                                    value={
-                                        formData.name
-                                    }
-                                    onChange={
-                                        handleChange
-                                    }
-                                    placeholder="Enter patient name"
-                                    className={INPUT_CLASSES}
-                                />
-                            </div>
-
-                            {/* PHONE */}
-
-                            <div>
-                                <label className="mb-2 block text-sm font-medium text-slate-700">
-                                    Phone Number
-                                </label>
-
-                                <input
-                                    type="tel"
-                                    name="phone"
-                                    required
-                                    value={
-                                        formData.phone
-                                    }
-                                    onChange={
-                                        handleChange
-                                    }
-                                    placeholder="Enter phone number"
-                                    className={INPUT_CLASSES}
-                                />
-                            </div>
-
-                            {/* AGE + GENDER */}
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="mb-2 block text-sm font-medium text-slate-700">
-                                        Age
-                                    </label>
-
-                                    <input
-                                        type="number"
-                                        name="age"
-                                        required
-                                        min="1"
-                                        max="150"
-                                        value={
-                                            formData.age ||
-                                            ""
-                                        }
-                                        onChange={
-                                            handleChange
-                                        }
-                                        placeholder="Age"
-                                        className={INPUT_CLASSES}
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="mb-2 block text-sm font-medium text-slate-700">
-                                        Gender
-                                    </label>
-
-                                    <select
-                                        name="gender"
-                                        value={
-                                            formData.gender
-                                        }
-                                        onChange={
-                                            handleChange
-                                        }
-                                        className={INPUT_CLASSES}
-                                    >
-                                        <option value="MALE">
-                                            Male
-                                        </option>
-
-                                        <option value="FEMALE">
-                                            Female
-                                        </option>
-
-                                        <option value="OTHER">
-                                            Other
-                                        </option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            {/* ADDRESS */}
-
-                            <div>
-                                <label className="mb-2 block text-sm font-medium text-slate-700">
-                                    Address
-                                </label>
-
-                                <input
-                                    type="text"
-                                    name="address"
-                                    value={
-                                        formData.address
-                                    }
-                                    onChange={
-                                        handleChange
-                                    }
-                                    placeholder="Enter address"
-                                    className={INPUT_CLASSES}
-                                />
-                            </div>
-
-                            {/* BUTTONS */}
-
-                            <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setShowModal(
-                                            false,
-                                        )
-                                    }
-                                    className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-                                >
-                                    Cancel
-                                </button>
-
-                                <button
-                                    type="submit"
-                                    disabled={
-                                        saving
-                                    }
-                                    className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    {saving
-                                        ? "Saving..."
-                                        : "Save Patient"}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
                 </div>
-            )}
-        </div>
-    );
+
+                {/* PRIORITY */}
+
+                <div>
+
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                    Priority
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3">
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPriority(
+                          "NORMAL"
+                        )
+                      }
+                      disabled={registering}
+                      className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                        priority ===
+                        "NORMAL"
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      Normal
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPriority(
+                          "EMERGENCY"
+                        )
+                      }
+                      disabled={registering}
+                      className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                        priority ===
+                        "EMERGENCY"
+                          ? "border-red-500 bg-red-50 text-red-700"
+                          : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      Emergency
+                    </button>
+
+                  </div>
+
+                </div>
+
+                {/* ACTIONS */}
+
+                <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
+
+                  <button
+                    type="button"
+                    onClick={
+                      closeRegisterModal
+                    }
+                    disabled={registering}
+                    className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={
+                      handleGenerateToken
+                    }
+                    disabled={
+                      registering ||
+                      !departmentId
+                    }
+                    className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+
+                    <Ticket
+                      size={17}
+                    />
+
+                    {registering
+                      ? "Generating..."
+                      : "Generate Token"}
+
+                  </button>
+
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        )}
+
+      {/* ======================================================
+          LOCAL ANIMATION
+      ====================================================== */}
+
+      <style>
+        {`
+          @keyframes nexturn-toast-progress {
+            from {
+              transform: scaleX(1);
+            }
+
+            to {
+              transform: scaleX(0);
+            }
+          }
+        `}
+      </style>
+
+    </div>
+  );
 };
 
 export default Patients;
-
-/* =========================================================
-   TODAY'S PATIENT TABLE
-========================================================= */
-
-function PatientTable({
-    patients,
-}: {
-    patients: Patient[];
-}) {
-    return (
-        <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px]">
-                <thead className="border-b border-slate-200 bg-slate-50">
-                    <tr>
-                        <th className={TH_CLASSES}>
-                            #
-                        </th>
-
-                        <th className={TH_CLASSES}>
-                            Patient
-                        </th>
-
-                        <th className={TH_CLASSES}>
-                            Phone
-                        </th>
-
-                        <th className={TH_CLASSES}>
-                            Age
-                        </th>
-
-                        <th className={TH_CLASSES}>
-                            Gender
-                        </th>
-
-                        <th className={TH_CLASSES}>
-                            Address
-                        </th>
-                    </tr>
-                </thead>
-
-                <tbody>
-                    {patients.map(
-                        (
-                            patient,
-                            index,
-                        ) => (
-                            <tr
-                                key={
-                                    patient._id
-                                }
-                                className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
-                            >
-                                {/* NUMBER */}
-
-                                <td className="px-6 py-4 text-sm font-semibold text-slate-400">
-                                    {index + 1}
-                                </td>
-
-                                {/* PATIENT */}
-
-                                <td className="px-6 py-4">
-                                    <div className="flex items-center gap-3">
-                                        <PatientAvatar />
-
-                                        <div>
-                                            <p className="font-semibold text-slate-900">
-                                                {
-                                                    patient.name
-                                                }
-                                            </p>
-
-                                            {patient.patientCode && (
-                                                <p className="mt-0.5 text-xs text-slate-400">
-                                                    {
-                                                        patient.patientCode
-                                                    }
-                                                </p>
-                                            )}
-                                        </div>
-                                    </div>
-                                </td>
-
-                                {/* PHONE */}
-
-                                <td className="px-6 py-4 text-sm text-slate-600">
-                                    {
-                                        patient.phone
-                                    }
-                                </td>
-
-                                {/* AGE */}
-
-                                <td className="px-6 py-4 text-sm text-slate-600">
-                                    {
-                                        patient.age
-                                    }
-                                </td>
-
-                                {/* GENDER */}
-
-                                <td className="px-6 py-4">
-                                    <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-600">
-                                        {
-                                            patient.gender
-                                        }
-                                    </span>
-                                </td>
-
-                                {/* ADDRESS */}
-
-                                <td className="max-w-[250px] truncate px-6 py-4 text-sm text-slate-600">
-                                    {
-                                        patient.address ||
-                                        "-"
-                                    }
-                                </td>
-                            </tr>
-                        ),
-                    )}
-                </tbody>
-            </table>
-        </div>
-    );
-}
-
-/* =========================================================
-   ALL PATIENTS TABLE
-========================================================= */
-
-function AllPatientsTable({
-    patients,
-}: {
-    patients: Patient[];
-}) {
-    return (
-        <div className="overflow-x-auto">
-            <table className="w-full min-w-[950px]">
-                <thead className="border-b border-slate-200 bg-slate-50">
-                    <tr>
-                        <th className={TH_CLASSES}>
-                            #
-                        </th>
-
-                        <th className={TH_CLASSES}>
-                            Patient
-                        </th>
-
-                        <th className={TH_CLASSES}>
-                            Phone
-                        </th>
-
-                        <th className={TH_CLASSES}>
-                            Patient ID
-                        </th>
-
-                        <th className={TH_CLASSES}>
-                            Age / Gender
-                        </th>
-
-                        <th className={TH_CLASSES}>
-                            Email
-                        </th>
-
-                        <th className={TH_CLASSES}>
-                            Address
-                        </th>
-                    </tr>
-                </thead>
-
-                <tbody>
-                    {patients.map(
-                        (
-                            patient,
-                            index,
-                        ) => (
-                            <tr
-                                key={
-                                    patient._id
-                                }
-                                className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
-                            >
-                                {/* NUMBER */}
-
-                                <td className="px-6 py-4 text-sm font-semibold text-slate-400">
-                                    {index + 1}
-                                </td>
-
-                                {/* PATIENT */}
-
-                                <td className="px-6 py-4">
-                                    <div className="flex items-center gap-3">
-                                        <PatientAvatar />
-
-                                        <div>
-                                            <p className="font-semibold text-slate-900">
-                                                {
-                                                    patient.name
-                                                }
-                                            </p>
-
-                                            <p className="mt-0.5 text-xs text-slate-400">
-                                                Patient
-                                            </p>
-                                        </div>
-                                    </div>
-                                </td>
-
-                                {/* PHONE */}
-
-                                <td className="px-6 py-4">
-                                    <div className="flex items-center gap-2 text-sm text-slate-600">
-                                        <Phone
-                                            size={
-                                                15
-                                            }
-                                            className="text-slate-400"
-                                        />
-
-                                        {
-                                            patient.phone
-                                        }
-                                    </div>
-                                </td>
-
-                                {/* PATIENT ID */}
-
-                                <td className="px-6 py-4">
-                                    {patient.patientCode ? (
-                                        <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600">
-                                            {
-                                                patient.patientCode
-                                            }
-                                        </span>
-                                    ) : (
-                                        <span className="text-sm text-slate-400">
-                                            -
-                                        </span>
-                                    )}
-                                </td>
-
-                                {/* AGE / GENDER */}
-
-                                <td className="px-6 py-4">
-                                    <div className="text-sm text-slate-600">
-                                        {
-                                            patient.age
-                                        }{" "}
-                                        yrs
-
-                                        {patient.gender && (
-                                            <span className="ml-2 text-xs text-slate-400">
-                                                •{" "}
-                                                {
-                                                    patient.gender
-                                                }
-                                            </span>
-                                        )}
-                                    </div>
-                                </td>
-
-                                {/* EMAIL */}
-
-                                <td className="px-6 py-4">
-                                    {patient.email ? (
-                                        <div className="flex max-w-[220px] items-center gap-2">
-                                            <Mail
-                                                size={
-                                                    15
-                                                }
-                                                className="shrink-0 text-slate-400"
-                                            />
-
-                                            <span className="truncate text-sm text-slate-600">
-                                                {
-                                                    patient.email
-                                                }
-                                            </span>
-                                        </div>
-                                    ) : (
-                                        <span className="text-sm text-slate-400">
-                                            -
-                                        </span>
-                                    )}
-                                </td>
-
-                                {/* ADDRESS */}
-
-                                <td className="max-w-[220px] truncate px-6 py-4 text-sm text-slate-600">
-                                    {
-                                        patient.address ||
-                                        "-"
-                                    }
-                                </td>
-                            </tr>
-                        ),
-                    )}
-                </tbody>
-            </table>
-        </div>
-    );
-}
-
-/* =========================================================
-   PATIENT AVATAR
-========================================================= */
-
-function PatientAvatar() {
-    return (
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-            <UserRound size={18} />
-        </div>
-    );
-}
-
-/* =========================================================
-   LOADING
-========================================================= */
-
-function TableLoading() {
-    return (
-        <div className="flex min-h-[240px] items-center justify-center">
-            <div className="flex items-center gap-3 text-sm text-slate-500">
-                <Loader2
-                    size={24}
-                    className="animate-spin text-blue-600"
-                />
-
-                Loading patients...
-            </div>
-        </div>
-    );
-}
-
-/* =========================================================
-   EMPTY
-========================================================= */
-
-function EmptyPatients({
-    message,
-}: {
-    message: string;
-}) {
-    return (
-        <div className="flex flex-col items-center justify-center p-12 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-                <Users size={26} />
-            </div>
-
-            <h3 className="mt-4 font-semibold text-slate-900">
-                {message}
-            </h3>
-
-            <p className="mt-1 text-sm text-slate-500">
-                Patient records will appear here.
-            </p>
-        </div>
-    );
-}
-
-/* =========================================================
-   STYLES
-========================================================= */
-
-const TH_CLASSES =
-    "px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500";
-
-const INPUT_CLASSES =
-    "w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100";
