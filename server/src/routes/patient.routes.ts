@@ -1,4 +1,6 @@
-import { Router } from "express";
+import {
+  Router,
+} from "express";
 
 import {
   createPatient,
@@ -17,87 +19,141 @@ import {
   authorize,
 } from "../middleware/role.middleware";
 
-const router = Router();
+import {
+  requireSubscription,
+} from "../middleware/subscription.middleware";
 
-// =====================================
-// AUTHENTICATION
-// =====================================
+const router =
+  Router();
 
-router.use(protect);
+/* =========================================================
+   AUTHENTICATION
+========================================================= */
 
+router.use(
+  protect,
+);
 
-// =====================================
-// CREATE PATIENT
-// POST /api/patients
-//
-// ADMIN + RECEPTIONIST
-// =====================================
+/* =========================================================
+   ACTIVE SUBSCRIPTION REQUIRED
+
+   BASIC + PREMIUM
+========================================================= */
+
+router.use(
+  requireSubscription,
+);
+
+/* =========================================================
+   CREATE PATIENT
+
+   POST /api/patients
+
+   HOSPITAL_ADMIN
+   RECEPTIONIST
+========================================================= */
 
 router.post(
   "/",
+
   authorize(
     "HOSPITAL_ADMIN",
-    "RECEPTIONIST"
+    "RECEPTIONIST",
   ),
-  createPatient
+
+  createPatient,
 );
 
+/* =========================================================
+   GET ALL PATIENTS
 
-// =====================================
-// GET ALL PATIENTS
-// GET /api/patients
-//
-// ADMIN + RECEPTIONIST
-// =====================================
+   GET /api/patients
+
+   HOSPITAL_ADMIN
+   RECEPTIONIST
+========================================================= */
 
 router.get(
   "/",
+
   authorize(
     "HOSPITAL_ADMIN",
-    "RECEPTIONIST"
+    "RECEPTIONIST",
   ),
-  getPatients
+
+  getPatients,
 );
+
+/* =========================================================
+   GET TODAY'S PATIENTS
+
+   GET /api/patients/today
+========================================================= */
 
 router.get(
   "/today",
-  protect,
+
+  authorize(
+    "HOSPITAL_ADMIN",
+    "RECEPTIONIST",
+  ),
+
   getTodayPatients,
 );
 
+/* =========================================================
+   GET TOKEN ELIGIBLE PATIENTS
+
+   GET /api/patients/token-eligible
+========================================================= */
+
 router.get(
   "/token-eligible",
-  protect,
+
+  authorize(
+    "HOSPITAL_ADMIN",
+    "RECEPTIONIST",
+  ),
+
   getTokenEligiblePatients,
 );
-//
-// ADMIN + RECEPTIONIST
-// =====================================
+
+/* =========================================================
+   GET PATIENT BY ID
+
+   GET /api/patients/:id
+========================================================= */
 
 router.get(
   "/:id",
+
   authorize(
     "HOSPITAL_ADMIN",
-    "RECEPTIONIST"
+    "RECEPTIONIST",
   ),
-  getPatientById
+
+  getPatientById,
 );
 
-// =====================================
-// UPDATE PATIENT
-// PUT /api/patients/:id
-//
-// ADMIN + RECEPTIONIST
-// =====================================
+/* =========================================================
+   UPDATE PATIENT
+
+   PUT /api/patients/:id
+========================================================= */
 
 router.put(
   "/:id",
+
   authorize(
     "HOSPITAL_ADMIN",
-    "RECEPTIONIST"
+    "RECEPTIONIST",
   ),
-  updatePatient
+
+  updatePatient,
 );
 
+/* =========================================================
+   EXPORT
+========================================================= */
 
 export default router;

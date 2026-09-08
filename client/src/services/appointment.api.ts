@@ -1,81 +1,490 @@
-import api from "./api";
+import api from "../services/api";
 
-export interface Appointment {
-  _id?: string;
-  id?: string;
+/* ============================================================
+   TYPES
+============================================================ */
 
-  patientId: {
-    _id?: string;
-    name?: string;
-    phone?: string;
-    patientCode?: string;
-  };
+export type WeekDay =
+    | "MONDAY"
+    | "TUESDAY"
+    | "WEDNESDAY"
+    | "THURSDAY"
+    | "FRIDAY"
+    | "SATURDAY"
+    | "SUNDAY";
 
-  departmentId: {
-    _id?: string;
-    name?: string;
-  };
+export type ConsultationMode =
+    | "OPD_ONLY"
+    | "APPOINTMENT_ONLY"
+    | "HYBRID"
+    | "ON_CALL_APPOINTMENT";
 
-  doctorId?: {
-    _id?: string;
-    name?: string;
-    email?: string;
-  };
+export type HybridPattern =
+    | "APPOINTMENT"
+    | "WALK_IN";
 
-  appointmentDate: string;
-
-  appointmentTime?: string;
-
-  status:
+export type AppointmentStatus =
+    | "REQUESTED"
     | "BOOKED"
     | "CONFIRMED"
+    | "ARRIVED"
+    | "CHECKED_IN"
+    | "IN_CONSULTATION"
     | "COMPLETED"
-    | "CANCELLED";
+    | "CANCELLED"
+    | "REJECTED"
+    | "NO_SHOW"
+    | "RESCHEDULE_REQUESTED"
+    | "WAITLISTED";
 
-  createdAt?: string;
-  updatedAt?: string;
+export type AppointmentPaymentStatus =
+    | "UNPAID"
+    | "PAID"
+    | "REFUNDED";
+
+export type PaymentMethod =
+    | "CASH"
+    | "UPI"
+    | "CARD"
+    | "OTHER";
+
+export interface ScheduleSession {
+    startTime: string;
+    endTime: string;
+    slotType: HybridPattern;
 }
 
-// ==============================
-// GET APPOINTMENTS
-// ==============================
+export interface ScheduleDay {
+    day: WeekDay;
+    isAvailable: boolean;
+    sessions: ScheduleSession[];
+    blockedPeriods?: {
+        startTime: string;
+        endTime: string;
+        reason?: string;
+    }[];
+}
 
-export const getAppointments = async (): Promise<
-  Appointment[]
-> => {
-  const response = await api.get("/appointments");
+export interface DoctorSchedule {
+    _id?: string;
+    consultationMode: ConsultationMode;
+    appointmentEnabled: boolean;
+    confirmationRequired: boolean;
+    slotDurationMinutes: number;
+    weeklyAvailability: ScheduleDay[];
+    blockedDates?: string[];
+    maxAppointmentsPerDay: number;
+    maxWalkInsPerDay: number;
+    emergencyBufferPerDay: number;
+    bookingWindowDays: number;
+    gracePeriodMinutes: number;
+    hybridPattern: HybridPattern[];
+}
 
-  return response.data.data;
-};
+export interface AppointmentDepartment {
+    _id: string;
+    name: string;
+    tokenPrefix?: string;
+}
 
-// ==============================
-// UPDATE APPOINTMENT STATUS
-// ==============================
+export interface AppointmentDoctor {
+    _id: string;
+    name: string;
+    phone?: string;
+    email?: string;
+    isOnline?: boolean;
+    lastSeenAt?: string;
+    departmentId?: AppointmentDepartment;
+    schedule?: DoctorSchedule;
+    scheduleConfigured?: boolean;
+}
 
-export const updateAppointmentStatus = async (
-  id: string,
-  status: Appointment["status"],
-) => {
-  const response = await api.patch(
-    `/appointments/${id}/status`,
-    {
-      status,
-    },
-  );
+export interface AppointmentPatient {
+    _id: string;
+    name: string;
+    phone?: string;
+    age?: number;
+    gender?: string;
+    patientCode?: string;
+}
 
-  return response.data;
-};
+export interface DoctorSlot {
+    _id: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    slotType: HybridPattern;
+    status:
+        | "AVAILABLE"
+        | "BOOKED"
+        | "HELD"
+        | "BLOCKED"
+        | "MISSED";
+    blockReason?: string;
+}
 
-// ==============================
-// DELETE APPOINTMENT
-// ==============================
+export interface AppointmentQueue {
+    _id?: string;
+    tokenLabel?: string;
+    status?: string;
+    source?: string;
+    estimatedTurnTime?: string | null;
+    estimatedWaitTime?: number;
+}
 
-export const deleteAppointment = async (
-  id: string,
-) => {
-  const response = await api.delete(
-    `/appointments/${id}`,
-  );
+export interface AppointmentItem {
+    _id: string;
+    id?: string;
 
-  return response.data;
-};
+    appointmentCode?: string;
+
+    patientId:
+        | string
+        | AppointmentPatient;
+
+    departmentId:
+        | string
+        | AppointmentDepartment;
+
+    doctorId:
+        | string
+        | AppointmentDoctor;
+
+    slotId?: string | null;
+
+    queueId?:
+        | string
+        | AppointmentQueue
+        | null;
+
+    appointmentDate: string;
+
+    requestedStartTime: string;
+
+    confirmedStartTime?: string | null;
+
+    endTime: string;
+
+    status: AppointmentStatus;
+
+    paymentStatus?: AppointmentPaymentStatus;
+
+    feeAmount?: number;
+
+    paidAmount?: number;
+
+    paymentMethod?: PaymentMethod | null;
+
+    paidAt?: string | null;
+
+    arrivedAt?: string | null;
+
+    checkedInAt?: string | null;
+
+    cancelledAt?: string | null;
+
+    cancellationReason?: string;
+
+    rejectedReason?: string;
+
+    noShowAt?: string | null;
+
+    reason?: string;
+
+    notes?: string;
+
+    confirmationRequired?: boolean;
+
+    createdAt?: string;
+
+    updatedAt?: string;
+}
+
+export interface UpdateDoctorSchedulePayload {
+    consultationMode: ConsultationMode;
+    appointmentEnabled: boolean;
+    confirmationRequired: boolean;
+    slotDurationMinutes: number;
+    weeklyAvailability: ScheduleDay[];
+    blockedDates?: string[];
+    maxAppointmentsPerDay: number;
+    maxWalkInsPerDay: number;
+    emergencyBufferPerDay: number;
+    bookingWindowDays: number;
+    gracePeriodMinutes: number;
+    hybridPattern: HybridPattern[];
+}
+
+export interface CreateAppointmentPayload {
+    patientId: string;
+    doctorId: string;
+    departmentId: string;
+    slotId: string;
+    reason?: string;
+    notes?: string;
+    feeAmount?: number;
+}
+
+export interface GetAppointmentsParams {
+    date?: string;
+    doctorId?: string;
+    departmentId?: string;
+    status?: AppointmentStatus | "ALL" | string;
+    paymentStatus?: AppointmentPaymentStatus | "ALL";
+}
+
+export interface CollectAppointmentPaymentPayload {
+    paidAmount: number;
+    feeAmount?: number;
+    paymentMethod: PaymentMethod;
+}
+
+/* ============================================================
+   SUPPORT DATA
+============================================================ */
+
+export const getAppointmentDoctors =
+    async () => {
+        const response =
+            await api.get(
+                "/appointments/doctors",
+            );
+
+        return response.data;
+    };
+
+export const searchAppointmentPatients =
+    async (
+        query: string,
+    ) => {
+        const response =
+            await api.get(
+                "/appointments/patients/search",
+                {
+                    params: {
+                        q: query,
+                    },
+                },
+            );
+
+        return response.data;
+    };
+
+/* ============================================================
+   DOCTOR SCHEDULE
+============================================================ */
+
+export const getDoctorSchedule =
+    async (
+        doctorId: string,
+    ) => {
+        const response =
+            await api.get(
+                `/appointments/doctors/${doctorId}/schedule`,
+            );
+
+        return response.data;
+    };
+
+export const updateDoctorSchedule =
+    async (
+        doctorId: string,
+        payload: UpdateDoctorSchedulePayload,
+    ) => {
+        const response =
+            await api.put(
+                `/appointments/doctors/${doctorId}/schedule`,
+                payload,
+            );
+
+        return response.data;
+    };
+
+/* ============================================================
+   DOCTOR SLOTS
+============================================================ */
+
+export const getDoctorSlots =
+    async (
+        doctorId: string,
+        date: string,
+    ) => {
+        const response =
+            await api.get(
+                `/appointments/doctors/${doctorId}/slots`,
+                {
+                    params: {
+                        date,
+                    },
+                },
+            );
+
+        return response.data;
+    };
+
+export const updateDoctorSlot =
+    async (
+        slotId: string,
+        payload: Partial<DoctorSlot>,
+    ) => {
+        const response =
+            await api.patch(
+                `/appointments/slots/${slotId}`,
+                payload,
+            );
+
+        return response.data;
+    };
+
+/* ============================================================
+   APPOINTMENTS
+============================================================ */
+
+export const getAppointments =
+    async (
+        params: GetAppointmentsParams = {},
+    ) => {
+        const response =
+            await api.get(
+                "/appointments",
+                {
+                    params,
+                },
+            );
+
+        return response.data;
+    };
+
+export const createAppointment =
+    async (
+        payload: CreateAppointmentPayload,
+    ) => {
+        const response =
+            await api.post(
+                "/appointments",
+                payload,
+            );
+
+        return response.data;
+    };
+
+/* ============================================================
+   APPOINTMENT ACTIONS
+============================================================ */
+
+export const confirmAppointment =
+    async (
+        appointmentId: string,
+    ) => {
+        const response =
+            await api.post(
+                `/appointments/${appointmentId}/confirm`,
+            );
+
+        return response.data;
+    };
+
+export const rejectAppointment =
+    async (
+        appointmentId: string,
+        reason?: string,
+    ) => {
+        const response =
+            await api.post(
+                `/appointments/${appointmentId}/reject`,
+                {
+                    reason,
+                },
+            );
+
+        return response.data;
+    };
+
+export const cancelAppointment =
+    async (
+        appointmentId: string,
+        reason?: string,
+    ) => {
+        const response =
+            await api.post(
+                `/appointments/${appointmentId}/cancel`,
+                {
+                    reason,
+                },
+            );
+
+        return response.data;
+    };
+
+export const rescheduleAppointment =
+    async (
+        appointmentId: string,
+        slotId: string,
+    ) => {
+        const response =
+            await api.post(
+                `/appointments/${appointmentId}/reschedule`,
+                {
+                    slotId,
+                },
+            );
+
+        return response.data;
+    };
+
+export const markAppointmentNoShow =
+    async (
+        appointmentId: string,
+    ) => {
+        const response =
+            await api.post(
+                `/appointments/${appointmentId}/no-show`,
+            );
+
+        return response.data;
+    };
+
+/* ============================================================
+   NEW RECEPTIONIST FLOW
+   ARRIVED → PAYMENT → CHECK-IN
+============================================================ */
+
+export const markAppointmentArrived =
+    async (
+        appointmentId: string,
+    ) => {
+        const response =
+            await api.post(
+                `/appointments/${appointmentId}/arrived`,
+            );
+
+        return response.data;
+    };
+
+export const collectAppointmentPayment =
+    async (
+        appointmentId: string,
+        payload: CollectAppointmentPaymentPayload,
+    ) => {
+        const response =
+            await api.post(
+                `/appointments/${appointmentId}/payment`,
+                payload,
+            );
+
+        return response.data;
+    };
+
+export const checkInAppointment =
+    async (
+        appointmentId: string,
+    ) => {
+        const response =
+            await api.post(
+                `/appointments/${appointmentId}/check-in`,
+            );
+
+        return response.data;
+    };
+
+    

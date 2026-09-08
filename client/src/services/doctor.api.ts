@@ -54,16 +54,37 @@ export interface QueueDoctor {
    DOCTOR QUEUE ITEM
 ========================================================= */
 
+export type QueueSource =
+    | "WALK_IN"
+    | "APPOINTMENT"
+    | "EMERGENCY";
+
 export interface DoctorQueueItem {
     _id: string;
-
     tokenNumber: number;
     tokenLabel: string;
 
     priority: QueuePriority;
+
+    source?: QueueSource;
+
+    appointmentId?: {
+        _id?: string;
+        appointmentCode?: string;
+        requestedStartTime?: string;
+        confirmedStartTime?: string;
+        endTime?: string;
+        paymentStatus?: string;
+        status?: string;
+    } | null;
+
+    scheduledStartTime?: string | null;
+
+    paymentStatus?: string | null;
+
     status: QueueStatus;
 
-    patient: QueuePatient;
+    patient?: QueuePatient;
 
     patientId?: QueuePatient;
 
@@ -72,13 +93,19 @@ export interface DoctorQueueItem {
     doctorId?: QueueDoctor;
 
     estimatedWaitMinutes?: number;
+
+    estimatedWaitTime?: number;
+
     estimatedTurnTime?: string;
 
     calledAt?: string;
+
     servingAt?: string;
+
     completedAt?: string;
 
     createdAt?: string;
+
     updatedAt?: string;
 }
 /* =========================================================

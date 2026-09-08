@@ -1,4 +1,6 @@
-import { Router } from "express";
+import {
+  Router,
+} from "express";
 
 import {
   createReceptionist,
@@ -6,32 +8,89 @@ import {
   updateReceptionist,
 } from "../controllers/receptionist.controller";
 
-import { protect } from "../middleware/auth.middleware";
-import { authorize } from "../middleware/role.middleware";
+import {
+  protect,
+} from "../middleware/auth.middleware";
 
-const router = Router();
+import {
+  authorize,
+} from "../middleware/role.middleware";
 
-router.use(protect);
+import {
+  requireSubscription,
+} from "../middleware/subscription.middleware";
 
-// Create receptionist
+const router =
+  Router();
+
+/* =========================================================
+   AUTHENTICATION
+========================================================= */
+
+router.use(
+  protect,
+);
+
+/* =========================================================
+   ACTIVE SUBSCRIPTION REQUIRED
+
+   BASIC + PREMIUM
+========================================================= */
+
+router.use(
+  requireSubscription,
+);
+
+/* =========================================================
+   CREATE RECEPTIONIST
+
+   POST /api/receptionists
+========================================================= */
+
 router.post(
   "/",
-  authorize("HOSPITAL_ADMIN"),
-  createReceptionist
+
+  authorize(
+    "HOSPITAL_ADMIN",
+  ),
+
+  createReceptionist,
 );
 
-// Get receptionists
+/* =========================================================
+   GET RECEPTIONISTS
+
+   GET /api/receptionists
+========================================================= */
+
 router.get(
   "/",
-  authorize("HOSPITAL_ADMIN"),
-  getReceptionists
+
+  authorize(
+    "HOSPITAL_ADMIN",
+  ),
+
+  getReceptionists,
 );
 
-// Update receptionist
+/* =========================================================
+   UPDATE RECEPTIONIST
+
+   PUT /api/receptionists/:id
+========================================================= */
+
 router.put(
   "/:id",
-  authorize("HOSPITAL_ADMIN"),
-  updateReceptionist
+
+  authorize(
+    "HOSPITAL_ADMIN",
+  ),
+
+  updateReceptionist,
 );
+
+/* =========================================================
+   EXPORT
+========================================================= */
 
 export default router;

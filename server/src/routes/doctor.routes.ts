@@ -1,4 +1,6 @@
-import { Router } from "express";
+import {
+  Router,
+} from "express";
 
 import {
   createDoctor,
@@ -6,57 +8,153 @@ import {
   getDoctorById,
   updateDoctor,
   updateDoctorStatus,
-   deleteDoctor,
+  deleteDoctor,
 } from "../controllers/doctor.controller";
 
-import { protect } from "../middleware/auth.middleware";
+import {
+  protect,
+} from "../middleware/auth.middleware";
 
-const router = Router();
+import {
+  authorize,
+} from "../middleware/role.middleware";
+
+import {
+  requireSubscription,
+} from "../middleware/subscription.middleware";
+
+const router =
+  Router();
 
 /* =========================================================
-   DOCTORS
+   AUTHENTICATION
 ========================================================= */
 
-// GET /api/doctors
+router.use(
+  protect,
+);
+
+/* =========================================================
+   ACTIVE SUBSCRIPTION REQUIRED
+
+   BASIC + PREMIUM
+========================================================= */
+
+router.use(
+  requireSubscription,
+);
+
+/* =========================================================
+   GET ALL DOCTORS
+
+   GET /api/doctors
+========================================================= */
+
 router.get(
   "/",
-  protect,
+
+  authorize(
+    "HOSPITAL_ADMIN",
+    "RECEPTIONIST",
+    "DOCTOR",
+  ),
+
   getDoctors,
 );
 
-// POST /api/doctors
+/* =========================================================
+   CREATE DOCTOR
+
+   POST /api/doctors
+
+   HOSPITAL ADMIN ONLY
+========================================================= */
+
 router.post(
   "/",
-  protect,
+
+  authorize(
+    "HOSPITAL_ADMIN",
+  ),
+
   createDoctor,
 );
 
-// GET /api/doctors/:id
+/* =========================================================
+   GET DOCTOR BY ID
+
+   GET /api/doctors/:id
+========================================================= */
+
 router.get(
   "/:id",
-  protect,
+
+  authorize(
+    "HOSPITAL_ADMIN",
+    "RECEPTIONIST",
+    "DOCTOR",
+  ),
+
   getDoctorById,
 );
 
-// PUT /api/doctors/:id
+/* =========================================================
+   UPDATE DOCTOR
+
+   PUT /api/doctors/:id
+
+   HOSPITAL ADMIN ONLY
+========================================================= */
+
 router.put(
   "/:id",
-  protect,
+
+  authorize(
+    "HOSPITAL_ADMIN",
+  ),
+
   updateDoctor,
 );
 
-// PATCH /api/doctors/:id/status
+/* =========================================================
+   UPDATE DOCTOR STATUS
+
+   PATCH /api/doctors/:id/status
+
+   HOSPITAL ADMIN + DOCTOR
+========================================================= */
+
 router.patch(
   "/:id/status",
-  protect,
+
+  authorize(
+    "HOSPITAL_ADMIN",
+    "DOCTOR",
+  ),
+
   updateDoctorStatus,
 );
 
+/* =========================================================
+   DELETE DOCTOR
+
+   DELETE /api/doctors/:id
+
+   HOSPITAL ADMIN ONLY
+========================================================= */
+
 router.delete(
-    "/:id",
-    protect,
-    deleteDoctor,
+  "/:id",
+
+  authorize(
+    "HOSPITAL_ADMIN",
+  ),
+
+  deleteDoctor,
 );
 
+/* =========================================================
+   EXPORT
+========================================================= */
 
 export default router;

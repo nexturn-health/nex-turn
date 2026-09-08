@@ -1,8 +1,8 @@
 import api from "./api";
 
-// =====================================================
-// DISPLAY LANGUAGE
-// =====================================================
+/* ============================================================
+   DISPLAY LANGUAGE
+============================================================ */
 
 export type DisplayLanguage =
     | "EN"
@@ -16,19 +16,25 @@ export type DisplayLanguage =
     | "PA"
     | "ML";
 
+/* ============================================================
+   DISPLAY DOCTOR
+============================================================ */
+
 export interface DisplayDoctor {
     _id: string;
+
     name: string;
+
     isOnline: boolean;
+
     lastSeen?: string;
 }
 
-// =====================================================
-// DISPLAY QUEUE
-// =====================================================
+/* ============================================================
+   DISPLAY QUEUE
+============================================================ */
 
 export interface DisplayQueue {
-
     _id: string;
 
     tokenNumber: number;
@@ -36,44 +42,41 @@ export interface DisplayQueue {
     tokenLabel: string;
 
     priority:
-    | "NORMAL"
-    | "EMERGENCY";
+        | "NORMAL"
+        | "EMERGENCY";
 
     status:
-    | "WAITING"
-    | "CALLED"
-    | "SERVING"
-    | "COMPLETED"
-    | "SKIPPED"
-    | "CANCELLED";
+        | "WAITING"
+        | "CALLED"
+        | "SERVING"
+        | "COMPLETED"
+        | "SKIPPED"
+        | "CANCELLED";
 
     estimatedWaitTime?: number;
 
     doctorOnline?: boolean;
 
-    doctorLastSeenAt?: string | null;
+    doctorLastSeenAt?:
+        | string
+        | null;
 
     departmentId?: {
-
         _id: string;
 
         name: string;
 
         tokenPrefix?: string;
-
     } | null;
 
     doctorId?: DisplayDoctor;
-
 }
 
-
-// =====================================================
-// DISPLAY CONFIG
-// =====================================================
+/* ============================================================
+   DISPLAY CONFIG
+============================================================ */
 
 export interface DisplayConfig {
-
     _id?: string;
 
     hospitalId?: string;
@@ -90,7 +93,8 @@ export interface DisplayConfig {
 
     secondaryColor: string;
 
-    displayLanguage: DisplayLanguage;
+    displayLanguage:
+        DisplayLanguage;
 
     voiceEnabled: boolean;
 
@@ -109,16 +113,16 @@ export interface DisplayConfig {
     showCurrent: boolean;
 
     isActive?: boolean;
-
 }
 
+/* ============================================================
+   PUBLIC DISPLAY RESPONSE
+============================================================ */
 
 export interface DisplayResponse {
-
     success?: boolean;
 
     display: {
-
         hospitalName: string;
 
         heading: string;
@@ -127,11 +131,14 @@ export interface DisplayResponse {
 
         primaryColor?: string;
 
+        secondaryColor?: string;
+
         voiceEnabled: boolean;
 
         announcementEnabled: boolean;
 
-        displayLanguage: DisplayLanguage;
+        displayLanguage:
+            DisplayLanguage;
 
         announcementRepeat: number;
 
@@ -142,98 +149,155 @@ export interface DisplayResponse {
         showWaiting: boolean;
 
         showEmergency: boolean;
-
     };
 
-    // ============================================
-    // DOCTOR PRESENCE
-    // ============================================
-
-    doctorId: string | null;
+    doctorId:
+        | string
+        | null;
 
     doctorName: string;
 
     doctorOnline: boolean;
 
-    doctorLastSeenAt?: string | null;
+    doctorLastSeenAt?:
+        | string
+        | null;
 
-    // ============================================
-    // QUEUES
-    // ============================================
+    current:
+        DisplayQueue[];
 
-    current: DisplayQueue[];
+    next:
+        DisplayQueue[];
 
-    next: DisplayQueue[];
+    waiting:
+        DisplayQueue[];
 
-    waiting: DisplayQueue[];
-
-    emergency: DisplayQueue[];
+    emergency:
+        DisplayQueue[];
 }
 
+/* ============================================================
+   CONFIG RESPONSE
+============================================================ */
 
-// =====================================================
-// PUBLIC DISPLAY
-// =====================================================
+export interface DisplayConfigResponse {
+    success: boolean;
 
-export const getDisplayBoard = async (
-    displayKey: string,
-): Promise<DisplayResponse> => {
+    message?: string;
 
-    if (!displayKey) {
+    display:
+        DisplayConfig;
 
-        throw new Error(
-            "Display key is required",
-        );
+    displayUrl?: string;
+}
 
-    }
+/* ============================================================
+   CREATE RESPONSE
+============================================================ */
 
-    console.log(
-        "DISPLAY KEY:",
-        displayKey,
-    );
+export interface CreateDisplayResponse {
+    success: boolean;
 
-    const response =
-        await api.get<DisplayResponse>(
-            `/display/public/${displayKey}`,
-        );
+    message?: string;
 
-    return response.data;
-};
+    display:
+        DisplayConfig;
 
+    displayUrl?: string;
+}
 
-// =====================================================
-// GET DISPLAY CONFIG
-// ADMIN
-// =====================================================
+/* ============================================================
+   UPDATE RESPONSE
+============================================================ */
 
-export const getDisplayConfig =
-    async (): Promise<DisplayConfig> => {
+export interface UpdateDisplayResponse {
+    success: boolean;
+
+    message?: string;
+
+    display:
+        DisplayConfig;
+}
+
+/* ============================================================
+   REGENERATE RESPONSE
+============================================================ */
+
+export interface RegenerateDisplayKeyResponse {
+    success: boolean;
+
+    message?: string;
+
+    displayKey?: string;
+
+    display?:
+        DisplayConfig;
+
+    displayUrl?: string;
+}
+
+/* ============================================================
+   PUBLIC DISPLAY
+============================================================ */
+
+export const getDisplayBoard =
+    async (
+        displayKey: string,
+    ): Promise<
+        DisplayResponse
+    > => {
+
+        if (!displayKey) {
+            throw new Error(
+                "Display key is required",
+            );
+        }
 
         const response =
-            await api.get<{
-                success: boolean;
-                display: DisplayConfig;
-                displayUrl?: string;
-            }>(
+            await api.get<
+                DisplayResponse
+            >(
+                `/display/public/${displayKey}`,
+            );
+
+        return response.data;
+    };
+
+/* ============================================================
+   GET DISPLAY CONFIG
+============================================================ */
+
+export const getDisplayConfig =
+    async (): Promise<
+        DisplayConfig
+    > => {
+
+        const response =
+            await api.get<
+                DisplayConfigResponse
+            >(
                 "/display/config",
             );
 
         return response.data.display;
     };
 
-
-// =====================================================
-// CREATE DISPLAY
-// ADMIN
-// =====================================================
+/* ============================================================
+   CREATE DISPLAY
+============================================================ */
 
 export const createDisplay =
     async (
-        data?: Partial<DisplayConfig>,
-    ) => {
+        data?:
+            Partial<DisplayConfig>,
+    ): Promise<
+        CreateDisplayResponse
+    > => {
 
         const response =
-            await api.post(
+            await api.post<
+                CreateDisplayResponse
+            >(
                 "/display",
                 data || {},
             );
@@ -241,19 +305,22 @@ export const createDisplay =
         return response.data;
     };
 
-
-// =====================================================
-// UPDATE DISPLAY CONFIG
-// ADMIN
-// =====================================================
+/* ============================================================
+   UPDATE DISPLAY
+============================================================ */
 
 export const updateDisplayConfig =
     async (
-        data: Partial<DisplayConfig>,
-    ) => {
+        data:
+            Partial<DisplayConfig>,
+    ): Promise<
+        UpdateDisplayResponse
+    > => {
 
         const response =
-            await api.put(
+            await api.put<
+                UpdateDisplayResponse
+            >(
                 "/display/config",
                 data,
             );
@@ -261,17 +328,19 @@ export const updateDisplayConfig =
         return response.data;
     };
 
-
-// =====================================================
-// REGENERATE DISPLAY KEY
-// ADMIN
-// =====================================================
+/* ============================================================
+   REGENERATE KEY
+============================================================ */
 
 export const regenerateDisplayKey =
-    async () => {
+    async (): Promise<
+        RegenerateDisplayKeyResponse
+    > => {
 
         const response =
-            await api.post(
+            await api.post<
+                RegenerateDisplayKeyResponse
+            >(
                 "/display/regenerate-key",
             );
 

@@ -1,358 +1,610 @@
 import mongoose, {
-  Document,
-  Schema,
+    HydratedDocument,
+    Schema,
 } from "mongoose";
 
-// =====================================
-// QUEUE TYPES
-// =====================================
+/* ============================================================
+   QUEUE TYPES
+============================================================ */
 
 export type QueueStatus =
-  | "WAITING"
-  | "CALLED"
-  | "SERVING"
-  | "COMPLETED"
-  | "SKIPPED"
-  | "CANCELLED";
+    | "WAITING"
+    | "CALLED"
+    | "SERVING"
+    | "COMPLETED"
+    | "SKIPPED"
+    | "CANCELLED";
 
 export type QueuePriority =
-  | "NORMAL"
-  | "EMERGENCY";
+    | "NORMAL"
+    | "EMERGENCY";
 
-// =====================================
-// QUEUE INTERFACE
-// =====================================
+export type QueueSource =
+    | "WALK_IN"
+    | "APPOINTMENT"
+    | "EMERGENCY";
 
-export interface IQueue extends Document {
-  hospitalId: mongoose.Types.ObjectId;
+export type QueuePaymentStatus =
+    | "UNPAID"
+    | "PAID"
+    | "REFUNDED";
 
-  patientId: mongoose.Types.ObjectId;
+/* ============================================================
+   QUEUE INTERFACE
+============================================================ */
 
-  departmentId: mongoose.Types.ObjectId;
+export interface IQueue {
+    _id?:
+        mongoose.Types.ObjectId;
 
-  doctorId?: mongoose.Types.ObjectId | null;
+    hospitalId:
+        mongoose.Types.ObjectId;
 
-  tokenNumber: number;
+    patientId:
+        mongoose.Types.ObjectId;
 
-  tokenLabel: string;
+    departmentId:
+        mongoose.Types.ObjectId;
 
-  priority: QueuePriority;
+    doctorId?:
+        mongoose.Types.ObjectId | null;
 
-  status: QueueStatus;
+    appointmentId?:
+        mongoose.Types.ObjectId | null;
 
-  queueDate: string;
+    source:
+        QueueSource;
 
-  // ===================================
-  // ESTIMATED WAIT TIME
-  // ===================================
+    scheduledStartTime?:
+        string | null;
 
-  estimatedWaitTime: number;
+    sortTime?:
+        Date | null;
 
-  estimatedTurnTime?: Date | null;
+    tokenNumber:
+        number;
 
-  // ===================================
-  // REAL CONSULTATION DURATION
-  // ===================================
+    tokenLabel:
+        string;
 
-  serviceDurationMinutes?: number | null;
+    priority:
+        QueuePriority;
 
-  // ===================================
-  // SECURE PATIENT TRACKING
-  // ===================================
+    status:
+        QueueStatus;
 
-  trackingToken: string;
+    queueDate:
+        string;
 
-  trackingLinkActive: boolean;
+    paymentStatus:
+        QueuePaymentStatus;
 
-  trackingExpiresAt: Date;
+    arrivedAt?:
+        Date | null;
 
-  // ===================================
-  // NOTIFICATION STATUS
-  // ===================================
+    checkedInAt?:
+        Date | null;
 
-  tokenNotificationSent: boolean;
+    estimatedWaitTime:
+        number;
 
-  nearTurnNotificationSent: boolean;
+    estimatedTurnTime?:
+        Date | null;
 
-  calledNotificationSent: boolean;
+    serviceDurationMinutes?:
+        number | null;
 
-  // ===================================
-  // QUEUE TIMESTAMPS
-  // ===================================
+    trackingToken:
+        string;
 
-  calledAt?: Date | null;
+    trackingLinkActive:
+        boolean;
 
-  servingAt?: Date | null;
+    trackingExpiresAt:
+        Date;
 
-  completedAt?: Date | null;
+    tokenNotificationSent:
+        boolean;
 
-  createdAt: Date;
+    nearTurnNotificationSent:
+        boolean;
 
-  updatedAt: Date;
+    calledNotificationSent:
+        boolean;
+
+    calledAt?:
+        Date | null;
+
+    servingAt?:
+        Date | null;
+
+    completedAt?:
+        Date | null;
+
+    createdAt?:
+        Date;
+
+    updatedAt?:
+        Date;
 }
 
-// =====================================
-// QUEUE SCHEMA
-// =====================================
+export type QueueDocument =
+    HydratedDocument<IQueue>;
 
-const queueSchema = new Schema<IQueue>(
-  {
-    // =================================
-    // HOSPITAL
-    // =================================
+/* ============================================================
+   QUEUE SCHEMA
+============================================================ */
 
-    hospitalId: {
-      type: Schema.Types.ObjectId,
-      ref: "Hospital",
-      required: true,
-      index: true,
-    },
+const queueSchema =
+    new Schema<IQueue>(
+        {
+            hospitalId: {
+                type:
+                    Schema.Types.ObjectId,
 
-    // =================================
-    // PATIENT
-    // =================================
+                ref:
+                    "Hospital",
 
-    patientId: {
-      type: Schema.Types.ObjectId,
-      ref: "Patient",
-      required: true,
-      index: true,
-    },
+                required:
+                    true,
 
-    // =================================
-    // DEPARTMENT
-    // =================================
+                index:
+                    true,
+            },
 
-    departmentId: {
-      type: Schema.Types.ObjectId,
-      ref: "Department",
-      required: true,
-      index: true,
-    },
+            patientId: {
+                type:
+                    Schema.Types.ObjectId,
 
-    // =================================
-    // DOCTOR
-    // =================================
+                ref:
+                    "Patient",
 
-    doctorId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-      index: true,
-    },
+                required:
+                    true,
 
-    // =================================
-    // TOKEN
-    // =================================
+                index:
+                    true,
+            },
 
-    tokenNumber: {
-      type: Number,
-      required: true,
-      min: 1,
-    },
+            departmentId: {
+                type:
+                    Schema.Types.ObjectId,
 
-    tokenLabel: {
-      type: String,
-      required: true,
-      trim: true,
-    },
+                ref:
+                    "Department",
 
-    // =================================
-    // PRIORITY
-    // =================================
+                required:
+                    true,
 
-    priority: {
-      type: String,
-      enum: [
-        "NORMAL",
-        "EMERGENCY",
-      ],
-      default: "NORMAL",
-      required: true,
-    },
+                index:
+                    true,
+            },
 
-    // =================================
-    // STATUS
-    // =================================
+            doctorId: {
+                type:
+                    Schema.Types.ObjectId,
 
-    status: {
-      type: String,
-      enum: [
-        "WAITING",
-        "CALLED",
-        "SERVING",
-        "COMPLETED",
-        "SKIPPED",
-        "CANCELLED",
-      ],
-      default: "WAITING",
-      required: true,
-      index: true,
-    },
+                ref:
+                    "User",
 
-    // =================================
-    // QUEUE DATE
-    // =================================
+                default:
+                    null,
 
-    queueDate: {
-      type: String,
-      required: true,
-      index: true,
-    },
+                index:
+                    true,
+            },
 
-    // =================================
-    // ESTIMATED WAIT TIME
-    // =================================
+            appointmentId: {
+                type:
+                    Schema.Types.ObjectId,
 
-    estimatedWaitTime: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
+                ref:
+                    "Appointment",
 
-    estimatedTurnTime: {
-      type: Date,
-      default: null,
-    },
+                default:
+                    null,
 
-    // =================================
-    // REAL CONSULTATION DURATION
-    //
-    // Saved when doctor completes a patient.
-    // This is used to calculate the doctor's
-    // real average consultation time.
-    // =================================
+                index:
+                    true,
+            },
 
-    serviceDurationMinutes: {
-      type: Number,
-      default: null,
-      min: 0,
-    },
+            source: {
+                type:
+                    String,
 
-    // =================================
-    // SECURE PATIENT TRACKING
-    // =================================
+                enum: [
+                    "WALK_IN",
+                    "APPOINTMENT",
+                    "EMERGENCY",
+                ],
 
-    trackingToken: {
-      type: String,
-      required: true,
-      unique: true,
-      index: true,
-      trim: true,
-    },
+                default:
+                    "WALK_IN",
 
-    trackingLinkActive: {
-      type: Boolean,
-      default: true,
-      index: true,
-    },
+                required:
+                    true,
 
-    trackingExpiresAt: {
-      type: Date,
-      required: true,
-      index: true,
-    },
+                index:
+                    true,
+            },
 
-    // =================================
-    // NOTIFICATION STATUS
-    // =================================
+            scheduledStartTime: {
+                type:
+                    String,
 
-    tokenNotificationSent: {
-      type: Boolean,
-      default: false,
-    },
+                default:
+                    null,
 
-    nearTurnNotificationSent: {
-      type: Boolean,
-      default: false,
-    },
+                trim:
+                    true,
+            },
 
-    calledNotificationSent: {
-      type: Boolean,
-      default: false,
-    },
+            sortTime: {
+                type:
+                    Date,
 
-    // =================================
-    // QUEUE TIMESTAMPS
-    // =================================
+                default:
+                    null,
 
-    calledAt: {
-      type: Date,
-      default: null,
-    },
+                index:
+                    true,
+            },
 
-    servingAt: {
-      type: Date,
-      default: null,
-    },
+            tokenNumber: {
+                type:
+                    Number,
 
-    completedAt: {
-      type: Date,
-      default: null,
-    },
-  },
-  {
-    timestamps: true,
-  },
-);
+                required:
+                    true,
 
-// =====================================
-// INDEXES
-// =====================================
+                min:
+                    1,
+            },
+
+            tokenLabel: {
+                type:
+                    String,
+
+                required:
+                    true,
+
+                trim:
+                    true,
+            },
+
+            priority: {
+                type:
+                    String,
+
+                enum: [
+                    "NORMAL",
+                    "EMERGENCY",
+                ],
+
+                default:
+                    "NORMAL",
+
+                required:
+                    true,
+            },
+
+            status: {
+                type:
+                    String,
+
+                enum: [
+                    "WAITING",
+                    "CALLED",
+                    "SERVING",
+                    "COMPLETED",
+                    "SKIPPED",
+                    "CANCELLED",
+                ],
+
+                default:
+                    "WAITING",
+
+                required:
+                    true,
+
+                index:
+                    true,
+            },
+
+            queueDate: {
+                type:
+                    String,
+
+                required:
+                    true,
+
+                index:
+                    true,
+            },
+
+            paymentStatus: {
+                type:
+                    String,
+
+                enum: [
+                    "UNPAID",
+                    "PAID",
+                    "REFUNDED",
+                ],
+
+                default:
+                    "UNPAID",
+
+                index:
+                    true,
+            },
+
+            arrivedAt: {
+                type:
+                    Date,
+
+                default:
+                    null,
+            },
+
+            checkedInAt: {
+                type:
+                    Date,
+
+                default:
+                    null,
+            },
+
+            estimatedWaitTime: {
+                type:
+                    Number,
+
+                default:
+                    0,
+
+                min:
+                    0,
+            },
+
+            estimatedTurnTime: {
+                type:
+                    Date,
+
+                default:
+                    null,
+            },
+
+            serviceDurationMinutes: {
+                type:
+                    Number,
+
+                default:
+                    null,
+
+                min:
+                    0,
+            },
+
+            trackingToken: {
+                type:
+                    String,
+
+                required:
+                    true,
+
+                unique:
+                    true,
+
+                index:
+                    true,
+
+                trim:
+                    true,
+            },
+
+            trackingLinkActive: {
+                type:
+                    Boolean,
+
+                default:
+                    true,
+
+                index:
+                    true,
+            },
+
+            trackingExpiresAt: {
+                type:
+                    Date,
+
+                required:
+                    true,
+
+                index:
+                    true,
+            },
+
+            tokenNotificationSent: {
+                type:
+                    Boolean,
+
+                default:
+                    false,
+            },
+
+            nearTurnNotificationSent: {
+                type:
+                    Boolean,
+
+                default:
+                    false,
+            },
+
+            calledNotificationSent: {
+                type:
+                    Boolean,
+
+                default:
+                    false,
+            },
+
+            calledAt: {
+                type:
+                    Date,
+
+                default:
+                    null,
+            },
+
+            servingAt: {
+                type:
+                    Date,
+
+                default:
+                    null,
+            },
+
+            completedAt: {
+                type:
+                    Date,
+
+                default:
+                    null,
+            },
+        },
+        {
+            timestamps:
+                true,
+        },
+    );
+
+/* ============================================================
+   INDEXES
+============================================================ */
 
 queueSchema.index({
-  hospitalId: 1,
-  departmentId: 1,
-  queueDate: 1,
+    hospitalId:
+        1,
+    departmentId:
+        1,
+    queueDate:
+        1,
 });
 
 queueSchema.index({
-  hospitalId: 1,
-  departmentId: 1,
-  queueDate: 1,
-  tokenNumber: 1,
+    hospitalId:
+        1,
+    departmentId:
+        1,
+    queueDate:
+        1,
+    tokenNumber:
+        1,
 });
 
 queueSchema.index({
-  hospitalId: 1,
-  departmentId: 1,
-  queueDate: 1,
-  status: 1,
+    hospitalId:
+        1,
+    departmentId:
+        1,
+    queueDate:
+        1,
+    status:
+        1,
 });
 
 queueSchema.index({
-  hospitalId: 1,
-  doctorId: 1,
-  queueDate: 1,
-  status: 1,
+    hospitalId:
+        1,
+    doctorId:
+        1,
+    queueDate:
+        1,
+    status:
+        1,
 });
 
 queueSchema.index({
-  hospitalId: 1,
-  departmentId: 1,
-  queueDate: 1,
-  status: 1,
-  serviceDurationMinutes: 1,
+    hospitalId:
+        1,
+    doctorId:
+        1,
+    queueDate:
+        1,
+    source:
+        1,
+    status:
+        1,
 });
 
 queueSchema.index({
-  hospitalId: 1,
-  doctorId: 1,
-  status: 1,
-  completedAt: -1,
+    hospitalId:
+        1,
+    appointmentId:
+        1,
 });
 
 queueSchema.index({
-  trackingToken: 1,
-  trackingLinkActive: 1,
-  trackingExpiresAt: 1,
+    hospitalId:
+        1,
+    doctorId:
+        1,
+    queueDate:
+        1,
+    scheduledStartTime:
+        1,
 });
 
-// =====================================
-// MODEL
-// =====================================
+queueSchema.index({
+    hospitalId:
+        1,
+    doctorId:
+        1,
+    queueDate:
+        1,
+    sortTime:
+        1,
+});
 
-export const Queue = mongoose.model<IQueue>(
-  "Queue",
-  queueSchema,
-);
+queueSchema.index({
+    hospitalId:
+        1,
+    departmentId:
+        1,
+    queueDate:
+        1,
+    status:
+        1,
+    serviceDurationMinutes:
+        1,
+});
+
+queueSchema.index({
+    hospitalId:
+        1,
+    doctorId:
+        1,
+    status:
+        1,
+    completedAt:
+        -1,
+});
+
+queueSchema.index({
+    trackingToken:
+        1,
+    trackingLinkActive:
+        1,
+    trackingExpiresAt:
+        1,
+});
+
+/* ============================================================
+   MODEL
+============================================================ */
+
+export const Queue =
+    mongoose.model<IQueue>(
+        "Queue",
+        queueSchema,
+    );

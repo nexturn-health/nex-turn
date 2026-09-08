@@ -68,6 +68,30 @@ const ANNOUNCEMENT_TEXT: Record<DisplayLanguage, (token: string, dept: string) =
   ML: (t, d) => `ടോക്കൺ ${t}, ${d} ദയവായി മുന്നോട്ട് വരിക.`,
 };
 
+const EMERGENCY_ANNOUNCEMENT_TEXT: Record<DisplayLanguage, (token: string, dept: string) => string> = {
+  EN: (t, d) => `Emergency token ${t}, please proceed immediately to ${d}.`,
+  HI: (t, d) => `आपातकालीन टोकन ${toHindiSpeech(t)}, कृपया तुरंत ${d} में आगे आएं।`,
+  BN: (t, d) => `জরুরি টোকেন ${t}, অনুগ্রহ করে এখনই ${d} এর জন্য এগিয়ে আসুন।`,
+  MR: (t, d) => `आपत्कालीन टोकन ${t}, कृपया त्वरित ${d} मध्ये पुढे या.`,
+  TA: (t, d) => `அவசர டோக்கன் ${t}, ${d} தயவுசெய்து உடனே முன் வாருங்கள்.`,
+  TE: (t, d) => `ఎమర్జెన్సీ టోకెన్ ${t}, ${d} కు వెంటనే ముందుకు రండి.`,
+  KN: (t, d) => `ತುರ್ತು ಟೋಕನ್ ${t}, ದಯವಿಟ್ಟು ತಕ್ಷಣ ${d} ಗೆ ಬನ್ನಿ.`,
+  GU: (t, d) => `ઇમરજન્સી ટોકન ${t}, કૃપા કરીને તરત ${d} માટે આગળ આવો.`,
+  PA: (t, d) => `ਐਮਰਜੈਂਸੀ ਟੋਕਨ ${t}, ਕਿਰਪਾ ਕਰਕੇ ਤੁਰੰਤ ${d} ਲਈ ਅੱਗੇ ਆਓ।`,
+  ML: (t, d) => `അടിയന്തര ടോക്കൺ ${t}, ദയവായി ഉടൻ ${d} ലേക്ക് വരിക.`,
+};
+
+type EmergencyAwareDisplayQueue = DisplayQueue & {
+  priority?: "NORMAL" | "EMERGENCY";
+  source?: "WALK_IN" | "APPOINTMENT" | "EMERGENCY";
+};
+
+function isEmergencyQueue(queue?: DisplayQueue | null): boolean {
+  const item = queue as EmergencyAwareDisplayQueue | null | undefined;
+
+  return item?.priority === "EMERGENCY" || item?.source === "EMERGENCY";
+}
+
 const DOCTOR_OFFLINE_TEXT: Record<DisplayLanguage, (name: string) => string> = {
   EN: (n) => `Doctor ${n} is currently offline. Please wait for the doctor to come online.`,
   HI: (n) => `डॉक्टर ${n} अभी ऑफलाइन हैं। कृपया डॉक्टर के ऑनलाइन आने तक प्रतीक्षा करें।`,
@@ -198,6 +222,7 @@ function useDisplayPolling(displayKey: string | undefined) {
 
   useEffect(() => {
     if (!displayKey) {
+      setData(null);
       setError("Display key is missing");
       setLoading(false);
       return;
@@ -224,12 +249,11 @@ function useDisplayPolling(displayKey: string | undefined) {
         console.error("DISPLAY BOARD ERROR:", err);
         if (!mounted) return;
 
-        // Keep showing the last good snapshot; only surface an error
-        // (and the loading screen) on the very first fetch.
-        if (isInitial) setError("Unable to connect to hospital display");
+        // Keep the last snapshot, but tell viewers it may be out of date.
+        setError("Unable to connect to hospital display");
       } finally {
         requestInFlight = false;
-        if (isInitial) setLoading(false);
+        if (mounted && isInitial) setLoading(false);
       }
     };
 
@@ -247,7 +271,7 @@ function useDisplayPolling(displayKey: string | undefined) {
 
 // Hook: text-to-speech announcer
 
-function useSpeechAnnouncer(voicesRef: React.MutableRefObject<SpeechSynthesisVoice[]>) {
+function useSpeechAnnouncer(voicesRef: { current: SpeechSynthesisVoice[] }) {
   const [enabled, setEnabled] = useState(false);
   const [selectedVoiceName, setSelectedVoiceName] = useState<string>(() =>
     typeof window !== "undefined" ? localStorage.getItem("nexturn-display-voice") ?? "" : "",
@@ -483,9 +507,15 @@ function useAnnouncements(
     if (lastAnnouncedToken.current === token) return;
 
     lastAnnouncedToken.current = token;
-    const department = current[0].departmentId?.name ?? "OPD";
+
+    const currentQueue = current[0];
+    const department = currentQueue.departmentId?.name ?? "OPD";
+    const isEmergency = isEmergencyQueue(currentQueue);
+
     announcer.speak(
-      ANNOUNCEMENT_TEXT[display.displayLanguage](token, department),
+      isEmergency
+        ? EMERGENCY_ANNOUNCEMENT_TEXT[display.displayLanguage](token, department)
+        : ANNOUNCEMENT_TEXT[display.displayLanguage](token, department),
       display.displayLanguage,
       display.announcementRepeat,
     );
@@ -493,510 +523,273 @@ function useAnnouncements(
   }, [data, announcer.enabled]);
 }
 
-// Root component
-
+// TV layout: large numbers first, with setup controls tucked away.
 const DisplayBoard = () => {
   const { displayKey } = useParams<{ displayKey: string }>();
-
   const now = useClock();
   const { voicesRef } = useSpeechVoices();
   const { data, loading, error } = useDisplayPolling(displayKey);
   const announcer = useSpeechAnnouncer(voicesRef);
-
   useAnnouncements(displayKey, data, announcer);
 
-  if (loading) return <LoadingScreen />;
-  if (error && !data) return <ErrorScreen message={error} displayKey={displayKey} />;
-  if (!data) return null;
+  // Rotate long lists without requiring a mouse or remote to scroll.
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    setPage(0);
+    const timer = window.setInterval(() => setPage(value => value + 1), 8000);
+    return () => window.clearInterval(timer);
+  }, [displayKey]);
+
+  const [fullscreenError, setFullscreenError] = useState("");
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+      setFullscreenError("");
+    } catch {
+      setFullscreenError("Fullscreen is unavailable. Use your browser's fullscreen option.");
+    }
+  }
+
+  if (loading || !data) {
+    return <div className="tv-board tv-start"><TVStyles /><h1>{loading ? "Connecting to hospital display…" : "Display unavailable"}</h1><p role="status">{error || "Loading the latest queue information."}</p>{!loading && <p>Check the display link and connection. This screen retries automatically.</p>}</div>;
+  }
 
   const { display, current = [], next = [], waiting = [], emergency = [] } = data;
   const doctorOnline = data.doctorOnline === true;
-  const doctorName = data.doctorName || "Doctor";
-
+  const currentPage = getPage(current, page, 2);
+  const nextPage = getPage(next, page, 4);
+  const waitingPage = getPage(waiting, page, 8);
+  const emergencyPage = getPage(emergency, page, 6);
   const time = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
-  const date = now.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
+  const date = now.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" });
+  const hasMain = display.showCurrent || display.showNext;
 
-  const tickerItems = buildTickerItems({ display, waiting: waiting.length, doctorName, doctorOnline });
+  return <div className="tv-board">
+    <TVStyles />
 
-  return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-blue-700 text-white" style={{ fontFeatureSettings: '"tnum" 1' }}>
-      <TickerStyles />
-      <BackgroundDecoration />
-
-      <div className="relative z-10 flex min-h-screen flex-col">
-        <TopBar display={display} time={time} date={date} doctorName={doctorName} doctorOnline={doctorOnline} />
-
-        {display.voiceEnabled && !announcer.enabled && <VoicePrompt onEnable={announcer.activate} />}
-
-        <VoiceSettings
-          enabled={announcer.enabled}
-          voices={announcer.voices}
-          selectedVoiceName={announcer.selectedVoiceName}
-          displayLanguage={display.displayLanguage}
-          onSelectVoice={announcer.selectVoice}
-          onTestVoice={announcer.testVoice}
-        />
-
-        <main className="grid flex-1 grid-cols-1 gap-5 p-4 md:p-6 lg:grid-cols-[1fr_380px] lg:gap-6 lg:p-8">
-          <div className="flex flex-col gap-5 lg:gap-6">
-            {display.showCurrent && (
-              <NowServingPanel current={current} doctorName={doctorName} doctorOnline={doctorOnline} />
-            )}
-
-            {display.showWaiting && <StatusStrip waiting={waiting} emergency={display.showEmergency ? emergency : []} />}
-          </div>
-
-          {display.showNext && <UpNextPanel next={next} />}
-        </main>
-
-        <Ticker items={tickerItems} time={time} />
+    {/* Hospital identity and clock stay visible in every queue state. */}
+    <header className="tv-header">
+      <div className="tv-brand">
+        <div className="tv-logo">{display.logoUrl ? <img src={display.logoUrl} alt="" /> : display.hospitalName.charAt(0)}</div>
+        <div><h1>{display.hospitalName}</h1><p>{display.heading}</p></div>
       </div>
+      <div className="tv-clock"><strong>{time}</strong><span>{date}</span></div>
+      <details className="tv-settings">
+        <summary aria-label="Open display settings">Settings</summary>
+        <div className="tv-settings-panel">
+          <h2>Display settings</h2>
+          <button type="button" onClick={toggleFullscreen}>Toggle fullscreen</button>
+          {fullscreenError && <p role="alert">{fullscreenError}</p>}
+          {display.voiceEnabled ? <>
+            <p>Announcement language: {LANGUAGE_NAMES[display.displayLanguage]}</p>
+            {!announcer.enabled ? <button type="button" onClick={announcer.activate}>Enable voice announcements</button> : <p>Voice announcements enabled</p>}
+            <label htmlFor="tv-voice">Announcement voice</label>
+            <select id="tv-voice" value={announcer.selectedVoiceName} onChange={event => announcer.selectVoice(event.target.value)}>
+              <option value="">Automatic — match language</option>
+              {[...announcer.voices].sort((a, b) => a.name.localeCompare(b.name)).map(voice => <option key={`${voice.name}-${voice.lang}`} value={voice.name}>{voice.name} ({voice.lang})</option>)}
+            </select>
+            <button type="button" onClick={() => announcer.testVoice(display.displayLanguage)}>Test voice</button>
+            <p>Available voices depend on this device.</p>
+          </> : <p>Voice is disabled in the hospital display configuration.</p>}
+        </div>
+      </details>
+    </header>
+
+    {/* A stale snapshot must never be labelled as a live queue. */}
+    <div className="tv-info" data-warning={!!error || !doctorOnline}>
+      <strong>{doctorLabel(data.doctorName)} · {doctorOnline ? "Online" : "Offline"}</strong>
+      <span role="status">{error ? "Connection interrupted · showing last update" : "Queue updates automatically"}</span>
+      {display.voiceEnabled && !announcer.enabled && <button type="button" onClick={announcer.activate}>Enable sound</button>}
     </div>
-  );
+
+    {/* One or two columns depending on the hospital's display settings. */}
+    {hasMain ? <main className="tv-main" data-split={display.showCurrent && display.showNext}>
+      {display.showCurrent && <section className="tv-current">
+        <div className="tv-panel-heading"><h2>Now serving</h2><PageLabel total={current.length} size={2} page={page} /></div>
+        {current.length ? <div className="tv-current-grid" data-multiple={currentPage.length > 1}>
+          {currentPage.map(queue => {
+            const emergency = isEmergencyQueue(queue);
+
+            return (
+              <article
+                className="tv-current-token"
+                data-emergency={emergency}
+                key={queue._id}
+              >
+                {emergency && (
+                  <span className="tv-emergency-badge">
+                    Emergency patient
+                  </span>
+                )}
+
+                <strong>{queue.tokenLabel}</strong>
+                <h3>{queue.departmentId?.name || "OPD"}</h3>
+                {queue.doctorId?.name && <p>{doctorLabel(queue.doctorId.name)}</p>}
+
+                {emergency && (
+                  <em>Please attend immediately</em>
+                )}
+              </article>
+            );
+          })}
+        </div> : <div className="tv-empty"><strong>{doctorOnline ? "Please wait for your token" : "Doctor is currently offline"}</strong><p>{doctorOnline ? "The next token will appear here." : "Please contact reception for an update."}</p></div>}
+        <p className="tv-instruction">{error ? "Please confirm the current token with reception." : doctorOnline ? "When your token appears, proceed to the department shown." : "Please wait for the doctor to become available."}</p>
+      </section>}
+
+      {display.showNext && <section className="tv-next">
+        <div className="tv-panel-heading"><h2>Up next</h2><PageLabel total={next.length} size={4} page={page} /></div>
+        {next.length ? <ol className="tv-next-list">
+          {nextPage.map(queue => {
+            const emergency = isEmergencyQueue(queue);
+
+            return (
+              <li data-emergency={emergency} key={queue._id}>
+                <strong>{queue.tokenLabel}</strong>
+                <span>{emergency ? "Emergency · " : ""}{queue.departmentId?.name || "OPD"}</span>
+              </li>
+            );
+          })}
+        </ol> : <div className="tv-empty"><p>No upcoming tokens</p></div>}
+      </section>}
+    </main> : <main className="tv-empty tv-idle"><h2>{display.heading || "Hospital queue"}</h2><p>Please listen for announcements or contact reception.</p></main>}
+
+    {/* Waiting and emergency visibility each follow their own setting. */}
+    {display.showWaiting && <section className="tv-waiting">
+      <div className="tv-waiting-title"><h2>Waiting <span>{waiting.length}</span></h2><PageLabel total={waiting.length} size={8} page={page} /></div>
+      <div className="tv-waiting-tokens">
+        {waitingPage.length ? waitingPage.map(queue => (
+          <strong data-emergency={isEmergencyQueue(queue)} key={queue._id}>
+            {queue.tokenLabel}
+          </strong>
+        )) : <p>No patients waiting</p>}
+      </div>
+    </section>}
+    {display.showEmergency && emergency.length > 0 && <section className="tv-emergency">
+      <strong>Emergency priority · {emergency.length}</strong>
+      <span>{emergencyPage.map(queue => queue.tokenLabel).join(" · ")}</span>
+      <PageLabel total={emergency.length} size={6} page={page} />
+    </section>}
+
+    {/* Static guidance is easier to read from a distance than a moving ticker. */}
+    <footer className="tv-footer"><p>Please keep your token ready. Emergency cases may be prioritised.</p><span>NextSynq Health</span></footer>
+  </div>;
 };
 
 export default DisplayBoard;
 
-// Ambient background: blurred glow orbs + faint grid, matching the brand's login screen
-
-function BackgroundDecoration() {
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-blue-400/20 blur-3xl" />
-      <div className="absolute -bottom-40 -right-20 h-[500px] w-[500px] rounded-full bg-cyan-300/10 blur-3xl" />
-      <div className="absolute right-20 top-20 h-32 w-32 rounded-full border border-white/10" />
-      <div
-        className="absolute inset-0 opacity-[0.04]"
-        style={{
-          backgroundImage:
-            "linear-gradient(#93c5fd 1px, transparent 1px), linear-gradient(90deg, #93c5fd 1px, transparent 1px)",
-          backgroundSize: "32px 32px",
-        }}
-      />
-    </div>
-  );
+function doctorLabel(name?: string | null) {
+  if (!name) return "Doctor";
+  return /^dr\.?\s/i.test(name) ? name : `Dr. ${name}`;
 }
 
-// Shared style injection for the ticker animation
-
-function TickerStyles() {
-  return (
-    <style>{`
-      @keyframes ticker-scroll {
-        from { transform: translateX(0); }
-        to { transform: translateX(-50%); }
-      }
-      .ticker-track {
-        animation: ticker-scroll 38s linear infinite;
-      }
-    `}</style>
-  );
+// Small paging helpers keep all tokens accessible on an unattended TV.
+function getPage<T>(items: T[], page: number, size: number): T[] {
+  const pages = Math.max(1, Math.ceil(items.length / size));
+  const start = (page % pages) * size;
+  return items.slice(start, start + size);
 }
 
-// Loading / error states
-
-function LoadingScreen() {
-  return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-blue-700">
-      <BackgroundDecoration />
-      <div className="relative z-10 text-center">
-        <div className="mx-auto mb-5 h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-cyan-300" />
-        <p className="text-xl font-semibold text-white">Connecting to hospital display…</p>
-      </div>
-    </div>
-  );
+function PageLabel({ total, size, page }: { total: number; size: number; page: number }) {
+  const pages = Math.ceil(total / size);
+  if (pages <= 1) return null;
+  return <span className="tv-page-label">{page % pages + 1} / {pages}</span>;
 }
 
-function ErrorScreen({ message, displayKey }: { message: string; displayKey?: string }) {
-  return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-blue-700 px-6">
-      <BackgroundDecoration />
-      <div className="relative z-10 w-full max-w-md rounded-[28px] border border-white/10 bg-white p-8 text-center shadow-[0_20px_60px_-20px_rgba(15,23,42,0.5)]">
-        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-3xl">
-          ⚠
-        </div>
-        <h1 className="text-2xl font-bold text-slate-900">Display offline</h1>
-        <p className="mt-2 text-slate-500">{message}</p>
-        <div className="mt-5 rounded-xl bg-slate-50 p-3 text-left">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Display key</p>
-          <p className="mt-1 break-all font-mono text-xs text-slate-500">{displayKey}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Top bar
-
-type DisplaySettings = DisplayResponse["display"];
-
-function TopBar({
-  display,
-  time,
-  date,
-  doctorName,
-  doctorOnline,
-}: {
-  display: DisplaySettings;
-  time: string;
-  date: string;
-  doctorName: string;
-  doctorOnline: boolean;
-}) {
-  return (
-    <header className="flex items-center justify-between gap-4 border-b border-white/10 bg-white/5 px-5 py-4 backdrop-blur-md md:px-8">
-      <div className="flex min-w-0 items-center gap-4">
-        {display.logoUrl ? (
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-1">
-            <img src={display.logoUrl} alt={display.hospitalName} className="h-full w-full object-contain" />
-          </div>
-        ) : (
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white text-lg font-bold text-blue-700">
-            {display.hospitalName.charAt(0)}
-          </div>
-        )}
-
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold text-white md:text-xl">{display.hospitalName}</h1>
-          <p className="truncate text-sm text-blue-200">{display.heading}</p>
-        </div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-3">
-        <LivePill />
-        <DoctorPill doctorName={doctorName} doctorOnline={doctorOnline} />
-
-        <div className="hidden text-right sm:block">
-          <p className="text-2xl font-bold tabular-nums text-white">{time}</p>
-          <p className="text-xs text-blue-200">{date}</p>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function LivePill() {
-  return (
-    <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 backdrop-blur-md md:flex">
-      <span className="relative flex h-2.5 w-2.5">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
-      </span>
-      <span className="text-xs font-medium text-white">Live</span>
-    </div>
-  );
-}
-
-function DoctorPill({ doctorName, doctorOnline }: { doctorName: string; doctorOnline: boolean }) {
-  return (
-    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3.5 py-2 backdrop-blur-md">
-      <span className={`h-2 w-2 rounded-full ${doctorOnline ? "animate-pulse bg-cyan-300" : "bg-white/30"}`} />
-      <span className="text-sm font-medium text-white">Dr. {doctorName}</span>
-      <span className={`text-xs font-medium ${doctorOnline ? "text-cyan-300" : "text-blue-200"}`}>
-        {doctorOnline ? "Online" : "Offline"}
-      </span>
-    </div>
-  );
-}
-
-function VoicePrompt({ onEnable }: { onEnable: () => void }) {
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-4 border-b border-white/10 bg-amber-400/90 px-4 py-2.5 text-sm font-semibold text-amber-950 backdrop-blur-md">
-      <span>Turn on voice announcements for this screen</span>
-      <button
-        type="button"
-        onClick={onEnable}
-        className="rounded-lg bg-blue-950 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-blue-900"
-      >
-        Enable voice
-      </button>
-    </div>
-  );
-}
-
-function VoiceSettings({
-  enabled,
-  voices,
-  selectedVoiceName,
-  displayLanguage,
-  onSelectVoice,
-  onTestVoice,
-}: {
-  enabled: boolean;
-  voices: SpeechSynthesisVoice[];
-  selectedVoiceName: string;
-  displayLanguage: DisplayLanguage;
-  onSelectVoice: (voiceName: string) => void;
-  onTestVoice: (locale: DisplayLanguage) => void;
-}) {
-  const [open, setOpen] = useState(false);
-
-  if (!enabled || voices.length === 0) return null;
-
-  const sortedVoices = [...voices].sort((a, b) =>
-    `${a.lang} ${a.name}`.localeCompare(`${b.lang} ${b.name}`),
-  );
-
-  return (
-    <div className="fixed bottom-16 right-4 z-30 md:bottom-20 md:right-6">
-      {open && (
-        <div className="mb-3 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-white p-4 text-slate-900 shadow-2xl">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-bold">Voice settings</p>
-              <p className="mt-0.5 text-xs text-slate-500">Choose the voice used for announcements.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-lg px-2 py-1 text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              aria-label="Close voice settings"
-            >
-              ×
-            </button>
-          </div>
-
-          <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Voice
-          </label>
-          <select
-            value={selectedVoiceName}
-            onChange={(event) => onSelectVoice(event.target.value)}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-          >
-            <option value="">Automatic — best voice for language</option>
-            {sortedVoices.map((voice) => (
-              <option key={`${voice.name}-${voice.lang}`} value={voice.name}>
-                {voice.name} ({voice.lang})
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            onClick={() => onTestVoice(displayLanguage)}
-            className="mt-3 w-full rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-800"
-          >
-            🔊 Test selected voice
-          </button>
-
-          <p className="mt-2 text-[11px] leading-4 text-slate-400">
-            The available voices depend on the browser/device. Your selection is saved on this display device.
-          </p>
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-2 rounded-full border border-white/15 bg-blue-950/90 px-4 py-2.5 text-xs font-bold text-white shadow-lg backdrop-blur-md transition hover:bg-blue-900"
-        aria-label="Open voice settings"
-      >
-        <span className="text-base">🔊</span>
-        <span>Voice</span>
-        <span className="text-blue-300">⚙</span>
-      </button>
-    </div>
-  );
-}
-
-// Now serving
-
-function NowServingPanel({
-  current,
-  doctorName,
-  doctorOnline,
-}: {
-  current: DisplayQueue[];
-  doctorName: string;
-  doctorOnline: boolean;
-}) {
-  return (
-    <section className="flex flex-1 flex-col rounded-[28px] border border-white/10 bg-white p-6 shadow-[0_20px_60px_-20px_rgba(2,6,23,0.6)] md:p-8">
-      <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">Now serving</p>
-
-      <div className="mt-4 flex flex-1 items-center">
-        {current.length === 0 ? (
-          <EmptyServingState doctorName={doctorName} doctorOnline={doctorOnline} />
-        ) : (
-          <div className={`grid w-full gap-5 ${current.length > 1 ? "md:grid-cols-2" : ""}`}>
-            {current.map((queue) => (
-              <CurrentTokenCard key={queue._id} queue={queue} doctorOnline={doctorOnline} solo={current.length === 1} />
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function CurrentTokenCard({ queue, doctorOnline, solo }: { queue: DisplayQueue; doctorOnline: boolean; solo: boolean }) {
-  return (
-    <div
-      className={`rounded-3xl p-8 text-center ${
-        doctorOnline ? "bg-gradient-to-br from-blue-50 to-cyan-50" : "bg-slate-50"
-      }`}
-    >
-      <p
-        className={`bg-clip-text font-extrabold leading-none tabular-nums tracking-tight text-transparent ${
-          solo ? "text-[9rem] md:text-[11rem]" : "text-7xl md:text-8xl"
-        } ${doctorOnline ? "bg-gradient-to-br from-blue-700 to-cyan-500" : "bg-gradient-to-br from-slate-400 to-slate-500"}`}
-      >
-        {queue.tokenLabel}
-      </p>
-      <p className="mt-4 text-xl font-semibold text-slate-900 md:text-2xl">{queue.departmentId?.name || "OPD"}</p>
-      {queue.doctorId?.name && <p className="mt-1 text-sm text-slate-500">Dr. {queue.doctorId.name}</p>}
-    </div>
-  );
-}
-
-function EmptyServingState({ doctorName, doctorOnline }: { doctorName: string; doctorOnline: boolean }) {
-  return (
-    <div className="w-full py-12 text-center">
-      <p className="text-4xl font-bold text-slate-900 md:text-5xl">
-        {doctorOnline ? "Waiting for the next patient" : "Doctor is offline"}
-      </p>
-      <p className="mt-3 text-lg text-slate-500">
-        {doctorOnline ? "Please stay seated — you'll be called shortly." : `Dr. ${doctorName} will be back online soon.`}
-      </p>
-    </div>
-  );
-}
-
-// Up next (transit-board style list)
-
-function UpNextPanel({ next }: { next: DisplayQueue[] }) {
-  return (
-    <section className="flex flex-col rounded-[28px] border border-white/10 bg-white p-6 shadow-[0_20px_60px_-20px_rgba(2,6,23,0.6)]">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">Up next</p>
-        <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
-          {next.length}
-        </span>
-      </div>
-
-      {next.length === 0 ? (
-        <p className="mt-8 text-center text-sm text-slate-400">No upcoming tokens</p>
-      ) : (
-        <div className="mt-2 flex-1 divide-y divide-slate-100 overflow-y-auto">
-          {next.map((queue) => (
-            <div key={queue._id} className="flex items-center justify-between gap-3 py-3.5">
-              <span className="text-2xl font-bold tabular-nums text-blue-700">{queue.tokenLabel}</span>
-              <span className="truncate text-sm text-slate-500">{queue.departmentId?.name || "OPD"}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-// Status strip: waiting pills + emergency
-
-function StatusStrip({ waiting, emergency }: { waiting: DisplayQueue[]; emergency: DisplayQueue[] }) {
-  return (
-    <section className="rounded-[28px] border border-white/10 bg-white p-6 shadow-[0_20px_60px_-20px_rgba(2,6,23,0.6)]">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">Waiting</p>
-        <span className="rounded-full bg-amber-50 px-3 py-1 text-sm font-bold text-amber-600">
-          {waiting.length} {waiting.length === 1 ? "patient" : "patients"}
-        </span>
-      </div>
-
-      {waiting.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-400">No patients waiting</p>
-      ) : (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {waiting.slice(0, 24).map((queue) => (
-            <span
-              key={queue._id}
-              className="rounded-lg border border-blue-100 bg-gradient-to-br from-blue-50 to-cyan-50 px-3 py-1.5 text-sm font-semibold tabular-nums text-blue-700"
-            >
-              {queue.tokenLabel}
-            </span>
-          ))}
-          {waiting.length > 24 && (
-            <span className="px-3 py-1.5 text-sm text-slate-400">+{waiting.length - 24} more</span>
-          )}
-        </div>
-      )}
-
-      {emergency.length > 0 && (
-        <div className="mt-5 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-500" />
-          <p className="text-sm font-semibold text-red-700">
-            {emergency.length} emergency {emergency.length === 1 ? "token" : "tokens"} in queue —{" "}
-            {emergency.map((q) => q.tokenLabel).join(", ")}
-          </p>
-        </div>
-      )}
-    </section>
-  );
-}
-
-// Bottom ticker
-
-interface TickerItem {
-  text: string;
-  emphasis?: "amber" | "red";
-}
-
-function buildTickerItems({
-  display,
-  waiting,
-  doctorName,
-  doctorOnline,
-}: {
-  display: DisplaySettings;
-  waiting: number;
-  doctorName: string;
-  doctorOnline: boolean;
-}): TickerItem[] {
-  const items: TickerItem[] = [
-    { text: "Keep your token visible and listen for your number to be called." },
-    { text: "Proceed to the department shown as soon as your token appears." },
-  ];
-
-  if (!doctorOnline) {
-    items.push({ text: `Dr. ${doctorName} is currently offline — thank you for your patience.`, emphasis: "amber" });
-  }
-
-  if (waiting > 0) {
-    items.push({ text: `${waiting} ${waiting === 1 ? "patient is" : "patients are"} currently waiting.` });
-  }
-
-  if (display.voiceEnabled) {
-    items.push({ text: `Announcements are read in ${LANGUAGE_NAMES[display.displayLanguage]}.` });
-  }
-
-  return items;
-}
-
-function Ticker({ items, time }: { items: TickerItem[]; time: string }) {
-  const doubled = [...items, ...items];
-
-  return (
-    <footer className="flex items-center gap-4 border-t border-white/10 bg-white/5 py-3 backdrop-blur-md">
-      <div className="shrink-0 border-r border-white/10 px-5 text-sm font-bold tabular-nums text-cyan-300">
-        {time}
-      </div>
-
-      <div className="flex-1 overflow-hidden">
-        <div className="ticker-track flex w-max gap-16 whitespace-nowrap">
-          {doubled.map((item, index) => (
-            <span
-              key={index}
-              className={`text-sm font-medium ${item.emphasis === "amber" ? "text-amber-300" : "text-blue-100"}`}
-            >
-              {item.text}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="hidden shrink-0 border-l border-white/10 px-5 text-xs text-blue-300 md:block">
-        NexTurn Smart Hospital Queue
-      </div>
-    </footer>
-  );
+// All styles are local to this file; no Tailwind or extra stylesheet is needed.
+function TVStyles() {
+  return <style>{`
+    .tv-board { min-height: 100dvh; display: flex; flex-direction: column; background: #f5f6ef; color: #173d39; font-family: "Inter", "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; padding: clamp(14px, 2vw, 38px); gap: clamp(10px, 1.2vh, 18px); }
+    .tv-board *, .tv-board *::before, .tv-board *::after { box-sizing: border-box; }
+    .tv-board h1, .tv-board h2, .tv-board h3, .tv-board p { margin: 0; }
+    .tv-header { display: flex; align-items: center; gap: 24px; }
+    .tv-brand { display: flex; align-items: center; gap: 18px; flex: 1; min-width: 0; }
+    .tv-logo { display: grid; place-items: center; width: clamp(48px, 4.5vw, 80px); height: clamp(48px, 4.5vw, 80px); border-radius: 14px; background: white; border: 1px solid #d4dfce; font-size: 30px; font-weight: 700; flex-shrink: 0; padding: 6px; }
+    .tv-logo img { width: 100%; height: 100%; object-fit: contain; }
+    .tv-brand h1 { font-size: clamp(22px, 2vw, 40px); line-height: 1.25; font-weight: 650; overflow-wrap: anywhere; }
+    .tv-brand p { margin-top: 5px; font-size: clamp(16px, 1.25vw, 26px); color: #536650; overflow-wrap: anywhere; }
+    .tv-clock { text-align: right; flex-shrink: 0; }
+    .tv-clock strong { display: block; font-size: clamp(25px, 2.3vw, 46px); line-height: 1.2; }
+    .tv-clock span { display: block; font-size: clamp(14px, 1.1vw, 22px); color: #536650; margin-top: 5px; }
+    .tv-info { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: #e6edde; border-radius: 10px; padding: 10px 18px; font-size: clamp(16px, 1.2vw, 24px); line-height: 1.5; }
+    .tv-info strong { font-weight: 600; }
+    .tv-info[data-warning="true"] { background: #faedcf; color: #725018; }
+    .tv-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: clamp(14px, 1.5vw, 28px); flex: 1; min-height: 340px; }
+    .tv-main[data-split="true"] { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); }
+    .tv-current, .tv-next { display: flex; flex-direction: column; min-width: 0; border-radius: 18px; padding: clamp(20px, 2vw, 36px); }
+    .tv-current { background: #173d39; color: #fff; }
+    .tv-next { background: white; border: 1px solid #d6e0cf; }
+    .tv-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .tv-panel-heading h2 { font-size: clamp(23px, 2vw, 40px); font-weight: 600; }
+    .tv-page-label { font-size: clamp(14px, 1vw, 20px); white-space: nowrap; font-weight: 500; }
+    .tv-current-grid { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; flex: 1; gap: 16px; padding: 16px 0; }
+    .tv-current-grid[data-multiple="true"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tv-current-token { text-align: center; min-width: 0; border-radius: 18px; padding: clamp(12px, 1.3vw, 24px); }
+    .tv-current-token[data-emergency="true"] { background: #fff1f2; color: #991b1b; border: 5px solid #ef4444; box-shadow: 0 0 0 8px #fecaca55; animation: emergency-pulse 1.15s ease-in-out infinite; }
+    .tv-emergency-badge { display: inline-flex; align-items: center; justify-content: center; margin-bottom: 14px; border-radius: 999px; background: #dc2626; color: #fff; padding: 10px 20px; font-size: clamp(16px, 1.4vw, 28px); font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+    .tv-current-token > strong { display: block; font-size: clamp(80px, 10vw, 210px); letter-spacing: -.04em; line-height: 1.1; font-weight: 700; overflow-wrap: anywhere; }
+    .tv-current-token[data-emergency="true"] > strong { color: #dc2626; text-shadow: 0 8px 18px #fecaca; }
+    .tv-current-grid[data-multiple="true"] .tv-current-token > strong { font-size: clamp(50px, 5.7vw, 116px); }
+    .tv-current-token h3 { font-size: clamp(24px, 2.1vw, 42px); margin-top: 12px; line-height: 1.3; font-weight: 500; overflow-wrap: anywhere; }
+    .tv-current-token p { margin-top: 7px; font-size: clamp(18px, 1.4vw, 28px); color: #d1e2d7; overflow-wrap: anywhere; }
+    .tv-current-token[data-emergency="true"] p { color: #7f1d1d; }
+    .tv-current-token em { display: inline-block; margin-top: 16px; border-radius: 12px; background: #fee2e2; color: #991b1b; padding: 10px 16px; font-size: clamp(17px, 1.4vw, 30px); font-style: normal; font-weight: 800; }
+    .tv-instruction { text-align: center; border-top: 1px solid #ffffff26; padding-top: 14px; font-size: clamp(16px, 1.25vw, 26px); color: #d1e2d7; line-height: 1.5; }
+    .tv-next-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; flex: 1; align-content: start; }
+    .tv-next-list li { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: clamp(12px, 1.6vh, 22px) 0; border-bottom: 1px solid #e0e7d9; min-width: 0; }
+    .tv-next-list li[data-emergency="true"] { margin: 8px 0; border: 2px solid #fecaca; border-radius: 12px; background: #fff1f2; padding-inline: 12px; color: #991b1b; }
+    .tv-next-list li:last-child { border-bottom: 0; }
+    .tv-next-list strong { font-size: clamp(30px, 3vw, 62px); line-height: 1.15; overflow-wrap: anywhere; min-width: 0; }
+    .tv-next-list li > span { max-width: 48%; font-size: clamp(17px, 1.4vw, 28px); line-height: 1.4; color: #536650; text-align: right; overflow-wrap: anywhere; }
+    .tv-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; padding: 28px 12px; }
+    .tv-empty strong, .tv-empty h2 { font-size: clamp(30px, 3vw, 58px); font-weight: 600; }
+    .tv-empty p { font-size: clamp(20px, 1.6vw, 32px); line-height: 1.6; }
+    .tv-waiting { display: flex; align-items: center; gap: 24px; padding: 16px 22px; background: #e8efdf; border: 1px solid #d6e0ca; border-radius: 14px; }
+    .tv-waiting-title { flex-shrink: 0; }
+    .tv-waiting h2 { font-size: clamp(20px, 1.5vw, 30px); font-weight: 600; }
+    .tv-waiting h2 span { margin-left: 6px; }
+    .tv-waiting-tokens { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+    .tv-waiting-tokens strong { background: #fff; padding: 8px 14px; border-radius: 8px; font-size: clamp(22px, 1.8vw, 36px); line-height: 1.2; overflow-wrap: anywhere; }
+    .tv-waiting-tokens strong[data-emergency="true"] { background: #dc2626; color: white; box-shadow: 0 0 0 3px #fecaca; }
+    .tv-waiting-tokens p { font-size: clamp(18px, 1.3vw, 26px); }
+    .tv-emergency { display: flex; align-items: center; justify-content: space-between; gap: 18px; border: 1px solid #e6bbaf; background: #f9e6df; color: #8b3426; padding: 12px 22px; border-radius: 12px; font-size: clamp(18px, 1.5vw, 30px); line-height: 1.5; }
+    .tv-emergency > span { overflow-wrap: anywhere; }
+    @keyframes emergency-pulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 8px #fecaca55; }
+      50% { transform: scale(1.015); box-shadow: 0 0 0 14px #fecaca88; }
+    }
+    .tv-footer { display: flex; justify-content: space-between; align-items: center; gap: 24px; font-size: clamp(16px, 1.2vw, 24px); color: #536650; line-height: 1.5; }
+    .tv-footer > span { flex-shrink: 0; }
+    .tv-start { align-items: center; justify-content: center; text-align: center; }
+    .tv-start h1 { font-size: clamp(28px, 3vw, 60px); }
+    .tv-start p { font-size: clamp(20px, 1.7vw, 34px); }
+    /* Setup controls are kept out of the queue panels. */
+    .tv-settings { position: relative; flex-shrink: 0; }
+    .tv-settings summary, .tv-board button { min-height: 44px; border: 1px solid #cad7c2; border-radius: 8px; background: white; color: #173d39; padding: 10px 14px; font: inherit; font-size: 14px; cursor: pointer; }
+    .tv-settings-panel { position: absolute; top: calc(100% + 12px); right: 0; z-index: 10; width: min(360px, calc(100vw - 32px)); max-height: 75dvh; overflow-y: auto; background: white; border: 1px solid #cad7c2; padding: 20px; border-radius: 12px; box-shadow: 0 12px 40px #173d3930; display: grid; gap: 14px; font-size: 14px; line-height: 1.6; }
+    .tv-settings-panel h2 { font-size: 20px; }
+    .tv-settings-panel label { font-weight: 600; }
+    .tv-settings-panel select { width: 100%; min-height: 44px; border: 1px solid #cad7c2; padding: 8px; border-radius: 8px; font: inherit; }
+    .tv-board button:focus-visible, .tv-settings summary:focus-visible, .tv-settings select:focus-visible { outline: 3px solid #35947d; outline-offset: 3px; }
+    /* Short landscape TVs keep the same hierarchy with tighter spacing. */
+    @media (min-width: 900px) and (max-height: 800px) {
+      .tv-board { padding: 16px 22px; gap: 10px; }
+      .tv-main { min-height: 280px; }
+      .tv-current, .tv-next { padding: 18px 22px; }
+      .tv-current-token > strong { font-size: clamp(76px, 9vw, 150px); }
+      .tv-next-list li { padding: 10px 0; }
+      .tv-waiting { padding: 10px 18px; }
+      .tv-waiting-tokens strong { padding: 6px 10px; }
+    }
+    /* A readable stacked preview on tablets and phones. */
+    @media (max-width: 899px) {
+      .tv-header { flex-wrap: wrap; gap: 12px; }
+      .tv-brand { flex-basis: 65%; }
+      .tv-clock { margin-left: auto; }
+      .tv-info, .tv-waiting, .tv-emergency { flex-wrap: wrap; }
+      .tv-main[data-split="true"] { grid-template-columns: minmax(0, 1fr); }
+      .tv-current { min-height: 350px; }
+      .tv-footer { flex-wrap: wrap; gap: 8px; }
+    }
+  `}</style>;
 }

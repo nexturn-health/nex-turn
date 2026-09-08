@@ -583,14 +583,14 @@ export const createQueue = async (
     // FIND DEPARTMENT DOCTOR
     // ==================================================
 
-const departmentDoctor = await User.findOne({
-  hospitalId,
-  departmentId,
-  role: "DOCTOR",
-  isActive: true,
-})
-  .select("name email isOnline shiftStartTime")
-  .lean();
+    const departmentDoctor = await User.findOne({
+      hospitalId,
+      departmentId,
+      role: "DOCTOR",
+      isActive: true,
+    })
+      .select("name email isOnline shiftStartTime")
+      .lean();
 
     // ==================================================
     // COUNT ACTIVE PATIENTS
@@ -959,6 +959,16 @@ const departmentDoctor = await User.findOne({
     );
     console.log("=================================");
 
+    const testPatientEmail =
+      String(process.env.TEST_PATIENT_EMAIL || "")
+        .trim()
+        .toLowerCase();
+
+    notificationPayload.email =
+      String(notificationPayload.email || testPatientEmail || "")
+        .trim()
+        .toLowerCase();
+
     // ======================================================
     // DO NOT AWAIT
     // ======================================================
@@ -1145,31 +1155,58 @@ export const callNextPatient = async (
     if (currentPatient) {
       return res.status(409).json({
         success: false,
-        message:
-          "You already have a patient in progress",
+        message: "You already have a patient in progress",
         data: currentPatient,
       });
     }
 
     // ============================================================
-    // FIND + CLAIM NEXT WAITING PATIENT
-    //
-    // IMPORTANT:
-    //
-    // Only WAITING patients are eligible.
-    //
-    // This operation is atomic.
-    //
-    // Doctor 1:
-    // H-001 WAITING -> CALLED -> Doctor 1
-    //
-    // Doctor 2:
-    // H-001 is no longer WAITING
-    // H-002 WAITING -> CALLED -> Doctor 2
-    //
+    // COMMON UPDATE
     // ============================================================
 
-    const nextPatient =
+    const calledAt = new Date();
+
+    const callUpdate = {
+      $set: {
+        status: "CALLED",
+
+        doctorId,
+
+        calledAt,
+
+        estimatedWaitMinutes: 0,
+
+        estimatedWaitTime: 0,
+
+        estimatedTurnTime: calledAt,
+
+        calledNotificationSent: false,
+
+        nearTurnNotificationSent: false,
+      },
+    };
+
+    const unassignedDoctorFilter = [
+      {
+        doctorId: {
+          $exists: false,
+        },
+      },
+      {
+        doctorId: null,
+      },
+    ];
+
+    // ============================================================
+    // STEP 1: FIND EMERGENCY PATIENT FIRST
+    //
+    // IMPORTANT:
+    // Do not use sort: { priority: -1 }
+    // because priority is a string.
+    // NORMAL can come before EMERGENCY in string sorting.
+    // ============================================================
+
+    let nextPatient =
       await Queue.findOneAndUpdate(
         {
           hospitalId,
@@ -1180,52 +1217,15 @@ export const callNextPatient = async (
 
           status: "WAITING",
 
-          // Optional safety:
-          // A token already assigned to a doctor
-          // should never be selected again.
-          $or: [
-            {
-              doctorId: {
-                $exists: false,
-              },
-            },
-            {
-              doctorId: null,
-            },
-          ],
+          priority: "EMERGENCY",
+
+          $or: unassignedDoctorFilter,
         },
-
-        {
-          $set: {
-            status: "CALLED",
-
-            // IMPORTANT:
-            // This permanently assigns this queue
-            // token to the doctor who called it.
-            doctorId,
-
-            calledAt: new Date(),
-
-            estimatedWaitMinutes: 0,
-
-            estimatedWaitTime: 0,
-
-            estimatedTurnTime: new Date(),
-
-            calledNotificationSent: false,
-
-            nearTurnNotificationSent: false,
-          },
-        },
-
+        callUpdate,
         {
           new: true,
 
-          // Emergency first.
-          // Within the same priority:
-          // smallest token first.
           sort: {
-            priority: -1,
             tokenNumber: 1,
             createdAt: 1,
           },
@@ -1245,14 +1245,59 @@ export const callNextPatient = async (
         );
 
     // ============================================================
+    // STEP 2: IF NO EMERGENCY, FIND NORMAL PATIENT
+    // ============================================================
+
+    if (!nextPatient) {
+      nextPatient =
+        await Queue.findOneAndUpdate(
+          {
+            hospitalId,
+
+            departmentId,
+
+            queueDate,
+
+            status: "WAITING",
+
+            priority: {
+              $ne: "EMERGENCY",
+            },
+
+            $or: unassignedDoctorFilter,
+          },
+          callUpdate,
+          {
+            new: true,
+
+            sort: {
+              tokenNumber: 1,
+              createdAt: 1,
+            },
+          },
+        )
+          .populate(
+            "patientId",
+            "name phone email patientCode age gender address",
+          )
+          .populate(
+            "departmentId",
+            "name description tokenPrefix",
+          )
+          .populate(
+            "doctorId",
+            "name email",
+          );
+    }
+
+    // ============================================================
     // NO WAITING PATIENT
     // ============================================================
 
     if (!nextPatient) {
       return res.status(404).json({
         success: false,
-        message:
-          "No patients waiting in your department",
+        message: "No patients waiting in your department",
       });
     }
 
@@ -1271,12 +1316,12 @@ export const callNextPatient = async (
     if (!nextPatient.calledNotificationSent) {
       const patient =
         nextPatient.patientId &&
-        typeof nextPatient.patientId === "object"
+          typeof nextPatient.patientId === "object"
           ? (nextPatient.patientId as unknown as {
-              name: string;
-              phone?: string;
-              email?: string;
-            })
+            name: string;
+            phone?: string;
+            email?: string;
+          })
           : null;
 
       if (patient?.phone) {
@@ -1287,8 +1332,7 @@ export const callNextPatient = async (
 
               patientName: patient.name,
 
-              tokenLabel:
-                nextPatient.tokenLabel,
+              tokenLabel: nextPatient.tokenLabel,
             });
 
           if (result.success) {
@@ -1342,13 +1386,9 @@ export const callNextPatient = async (
 
     // ============================================================
     // HOSPITAL SOCKET
-    //
-    // Every doctor in this hospital/department can receive
-    // the queue update.
-    //
-    // This allows Doctor 2's UI to immediately know that
-    // H-001 has already been assigned to Doctor 1.
     // ============================================================
+    const isEmergencyPatient =
+      nextPatient.priority === "EMERGENCY";
 
     getIO()
       .to(`hospital:${hospitalId}`)
@@ -1362,11 +1402,22 @@ export const callNextPatient = async (
           tokenLabel:
             nextPatient.tokenLabel,
 
+          priority:
+            nextPatient.priority,
+
+          isEmergency:
+            isEmergencyPatient,
+
           doctorId,
 
           departmentId,
 
           status: "CALLED",
+
+          message:
+            isEmergencyPatient
+              ? "Emergency patient has been called."
+              : "Next patient has been called.",
         },
       );
 
@@ -1378,7 +1429,6 @@ export const callNextPatient = async (
       const patientRoom =
         `queue:${nextPatient.trackingToken}`;
 
-      // Token called
       getIO()
         .to(patientRoom)
         .emit(
@@ -1387,17 +1437,25 @@ export const callNextPatient = async (
             queueId:
               nextPatient._id,
 
-            status: "CALLED",
+            status:
+              "CALLED",
 
             tokenLabel:
               nextPatient.tokenLabel,
 
+            priority:
+              nextPatient.priority,
+
+            isEmergency:
+              isEmergencyPatient,
+
             message:
-              "Your token has been called. Please proceed to the doctor's room.",
+              isEmergencyPatient
+                ? "Your emergency token has been called. Please proceed immediately to the doctor's room."
+                : "Your token has been called. Please proceed to the doctor's room.",
           },
         );
 
-      // Full queue status
       getIO()
         .to(patientRoom)
         .emit(
@@ -1413,8 +1471,7 @@ export const callNextPatient = async (
     return res.status(200).json({
       success: true,
 
-      message:
-        "Next patient called successfully",
+      message: "Next patient called successfully",
 
       data: nextPatient,
     });
@@ -1721,7 +1778,7 @@ export const completePatient =
         false;
 
       queue.trackingExpiresAt =
-        new Date();
+        completedAt;
 
       await queue.save();
 

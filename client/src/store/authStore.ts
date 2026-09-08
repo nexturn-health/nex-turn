@@ -2,244 +2,100 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import type { User } from "../types/auth";
-import { disconnectSocket } from "../socket/socket";
+
+import type {
+    SubscriptionInfo,
+} from "../types/subscription";
+
+import {
+    disconnectSocket,
+} from "../socket/socket";
 
 interface AuthState {
     user: User | null;
-    token: string | null;
-    isAuthenticated: boolean;
 
-    setAuth: (token: string, user: User) => void;
+    token: string | null;
+
+    subscription:
+        SubscriptionInfo | null;
+
+    isAuthenticated:
+        boolean;
+
+    // ==================================================
+    // SET AUTH
+    // ==================================================
+
+    setAuth: (
+        token: string,
+        user: User,
+        subscription?:
+            SubscriptionInfo | null,
+    ) => void;
+
+    // ==================================================
+    // UPDATE SUBSCRIPTION
+    // ==================================================
+
+    setSubscription: (
+        subscription:
+            SubscriptionInfo | null,
+    ) => void;
+
+    // ==================================================
+    // LOGOUT
+    // ==================================================
+
     logout: () => void;
+
+    // ==================================================
+    // RESTORE AUTH
+    // ==================================================
+
     loadAuth: () => void;
 }
 
-export const useAuthStore = create<AuthState>()(
-    persist(
-        (set) => ({
-
-            // ==========================================
-            // INITIAL STATE
-            // ==========================================
-
-            user: null,
-
-            token: null,
-
-            isAuthenticated: false,
-
-
-            // ==========================================
-            // LOGIN
-            // ==========================================
-
-            setAuth: (
-                token: string,
-                user: User,
-            ) => {
-
-                console.log(
-                    "================================",
-                );
-
-                console.log(
-                    "ZUSTAND LOGIN",
-                );
-
-                console.log(
-                    "TOKEN EXISTS:",
-                    !!token,
-                );
-
-                console.log(
-                    "USER:",
-                    user,
-                );
-
-                console.log(
-                    "ROLE:",
-                    user.role,
-                );
-
-                console.log(
-                    "================================",
-                );
-
-
-                // ------------------------------------------
-                // Save token for Axios/API
-                // ------------------------------------------
-
-                localStorage.setItem(
-                    "token",
-                    token,
-                );
-
-
-                // ------------------------------------------
-                // Save user
-                // ------------------------------------------
-
-                localStorage.setItem(
-                    "user",
-                    JSON.stringify(user),
-                );
-
-
-                // ------------------------------------------
-                // Update Zustand
-                // ------------------------------------------
-
-                set({
-                    token,
-                    user,
-                    isAuthenticated: true,
-                });
-            },
-
-
-            // ==========================================
-            // LOGOUT
-            // ==========================================
-
-            logout: () => {
-
-                console.log(
-                    "================================",
-                );
-
-                console.log(
-                    "ZUSTAND LOGOUT",
-                );
-
-                console.log(
-                    "================================",
-                );
-
+export const useAuthStore =
+    create<AuthState>()(
+        persist(
+            (set) => ({
 
                 // ==================================================
-                // IMPORTANT:
-                // Tell Socket.IO that doctor is offline FIRST.
-                //
-                // Do this BEFORE removing localStorage.
+                // DEFAULT STATE
                 // ==================================================
 
-                console.log(
-                    "🔴 Calling disconnectSocket() BEFORE logout",
-                );
+                user: null,
 
-                disconnectSocket();
+                token: null,
 
+                subscription: null,
 
-                // ------------------------------------------
-                // Remove authentication
-                // ------------------------------------------
+                isAuthenticated:
+                    false,
 
-                localStorage.removeItem(
-                    "token",
-                );
+                // ==================================================
+                // LOGIN
+                // ==================================================
 
-                localStorage.removeItem(
-                    "user",
-                );
-
-
-                // ------------------------------------------
-                // Clear Zustand
-                // ------------------------------------------
-
-                set({
-                    token: null,
-                    user: null,
-                    isAuthenticated: false,
-                });
-
-
-                console.log(
-                    "✅ ZUSTAND LOGOUT COMPLETE",
-                );
-            },
-
-
-            // ==========================================
-            // RESTORE AUTH
-            // ==========================================
-
-            loadAuth: () => {
-
-                console.log(
-                    "================================",
-                );
-
-                console.log(
-                    "RESTORING AUTH",
-                );
-
-                console.log(
-                    "================================",
-                );
-
-
-                const token =
-                    localStorage.getItem(
-                        "token",
-                    );
-
-                const storedUser =
-                    localStorage.getItem(
-                        "user",
-                    );
-
-
-                // ------------------------------------------
-                // Nothing stored
-                // ------------------------------------------
-
-                if (
-                    !token ||
-                    !storedUser
-                ) {
+                setAuth: (
+                    token: string,
+                    user: User,
+                    subscription:
+                        SubscriptionInfo | null =
+                        null,
+                ) => {
 
                     console.log(
-                        "NO AUTH FOUND",
+                        "================================",
                     );
 
-
-                    set({
-                        token: null,
-                        user: null,
-                        isAuthenticated: false,
-                    });
-
-                    return;
-                }
-
-
-                // ------------------------------------------
-                // Restore user
-                // ------------------------------------------
-
-                try {
-
-                    const user: User =
-                        JSON.parse(
-                            storedUser,
-                        );
-
-
-                    if (
-                        !user ||
-                        !user.role
-                    ) {
-
-                        throw new Error(
-                            "Invalid stored user",
-                        );
-                    }
-
+                    console.log(
+                        "ZUSTAND LOGIN",
+                    );
 
                     console.log(
-                        "AUTH RESTORED",
+                        "TOKEN EXISTS:",
+                        !!token,
                     );
 
                     console.log(
@@ -253,56 +109,398 @@ export const useAuthStore = create<AuthState>()(
                     );
 
                     console.log(
-                        "TOKEN EXISTS:",
-                        !!token,
+                        "SUBSCRIPTION:",
+                        subscription,
                     );
 
+                    console.log(
+                        "================================",
+                    );
+
+                    // ==============================================
+                    // STORE TOKEN
+                    // ==============================================
+
+                    localStorage.setItem(
+                        "token",
+                        token,
+                    );
+
+                    // ==============================================
+                    // STORE USER
+                    // ==============================================
+
+                    localStorage.setItem(
+                        "user",
+                        JSON.stringify(
+                            user,
+                        ),
+                    );
+
+                    // ==============================================
+                    // STORE SUBSCRIPTION
+                    // ==============================================
+
+                    if (subscription) {
+
+                        localStorage.setItem(
+                            "subscription",
+                            JSON.stringify(
+                                subscription,
+                            ),
+                        );
+
+                    } else {
+
+                        localStorage.removeItem(
+                            "subscription",
+                        );
+                    }
+
+                    // ==============================================
+                    // UPDATE ZUSTAND
+                    // ==============================================
 
                     set({
                         token,
                         user,
-                        isAuthenticated: true,
+                        subscription,
+                        isAuthenticated:
+                            true,
                     });
+                },
 
-                } catch (error) {
+                // ==================================================
+                // UPDATE SUBSCRIPTION
+                //
+                // Useful after:
+                //
+                // - refresh subscription
+                // - plan change
+                // - renewal
+                // - trial status update
+                // ==================================================
 
-                    console.error(
-                        "FAILED TO RESTORE AUTH:",
-                        error,
+                setSubscription: (
+                    subscription:
+                        SubscriptionInfo | null,
+                ) => {
+
+                    console.log(
+                        "SUBSCRIPTION UPDATED:",
+                        subscription,
                     );
 
+                    if (subscription) {
+
+                        localStorage.setItem(
+                            "subscription",
+                            JSON.stringify(
+                                subscription,
+                            ),
+                        );
+
+                    } else {
+
+                        localStorage.removeItem(
+                            "subscription",
+                        );
+                    }
+
+                    set({
+                        subscription,
+                    });
+                },
+
+                // ==================================================
+                // LOGOUT
+                // ==================================================
+
+                logout: () => {
+
+                    console.log(
+                        "🔴 LOGGING OUT",
+                    );
+
+                    // ==============================================
+                    // DISCONNECT SOCKET
+                    // ==============================================
+
+                    disconnectSocket();
+
+                    // ==============================================
+                    // REMOVE TOKEN
+                    // ==============================================
 
                     localStorage.removeItem(
                         "token",
                     );
 
+                    // ==============================================
+                    // REMOVE USER
+                    // ==============================================
+
                     localStorage.removeItem(
                         "user",
                     );
 
+                    // ==============================================
+                    // REMOVE SUBSCRIPTION
+                    // ==============================================
+
+                    localStorage.removeItem(
+                        "subscription",
+                    );
+
+                    // ==============================================
+                    // RESET STORE
+                    // ==============================================
 
                     set({
                         token: null,
+
                         user: null,
-                        isAuthenticated: false,
+
+                        subscription: null,
+
+                        isAuthenticated:
+                            false,
                     });
-                }
-            },
-        }),
 
-        // ==========================================
-        // ZUSTAND PERSIST CONFIG
-        // ==========================================
+                    console.log(
+                        "✅ LOGOUT COMPLETE",
+                    );
+                },
 
-        {
-            name: "nexturn-auth",
+                // ==================================================
+                // MANUAL AUTH RESTORE
+                //
+                // Kept for compatibility.
+                // ==================================================
 
-            partialize: (state) => ({
-                user: state.user,
-                token: state.token,
-                isAuthenticated:
-                    state.isAuthenticated,
+                loadAuth: () => {
+
+                    // ==============================================
+                    // GET TOKEN
+                    // ==============================================
+
+                    const token =
+                        localStorage.getItem(
+                            "token",
+                        );
+
+                    // ==============================================
+                    // GET USER
+                    // ==============================================
+
+                    const storedUser =
+                        localStorage.getItem(
+                            "user",
+                        );
+
+                    // ==============================================
+                    // GET SUBSCRIPTION
+                    // ==============================================
+
+                    const storedSubscription =
+                        localStorage.getItem(
+                            "subscription",
+                        );
+
+                    // ==============================================
+                    // NO AUTH
+                    // ==============================================
+
+                    if (
+                        !token ||
+                        !storedUser
+                    ) {
+
+                        set({
+                            token: null,
+
+                            user: null,
+
+                            subscription: null,
+
+                            isAuthenticated:
+                                false,
+                        });
+
+                        return;
+                    }
+
+                    try {
+
+                        // ==========================================
+                        // PARSE USER
+                        // ==========================================
+
+                        const user: User =
+                            JSON.parse(
+                                storedUser,
+                            );
+
+                        if (
+                            !user ||
+                            !user.role
+                        ) {
+
+                            throw new Error(
+                                "Invalid stored user",
+                            );
+                        }
+
+                        // ==========================================
+                        // PARSE SUBSCRIPTION
+                        // ==========================================
+
+                        let subscription:
+                            SubscriptionInfo | null =
+                            null;
+
+                        if (
+                            storedSubscription
+                        ) {
+
+                            subscription =
+                                JSON.parse(
+                                    storedSubscription,
+                                );
+                        }
+
+                        // ==========================================
+                        // RESTORE STORE
+                        // ==========================================
+
+                        set({
+                            token,
+
+                            user,
+
+                            subscription,
+
+                            isAuthenticated:
+                                true,
+                        });
+
+                    } catch (error) {
+
+                        console.error(
+                            "AUTH RESTORE ERROR:",
+                            error,
+                        );
+
+                        // ==========================================
+                        // CLEAR INVALID AUTH
+                        // ==========================================
+
+                        localStorage.removeItem(
+                            "token",
+                        );
+
+                        localStorage.removeItem(
+                            "user",
+                        );
+
+                        localStorage.removeItem(
+                            "subscription",
+                        );
+
+                        set({
+                            token: null,
+
+                            user: null,
+
+                            subscription: null,
+
+                            isAuthenticated:
+                                false,
+                        });
+                    }
+                },
             }),
-        },
-    ),
-);
+
+            {
+                // ==================================================
+                // ZUSTAND STORAGE KEY
+                // ==================================================
+
+                name:
+                    "nexturn-auth",
+
+                // ==================================================
+                // PERSISTED STATE
+                // ==================================================
+
+                partialize: (
+                    state,
+                ) => ({
+                    user:
+                        state.user,
+
+                    token:
+                        state.token,
+
+                    subscription:
+                        state.subscription,
+
+                    isAuthenticated:
+                        state.isAuthenticated,
+                }),
+
+                // ==================================================
+                // HYDRATION
+                // ==================================================
+
+                onRehydrateStorage:
+                    () => {
+
+                        console.log(
+                            "🔄 AUTH HYDRATION START",
+                        );
+
+                        return (
+                            state,
+                            error,
+                        ) => {
+
+                            if (error) {
+
+                                console.error(
+                                    "❌ AUTH HYDRATION ERROR:",
+                                    error,
+                                );
+
+                                return;
+                            }
+
+                            console.log(
+                                "✅ AUTH HYDRATION COMPLETE",
+                            );
+
+                            console.log(
+                                "USER:",
+                                state?.user,
+                            );
+
+                            console.log(
+                                "ROLE:",
+                                state?.user
+                                    ?.role,
+                            );
+
+                            console.log(
+                                "AUTH:",
+                                state?.isAuthenticated,
+                            );
+
+                            console.log(
+                                "SUBSCRIPTION:",
+                                state?.subscription,
+                            );
+                        };
+                    },
+            },
+        ),
+    );

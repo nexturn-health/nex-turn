@@ -8,18 +8,17 @@ import {
     Mail,
     Loader2,
     Users,
-    Activity,
     Clock3,
-    CheckCircle2,
     ArrowUpRight,
     ShieldCheck,
     HeartPulse,
-    Wifi,
-    CircleCheck,
 } from "lucide-react";
 
 import { loginUser } from "../../services/auth.api";
 import { useAuthStore } from "../../store/authStore";
+import type {
+    SubscriptionInfo,
+} from "../../types/subscription";
 
 import {
     connectSocket,
@@ -90,15 +89,30 @@ const Login = () => {
                 token,
             } = response.data;
 
+            const subscription =
+                (
+                    response.data as typeof response.data & {
+                        subscription?:
+                            SubscriptionInfo | null;
+                    }
+                ).subscription ??
+                null;
+
             // =================================================
             // SAVE AUTH
             // =================================================
 
             setAuth(
                 token,
-                user
+                user,
+                subscription ?? null,
             );
-
+            console.log("LOGIN USER:", user);
+            console.log("LOGIN ROLE:", user.role);
+            console.log(
+                "LOGIN SUBSCRIPTION:",
+                subscription,
+            );
             // =================================================
             // DOCTOR SOCKET
             // =================================================
@@ -117,6 +131,7 @@ const Login = () => {
                     );
                 }
             }
+
 
             // =================================================
             // ROLE NAVIGATION
@@ -169,16 +184,20 @@ const Login = () => {
                     break;
 
                 case "PATIENT":
-
-                    navigate(
-                        "/patient/queue",
-                        {
-                            replace: true,
-                        }
-                    );
-
+                    navigate("/patient/queue", {
+                        replace: true,
+                    });
                     break;
 
+                case "LAB_TECHNICIAN":
+                    console.log("🚀 Navigating Lab Technician...");
+
+                    window.location.replace("/lab/dashboard");
+
+                    break;
+                    console.log("✅ AFTER NAVIGATE");
+
+                    break;
                 default:
 
                     console.error(
@@ -212,605 +231,42 @@ const Login = () => {
     // =====================================================
 
     return (
-
-        <main className="min-h-screen bg-slate-100">
-
-            <div className="relative grid min-h-screen lg:grid-cols-2">
-
-                {/* ================================================= */}
-                {/* LEFT BLUE PRODUCT SECTION */}
-                {/* ================================================= */}
-
-                <section className="relative hidden overflow-hidden bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600 lg:flex lg:flex-col">
-
-                    {/* Background */}
-
-                    <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-blue-400/20 blur-3xl" />
-
-                    <div className="absolute -bottom-40 -right-20 h-[500px] w-[500px] rounded-full bg-cyan-300/10 blur-3xl" />
-
-                    <div className="absolute right-20 top-20 h-32 w-32 rounded-full border border-white/10" />
-
-                    <div className="absolute right-32 top-32 h-16 w-16 rounded-full border border-white/10" />
-
-                    {/* Header */}
-
-                    <div className="relative z-10 flex items-center justify-between px-12 pt-10">
-
-                        <div className="flex items-center gap-3">
-
-                            <div className="flex h-14 w-36 items-center justify-center bg-white">
-                                <img
-                                    src="/nexturn.png"
-                                    alt="NexTurn"
-                                    className="h-full w-full object-contain"
-                                />
-                            </div>
-
-                        </div>
-
-                        {/* Live */}
-
-                        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 backdrop-blur-md">
-
-                            <span className="relative flex h-2.5 w-2.5">
-
-                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-
-                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
-
-                            </span>
-
-                            <span className="text-xs font-medium text-white">
-                                System Online
-                            </span>
-
-                        </div>
-
+        <main className="nt-login">
+            <LoginDesignStyles />
+            <section className="nt-login-story" aria-label="NexTurn hospital workspace">
+                <div className="nt-login-story-brand"><img src="/nexturn.png" alt="NexTurn" /><span>HOSPITAL WORKSPACE</span></div>
+                <div className="nt-login-story-content">
+                    <span className="nt-login-eyebrow">MORE TIME FOR CARE</span>
+                    <h1>A calmer day.<br /><span>A connected hospital.</span></h1>
+                    <p>Bring your team, patient queues and daily operations together in one workspace.</p>
+                    <div className="nt-login-care-card">
+                        <div className="nt-login-care-icon"><HeartPulse size={26} strokeWidth={1.5} /></div>
+                        <div><h2>Every visit, better connected.</h2><p>From the reception desk to the consultation room.</p></div>
                     </div>
-
-                    {/* Main */}
-
-                    <div className="relative z-10 flex flex-1 flex-col justify-center px-12 py-10">
-
-                        <div className="max-w-xl">
-
-                            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-300/20 bg-white/10 px-4 py-2 backdrop-blur-md">
-
-                                <Activity
-                                    size={15}
-                                    className="text-cyan-300"
-                                />
-
-                                <span className="text-xs font-medium text-blue-100">
-                                    Smart Healthcare Operations
-                                </span>
-
-                            </div>
-
-                            <h2 className="text-5xl font-bold leading-[1.08] tracking-tight text-white">
-
-                                Smarter queues.
-
-                                <br />
-
-                                <span className="text-cyan-300">
-                                    Happier patients.
-                                </span>
-
-                            </h2>
-
-                            <p className="mt-6 max-w-lg text-base leading-7 text-blue-100">
-
-                                NexTurn helps hospitals manage patient
-                                queues, doctors, departments and real-time
-                                patient flow from one powerful platform.
-
-                            </p>
-
-                            {/* Dashboard */}
-
-                            <div className="relative mt-10 max-w-lg">
-
-                                <div className="rounded-3xl border border-white/10 bg-white/10 p-5 shadow-2xl backdrop-blur-xl">
-
-                                    <div className="flex items-center justify-between">
-
-                                        <div>
-
-                                            <p className="text-xs text-blue-200">
-                                                Today's OPD Queue
-                                            </p>
-
-                                            <div className="mt-1 flex items-center gap-2">
-
-                                                <h3 className="text-2xl font-bold text-white">
-                                                    128
-                                                </h3>
-
-                                                <span className="rounded-full bg-emerald-400/15 px-2 py-1 text-[10px] font-semibold text-emerald-300">
-                                                    +12%
-                                                </span>
-
-                                            </div>
-
-                                        </div>
-
-                                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10">
-
-                                            <Users
-                                                size={19}
-                                                className="text-blue-200"
-                                            />
-
-                                        </div>
-
-                                    </div>
-
-                                    <div className="mt-6">
-
-                                        <div className="mb-2 flex justify-between">
-
-                                            <span className="text-[11px] text-blue-200">
-                                                Queue progress
-                                            </span>
-
-                                            <span className="text-[11px] font-medium text-white">
-                                                72%
-                                            </span>
-
-                                        </div>
-
-                                        <div className="h-2 overflow-hidden rounded-full bg-white/10">
-
-                                            <div className="h-full w-[72%] rounded-full bg-cyan-300" />
-
-                                        </div>
-
-                                    </div>
-
-                                    <div className="mt-5 grid grid-cols-3 gap-3">
-
-                                        <div className="rounded-2xl bg-white/5 p-3">
-
-                                            <div className="flex items-center gap-2">
-
-                                                <Clock3
-                                                    size={14}
-                                                    className="text-amber-300"
-                                                />
-
-                                                <span className="text-[10px] text-blue-200">
-                                                    Waiting
-                                                </span>
-
-                                            </div>
-
-                                            <p className="mt-2 text-xl font-bold text-white">
-                                                24
-                                            </p>
-
-                                        </div>
-
-                                        <div className="rounded-2xl bg-white/5 p-3">
-
-                                            <div className="flex items-center gap-2">
-
-                                                <Activity
-                                                    size={14}
-                                                    className="text-cyan-300"
-                                                />
-
-                                                <span className="text-[10px] text-blue-200">
-                                                    Serving
-                                                </span>
-
-                                            </div>
-
-                                            <p className="mt-2 text-xl font-bold text-white">
-                                                08
-                                            </p>
-
-                                        </div>
-
-                                        <div className="rounded-2xl bg-white/5 p-3">
-
-                                            <div className="flex items-center gap-2">
-
-                                                <CheckCircle2
-                                                    size={14}
-                                                    className="text-emerald-300"
-                                                />
-
-                                                <span className="text-[10px] text-blue-200">
-                                                    Done
-                                                </span>
-
-                                            </div>
-
-                                            <p className="mt-2 text-xl font-bold text-white">
-                                                96
-                                            </p>
-
-                                        </div>
-
-                                    </div>
-
-                                </div>
-
-                                {/* Floating token */}
-
-                                <div className="absolute -right-8 -top-7 rounded-2xl border border-white/10 bg-white p-4 shadow-2xl">
-
-                                    <div className="flex items-center gap-3">
-
-                                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100">
-
-                                            <span className="text-sm font-bold text-blue-700">
-                                                A24
-                                            </span>
-
-                                        </div>
-
-                                        <div>
-
-                                            <p className="text-[10px] text-slate-400">
-                                                Now serving
-                                            </p>
-
-                                            <p className="text-sm font-bold text-slate-900">
-                                                Token A24
-                                            </p>
-
-                                        </div>
-
-                                        <ArrowUpRight
-                                            size={15}
-                                            className="text-blue-600"
-                                        />
-
-                                    </div>
-
-                                </div>
-
-                                {/* Floating wait */}
-
-                                <div className="absolute -bottom-7 -left-8 rounded-2xl border border-white/10 bg-white p-4 shadow-2xl">
-
-                                    <div className="flex items-center gap-3">
-
-                                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100">
-
-                                            <CheckCircle2
-                                                size={17}
-                                                className="text-emerald-600"
-                                            />
-
-                                        </div>
-
-                                        <div>
-
-                                            <p className="text-[10px] text-slate-400">
-                                                Average wait
-                                            </p>
-
-                                            <p className="text-sm font-bold text-slate-900">
-                                                18 minutes
-                                            </p>
-
-                                        </div>
-
-                                    </div>
-
-                                </div>
-
-                            </div>
-
-                            {/* Features */}
-
-                            <div className="mt-12 grid max-w-lg grid-cols-3 gap-6">
-
-                                <div>
-
-                                    <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-white/10">
-
-                                        <Activity
-                                            size={15}
-                                            className="text-cyan-300"
-                                        />
-
-                                    </div>
-
-                                    <p className="text-xs font-semibold text-white">
-                                        Live Tracking
-                                    </p>
-
-                                    <p className="mt-1 text-[10px] leading-4 text-blue-200">
-                                        Real-time queue updates
-                                    </p>
-
-                                </div>
-
-                                <div>
-
-                                    <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-white/10">
-
-                                        <Users
-                                            size={15}
-                                            className="text-cyan-300"
-                                        />
-
-                                    </div>
-
-                                    <p className="text-xs font-semibold text-white">
-                                        Patient Flow
-                                    </p>
-
-                                    <p className="mt-1 text-[10px] leading-4 text-blue-200">
-                                        Reduce waiting time
-                                    </p>
-
-                                </div>
-
-                                <div>
-
-                                    <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-white/10">
-
-                                        <Clock3
-                                            size={15}
-                                            className="text-cyan-300"
-                                        />
-
-                                    </div>
-
-                                    <p className="text-xs font-semibold text-white">
-                                        Smart Queue
-                                    </p>
-
-                                    <p className="mt-1 text-[10px] leading-4 text-blue-200">
-                                        Better OPD efficiency
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-                        </div>
-
+                    <div className="nt-login-benefits">
+                        <div><Users size={18} /><span>One workspace for your team</span></div>
+                        <div><Clock3 size={18} /><span>Clearer patient queues</span></div>
+                        <div><ShieldCheck size={18} /><span>Access for every hospital role</span></div>
                     </div>
-
-                    {/* Footer */}
-
-                    <div className="relative z-10 px-12 pb-8">
-
-                        <div className="flex items-center justify-between border-t border-white/10 pt-5">
-
-                            <p className="text-xs text-blue-200">
-                                © 2026 NexTurn Healthcare
-                            </p>
-
-                            <p className="text-xs text-blue-300">
-                                Built for modern hospitals
-                            </p>
-
-                        </div>
-
-                    </div>
-
-                </section>
-
-
-                {/* ================================================= */}
-                {/* ZIGZAG DIVIDER */}
-                {/* ================================================= */}
-
-                <div
-                    className="pointer-events-none absolute left-1/2 top-0 z-30 hidden h-full w-10 -translate-x-1/2 lg:block"
-                    aria-hidden="true"
-                >
-
-                    <svg
-                        viewBox="0 0 40 100"
-                        preserveAspectRatio="none"
-                        className="h-full w-full"
-                    >
-
-                        <polygon
-                            points="
-                                20,0
-                                0,2
-                                20,4
-                                0,6
-                                20,8
-                                0,10
-                                20,12
-                                0,14
-                                20,16
-                                0,18
-                                20,20
-                                0,22
-                                20,24
-                                0,26
-                                20,28
-                                0,30
-                                20,32
-                                0,34
-                                20,36
-                                0,38
-                                20,40
-                                0,42
-                                20,44
-                                0,46
-                                20,48
-                                0,50
-                                20,52
-                                0,54
-                                20,56
-                                0,58
-                                20,60
-                                0,62
-                                20,64
-                                0,66
-                                20,68
-                                0,70
-                                20,72
-                                0,74
-                                20,76
-                                0,78
-                                20,80
-                                0,82
-                                20,84
-                                0,86
-                                20,88
-                                0,90
-                                20,92
-                                0,94
-                                20,96
-                                0,98
-                                20,100
-                                40,100
-                                40,0
-                            "
-                            fill="white"
-                        />
-
-                    </svg>
-
                 </div>
-
-
-                {/* ================================================= */}
-                {/* RIGHT LOGIN SECTION - NEW DESIGN */}
-                {/* ================================================= */}
-
-                <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-white px-5 py-8 sm:px-10">
-
-                    {/* ================================================= */}
-                    {/* BACKGROUND DECORATION */}
-                    {/* ================================================= */}
-
-                    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-
-                        {/* Blue glow */}
-
-                        <div className="absolute -right-32 -top-32 h-80 w-80 rounded-full bg-blue-100/70 blur-3xl" />
-
-                        <div className="absolute -bottom-32 -left-32 h-80 w-80 rounded-full bg-cyan-100/50 blur-3xl" />
-
-                        {/* Grid */}
-
-                        <div
-                            className="absolute inset-0 opacity-[0.035]"
-                            style={{
-                                backgroundImage:
-                                    "linear-gradient(#2563eb 1px, transparent 1px), linear-gradient(90deg, #2563eb 1px, transparent 1px)",
-                                backgroundSize:
-                                    "32px 32px",
-                            }}
-                        />
-
-                    </div>
-
-
-                    <div className="relative z-10 w-full max-w-[470px]">
-                        <div className="mb-6">
-                        </div>
-                        <div className="mb-6 overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 via-white to-cyan-50">
-                            <div className="flex items-center justify-between px-4 py-3">
-                                <div className="flex items-center gap-3">
-                                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white shadow-sm">
-                                        <HeartPulse
-                                            size={18}
-                                            className="text-blue-600"
-                                        />
-                                    </div>
-                                    <div>
-                                        <p className="text-xs font-bold text-slate-800">
-                                            NexTurn Network
-                                        </p>
-                                        <p className="text-[10px] text-slate-400">
-                                            Live hospital infrastructure
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center gap-1.5">
-
-                                    <span className="relative flex h-2 w-2">
-
-                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-
-                                        <span className="relative h-2 w-2 rounded-full bg-emerald-500" />
-
-                                    </span>
-
-                                    <span className="text-[10px] font-bold text-emerald-600">
-                                        Operational
-                                    </span>
-
-                                </div>
-
+                <p className="nt-login-story-footer">NexTurn <span>Built around better patient flow.</span></p>
+            </section>
+            <section className="nt-login-main" aria-labelledby="login-title">
+                <div className="nt-login-container">
+                    <div className="nt-login-mobile-brand"><img src="/nexturn.png" alt="NexTurn" /><span>Hospital workspace</span></div>
+                    <div className="nt-login-card">
+                        <div className="nt-login-welcome-icon"><Lock size={23} strokeWidth={1.6} /></div>
+                        <p className="nt-login-kicker">WELCOME BACK</p>
+                        <h2 id="login-title">Your workspace awaits.</h2>
+                        <p className="nt-login-description">Sign in with your hospital account to continue.</p>
+                        {error && (
+                            <div id="login-error" className="nt-login-error" role="alert">
+                                <span aria-hidden="true">!</span><p>{error}</p>
                             </div>
-
-                        </div>
-
-
-                        {/* ================================================= */}
-                        {/* LOGIN CARD */}
-                        {/* ================================================= */}
-
-                        <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_20px_60px_-20px_rgba(15,23,42,0.18)] sm:p-8">
-
-                            {/* Card header */}
-
-                            <div className="mb-7 flex items-start justify-between">
-
-                                <div>
-
-                                    <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-600">
-                                        Secure Login
-                                    </p>
-
-                                    <h3 className="mt-1 text-xl font-bold text-slate-900">
-                                        Access your workspace
-                                    </h3>
-
-                                </div>
-
-                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50">
-
-                                    <Lock
-                                        size={18}
-                                        className="text-slate-500"
-                                    />
-
-                                </div>
-
-                            </div>
-
-
-                            {/* ERROR */}
-
-                            {error && (
-
-                                <div className="mb-5 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
-
-                                    <div className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-red-500" />
-
-                                    <p className="text-xs leading-5 text-red-600">
-                                        {error}
-                                    </p>
-
-                                </div>
-
-                            )}
-
-
-                            {/* FORM */}
-
-                            <form
+                        )}
+<form
                                 onSubmit={handleSubmit}
-                                className="space-y-5"
+                                className="nt-login-form space-y-5" aria-busy={loading}
                             >
 
                                 {/* EMAIL */}
@@ -828,7 +284,7 @@ const Login = () => {
 
                                         <Mail
                                             size={18}
-                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 transition group-focus-within:text-blue-600"
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 transition group-focus-within:text-teal-600"
                                         />
 
                                         <input
@@ -840,9 +296,13 @@ const Login = () => {
                                                     event.target.value
                                                 )
                                             }
-                                            placeholder="admin@hospital.com"
+                                            placeholder="you@hospital.com"
                                             autoComplete="email"
-                                            className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 py-3.5 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+                                            inputMode="email"
+                                            autoCapitalize="none"
+                                            spellCheck={false}
+                                            aria-describedby={error ? "login-error" : undefined}
+                                            className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 py-3.5 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
                                         />
 
                                     </div>
@@ -870,7 +330,7 @@ const Login = () => {
                                                     "/forgot-password"
                                                 )
                                             }
-                                            className="text-xs font-semibold text-blue-600 transition hover:text-blue-700"
+                                            className="text-xs font-semibold text-teal-600 transition hover:text-teal-700"
                                         >
                                             Forgot password?
                                         </button>
@@ -882,7 +342,7 @@ const Login = () => {
 
                                         <Lock
                                             size={18}
-                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 transition group-focus-within:text-blue-600"
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 transition group-focus-within:text-teal-600"
                                         />
 
                                         <input
@@ -900,7 +360,8 @@ const Login = () => {
                                             }
                                             placeholder="Enter your password"
                                             autoComplete="current-password"
-                                            className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 py-3.5 pl-11 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+                                            aria-describedby={error ? "login-error" : undefined}
+                                            className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 py-3.5 pl-11 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
                                         />
 
 
@@ -912,7 +373,8 @@ const Login = () => {
                                                         !value
                                                 )
                                             }
-                                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
+                                            className="nt-password-toggle absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
+                                            aria-pressed={showPassword}
                                             aria-label={
                                                 showPassword
                                                     ? "Hide password"
@@ -938,7 +400,7 @@ const Login = () => {
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 to-blue-700 py-4 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition duration-200 hover:-translate-y-0.5 hover:from-blue-700 hover:to-blue-800 hover:shadow-xl hover:shadow-blue-600/25 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
+                                    className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-teal-600 to-teal-700 py-4 text-sm font-bold text-white shadow-lg shadow-teal-600/20 transition duration-200 hover:-translate-y-0.5 hover:from-teal-700 hover:to-teal-800 hover:shadow-xl hover:shadow-teal-600/25 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
                                 >
 
                                     {/* shine */}
@@ -962,7 +424,7 @@ const Login = () => {
 
                                         <>
 
-                                            Sign in to NexTurn
+                                            Sign in
 
                                             <ArrowUpRight
                                                 size={17}
@@ -976,106 +438,85 @@ const Login = () => {
                                 </button>
 
                             </form>
-
-
-                            {/* ================================================= */}
-                            {/* SECURITY STRIP */}
-                            {/* ================================================= */}
-
-                            <div className="mt-7 border-t border-slate-100 pt-5">
-
-                                <div className="grid grid-cols-3 gap-2">
-
-                                    <div className="flex flex-col items-center gap-1.5 text-center">
-
-                                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50">
-
-                                            <ShieldCheck
-                                                size={15}
-                                                className="text-emerald-600"
-                                            />
-
-                                        </div>
-
-                                        <span className="text-[9px] font-semibold text-slate-400">
-                                            Secure
-                                        </span>
-
-                                    </div>
-
-
-                                    <div className="flex flex-col items-center gap-1.5 text-center">
-
-                                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50">
-
-                                            <Wifi
-                                                size={15}
-                                                className="text-blue-600"
-                                            />
-
-                                        </div>
-
-                                        <span className="text-[9px] font-semibold text-slate-400">
-                                            Real-time
-                                        </span>
-
-                                    </div>
-
-
-                                    <div className="flex flex-col items-center gap-1.5 text-center">
-
-                                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50">
-
-                                            <CircleCheck
-                                                size={15}
-                                                className="text-cyan-600"
-                                            />
-
-                                        </div>
-
-                                        <span className="text-[9px] font-semibold text-slate-400">
-                                            Reliable
-                                        </span>
-
-                                    </div>
-
-                                </div>
-
-                            </div>
-
-                        </div>
-
-
-                        {/* ================================================= */}
-                        {/* MOBILE TRUST */}
-                        {/* ================================================= */}
-
-                        <div className="mt-6 flex items-center justify-center gap-2 text-[10px] text-slate-400">
-
-                            <Lock size={12} />
-
-                            <span>
-                                Protected hospital access
-                            </span>
-
-                            <span className="text-slate-300">
-                                •
-                            </span>
-
-                            <span>
-                                NexTurn Healthcare
-                            </span>
-
-                        </div>
-
+                        <div className="nt-login-card-footer"><ShieldCheck size={15} /><span>Your hospital. Your dedicated workspace.</span></div>
                     </div>
-
-                </section>
-
-            </div>
-
+                    <p className="nt-login-help">Use the account provided by your hospital administrator.</p>
+                </div>
+            </section>
         </main>
     );
 };
+
+const LoginDesignStyles = () => (
+    <style>{`
+        .nt-login { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); min-height: 100dvh; background: #f5f6f0; color: #173d39; font-family: "Inter", "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+        .nt-login *, .nt-login *::before, .nt-login *::after { box-sizing: border-box; }
+        .nt-login-story { position: relative; display: flex; flex-direction: column; overflow: hidden; padding: 42px clamp(32px, 5vw, 76px); background: #123d39; }
+        .nt-login-story::after { content: "+"; position: absolute; right: -35px; bottom: 30px; font-size: 340px; line-height: 1; font-weight: 200; color: #aac89b08; pointer-events: none; }
+        .nt-login-story-brand { display: flex; align-items: center; gap: 16px; }
+        .nt-login-story-brand img { width: 118px; height: 43px; object-fit: contain; background: #fff; padding: 6px 9px; border-radius: 9px; }
+        .nt-login-story-brand > span { font-size: 9px; letter-spacing: 1.8px; color: #a3bfa9; }
+        .nt-login-story-content { position: relative; z-index: 1; margin: auto 0; padding: 60px 0; max-width: 470px; }
+        .nt-login-eyebrow { display: block; font-size: 10px; font-weight: 600; letter-spacing: 2px; color: #b4cca3; margin-bottom: 20px; }
+        .nt-login-story h1 { color: #f7f9f2; font-size: clamp(36px, 3.5vw, 52px); line-height: 1.15; letter-spacing: -1.8px; font-weight: 500; text-wrap: balance; }
+        .nt-login-story h1 span { color: #bed3ac; }
+        .nt-login-story-content > p { color: #afc4b6; font-size: 14px; line-height: 1.9; margin: 24px 0 30px; max-width: 375px; }
+        .nt-login-care-card { display: flex; gap: 15px; align-items: center; border: 1px solid #ffffff1c; background: #ffffff06; border-radius: 16px; padding: 20px; }
+        .nt-login-care-icon { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 13px; background: #c3d5ae; color: #244b35; flex-shrink: 0; }
+        .nt-login-care-card h2 { font-size: 13px; font-weight: 600; color: #e6efe0; }
+        .nt-login-care-card p { font-size: 11px; line-height: 1.7; color: #9fbba7; margin-top: 5px; }
+        .nt-login-benefits { display: grid; gap: 17px; margin-top: 30px; }
+        .nt-login-benefits > div { display: flex; align-items: center; gap: 12px; color: #bfd0bd; font-size: 12px; }
+        .nt-login-benefits svg { color: #94b28f; }
+        .nt-login-story-footer { position: relative; z-index: 1; display: flex; gap: 16px; align-items: center; color: #b1c6ad; font-size: 12px; font-weight: 500; }
+        .nt-login-story-footer span { color: #8aa992; font-size: 10px; font-weight: 400; }
+        .nt-login-main { display: flex; align-items: center; justify-content: center; padding: 48px 28px; background: radial-gradient(ellipse at top right, #e9efdf, transparent 65%), #f5f6f0; min-width: 0; }
+        .nt-login-container { width: 100%; max-width: 440px; }
+        .nt-login-mobile-brand { display: none; }
+        .nt-login-card { padding: 36px; border: 1px solid #dfe6d7; border-radius: 22px; background: #fff; box-shadow: 0 12px 40px #23462f06; }
+        .nt-login-welcome-icon { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 15px; background: #edf3e6; color: #67805a; margin-bottom: 26px; }
+        .nt-login-kicker { font-size: 9px; font-weight: 700; letter-spacing: 1.8px; color: #819277; margin-bottom: 8px; }
+        .nt-login-card h2 { font-size: 28px; font-weight: 600; line-height: 1.25; letter-spacing: -.9px; color: #234633; }
+        .nt-login-description { font-size: 13px; line-height: 1.7; color: #788471; margin-top: 10px; margin-bottom: 28px; }
+        .nt-login-form label { text-transform: none; letter-spacing: normal; font-size: 12px; font-weight: 600; color: #465b40; }
+        .nt-login-form input { min-height: 52px; border: 1px solid #dce3d6; background: #fafbf7; border-radius: 11px; color: #294332; font-size: 16px; box-shadow: none; }
+        .nt-login-form input::placeholder { color: #9aa390; font-size: 14px; }
+        .nt-login-form input:hover { border-color: #b7c7ab; }
+        .nt-login-form input:focus { background: #fff; border-color: #7fa06c; box-shadow: 0 0 0 3px #eef4e7; outline: none; }
+        .nt-login-form button { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+        .nt-login-form button:focus-visible { outline: 3px solid #79a16b; outline-offset: 3px; }
+        .nt-login-form button[type="submit"] { min-height: 52px; margin-top: 26px; border-radius: 11px; background: #176957; background-image: none; box-shadow: 0 3px 10px #173d390b; font-size: 14px; font-weight: 600; }
+        .nt-login-form button[type="submit"]:hover:not(:disabled) { background: #104e40; transform: none; }
+        .nt-login-form button[type="submit"]:disabled { cursor: not-allowed; }
+        .nt-login-form button[type="submit"] > span { display: none; }
+        .nt-login-form button[type="button"] { color: #658459; }
+        .nt-login-form label + button { min-height: 44px; margin: -10px 0; }
+        .nt-login-form .nt-password-toggle { display: grid; place-items: center; min-height: 44px; width: 44px; right: 5px; color: #819177; }
+        .nt-login-card-footer { display: flex; align-items: center; justify-content: center; gap: 7px; border-top: 1px solid #edf0e6; margin-top: 26px; padding-top: 21px; color: #8b967f; font-size: 10px; }
+        .nt-login-card-footer svg { flex-shrink: 0; }
+        .nt-login-help { margin: 22px auto 0; color: #8b967f; text-align: center; font-size: 11px; line-height: 1.7; max-width: 310px; }
+        .nt-login-error { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 22px; padding: 12px 14px; border: 1px solid #f1d3cc; background: #fcf2ee; border-radius: 10px; color: #a44c3f; }
+        .nt-login-error > span { flex-shrink: 0; display: grid; place-items: center; width: 18px; height: 18px; font-size: 11px; font-weight: 700; border: 1px solid #d79d91; border-radius: 50%; margin-top: 1px; }
+        .nt-login-error p { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+        @media (max-width: 1023px) {
+            .nt-login { display: block; }
+            .nt-login-story { display: none; }
+            .nt-login-main { min-height: 100dvh; padding: 36px 24px; }
+            .nt-login-mobile-brand { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 26px; }
+            .nt-login-mobile-brand img { width: 130px; height: 42px; object-fit: contain; }
+            .nt-login-mobile-brand span { font-size: 10px; letter-spacing: .6px; color: #87947b; }
+        }
+        @media (max-width: 479px) {
+            .nt-login-main { padding: 28px 18px max(24px, env(safe-area-inset-bottom)); }
+            .nt-login-card { padding: 26px 22px; border-radius: 18px; }
+            .nt-login-card h2 { font-size: 25px; }
+            .nt-login-description { font-size: 12px; }
+            .nt-login-welcome-icon { margin-bottom: 20px; }
+            .nt-login-mobile-brand { margin-bottom: 22px; }
+        }
+        @media (max-height: 700px) and (max-width: 1023px) { .nt-login-main { align-items: flex-start; } .nt-login-mobile-brand { margin-bottom: 18px; } }
+        @media (prefers-reduced-motion: reduce) { .nt-login *, .nt-login *::before, .nt-login *::after { animation: none !important; transition: none !important; } }
+    `}</style>
+);
 
 export default Login;

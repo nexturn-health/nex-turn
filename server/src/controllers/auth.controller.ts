@@ -39,11 +39,12 @@ export const registerHospital = async (
       password,
       phone,
       address,
+      plan,
     } = req.body;
 
-    // ------------------------------
+    // ========================================================
     // VALIDATION
-    // ------------------------------
+    // ========================================================
 
     if (
       !hospitalName ||
@@ -54,17 +55,38 @@ export const registerHospital = async (
     ) {
       return res.status(400).json({
         success: false,
+
         message:
           "All required fields must be provided",
       });
     }
 
+    // ========================================================
+    // PASSWORD VALIDATION
+    // ========================================================
+
+    if (
+      typeof password !== "string" ||
+      password.length < 6
+    ) {
+      return res.status(400).json({
+        success: false,
+
+        message:
+          "Password must be at least 6 characters",
+      });
+    }
+
+    // ========================================================
+    // NORMALIZE EMAIL
+    // ========================================================
+
     const normalizedEmail =
       email.toLowerCase().trim();
 
-    // ------------------------------
+    // ========================================================
     // CHECK USER
-    // ------------------------------
+    // ========================================================
 
     const existingUser =
       await User.findOne({
@@ -74,13 +96,15 @@ export const registerHospital = async (
     if (existingUser) {
       return res.status(409).json({
         success: false,
-        message: "Email already exists",
+
+        message:
+          "Email already exists",
       });
     }
 
-    // ------------------------------
+    // ========================================================
     // CHECK HOSPITAL
-    // ------------------------------
+    // ========================================================
 
     const existingHospital =
       await Hospital.findOne({
@@ -90,14 +114,41 @@ export const registerHospital = async (
     if (existingHospital) {
       return res.status(409).json({
         success: false,
+
         message:
           "Hospital email already exists",
       });
     }
 
-    // ------------------------------
+    // ========================================================
+    // VALIDATE PLAN
+    // ========================================================
+
+    const selectedPlan =
+      plan === "PREMIUM"
+        ? "PREMIUM"
+        : "BASIC";
+
+    // ========================================================
+    // CREATE TRIAL DATES
+    // ========================================================
+
+    const trialStartedAt =
+      new Date();
+
+    const trialEndsAt =
+      new Date(
+        trialStartedAt.getTime() +
+          14 *
+            24 *
+            60 *
+            60 *
+            1000,
+      );
+
+    // ========================================================
     // CREATE HOSPITAL
-    // ------------------------------
+    // ========================================================
 
     const hospital =
       await Hospital.create({
@@ -108,11 +159,24 @@ export const registerHospital = async (
         phone,
 
         address,
+
+        // ====================================================
+        // SUBSCRIPTION
+        // ====================================================
+
+        plan: selectedPlan,
+
+        subscriptionStatus:
+          "TRIAL",
+
+        trialStartedAt,
+
+        trialEndsAt,
       });
 
-    // ------------------------------
+    // ========================================================
     // HASH PASSWORD
-    // ------------------------------
+    // ========================================================
 
     const hashedPassword =
       await bcrypt.hash(
@@ -120,9 +184,9 @@ export const registerHospital = async (
         10,
       );
 
-    // ------------------------------
+    // ========================================================
     // CREATE HOSPITAL ADMIN
-    // ------------------------------
+    // ========================================================
 
     const user =
       await User.create({
@@ -134,14 +198,15 @@ export const registerHospital = async (
 
         role: "HOSPITAL_ADMIN",
 
-        hospitalId: hospital._id,
+        hospitalId:
+          hospital._id,
 
         isActive: true,
       });
 
-    // ------------------------------
+    // ========================================================
     // JWT
-    // ------------------------------
+    // ========================================================
 
     const token =
       generateToken(
@@ -151,6 +216,10 @@ export const registerHospital = async (
 
         hospital._id.toString(),
       );
+
+    // ========================================================
+    // RESPONSE
+    // ========================================================
 
     return res.status(201).json({
       success: true,
@@ -169,6 +238,21 @@ export const registerHospital = async (
           phone: hospital.phone,
 
           address: hospital.address,
+
+          // ================================================
+          // SUBSCRIPTION
+          // ================================================
+
+          plan: hospital.plan,
+
+          subscriptionStatus:
+            hospital.subscriptionStatus,
+
+          trialStartedAt:
+            hospital.trialStartedAt,
+
+          trialEndsAt:
+            hospital.trialEndsAt,
         },
 
         user: {
@@ -202,44 +286,47 @@ export const registerHospital = async (
   }
 };
 
+// ==============================
 // LOGIN
+// ==============================
 
 export const login = async (
   req: Request,
   res: Response,
 ) => {
   try {
-
-    // ------------------------------
+    // ========================================================
     // GET BODY
-    // ------------------------------
+    // ========================================================
 
     const {
       email,
       password,
     } = req.body;
 
-    // ------------------------------
+    // ========================================================
     // VALIDATION
-    // ------------------------------
+    // ========================================================
 
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Email and password are required",
+
+        message:
+          "Email and password are required",
       });
     }
 
-    // ------------------------------
+    // ========================================================
     // NORMALIZE EMAIL
-    // ------------------------------
+    // ========================================================
 
     const normalizedEmail =
       email.toLowerCase().trim();
 
-    // ------------------------------
+    // ========================================================
     // FIND USER
-    // ------------------------------
+    // ========================================================
 
     const user =
       await User.findOne({
@@ -247,7 +334,6 @@ export const login = async (
       }).select("+password");
 
     if (!user) {
-
       console.log(
         "LOGIN DEBUG: USER NOT FOUND",
         normalizedEmail,
@@ -255,25 +341,28 @@ export const login = async (
 
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password",
+
+        message:
+          "Invalid email or password",
       });
     }
 
-    // ------------------------------
+    // ========================================================
     // CHECK ACTIVE
-    // ------------------------------
+    // ========================================================
 
     if (!user.isActive) {
-
       return res.status(403).json({
         success: false,
-        message: "Your account is inactive",
+
+        message:
+          "Your account is inactive",
       });
     }
 
-    // ------------------------------
+    // ========================================================
     // CHECK PASSWORD
-    // ------------------------------
+    // ========================================================
 
     const passwordMatch =
       await bcrypt.compare(
@@ -282,7 +371,6 @@ export const login = async (
       );
 
     if (!passwordMatch) {
-
       console.log(
         "LOGIN DEBUG: INVALID PASSWORD",
         normalizedEmail,
@@ -290,27 +378,91 @@ export const login = async (
 
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password",
+
+        message:
+          "Invalid email or password",
       });
     }
 
-    // ------------------------------
+    // ========================================================
     // HOSPITAL ID
-    // ------------------------------
+    // ========================================================
 
     const hospitalId =
       user.hospitalId
         ? user.hospitalId.toString()
         : "";
 
-    // ------------------------------
+    // ========================================================
+    // GET HOSPITAL
+    // ========================================================
+
+    let hospital = null;
+
+    if (
+      user.role !== "SUPER_ADMIN" &&
+      hospitalId
+    ) {
+      hospital =
+        await Hospital.findById(
+          hospitalId,
+        );
+
+      if (!hospital) {
+        return res.status(403).json({
+          success: false,
+
+          message:
+            "Hospital not found",
+        });
+      }
+
+      // ======================================================
+      // AUTO UPDATE EXPIRED TRIAL
+      // ======================================================
+
+      const now = new Date();
+
+      if (
+        hospital.subscriptionStatus ===
+          "TRIAL" &&
+        hospital.trialEndsAt &&
+        now >
+          hospital.trialEndsAt
+      ) {
+        hospital.subscriptionStatus =
+          "EXPIRED";
+
+        await hospital.save();
+      }
+
+      // ======================================================
+      // AUTO UPDATE EXPIRED SUBSCRIPTION
+      // ======================================================
+
+      if (
+        hospital.subscriptionStatus ===
+          "ACTIVE" &&
+        hospital.subscriptionEndsAt &&
+        now >
+          hospital.subscriptionEndsAt
+      ) {
+        hospital.subscriptionStatus =
+          "EXPIRED";
+
+        await hospital.save();
+      }
+    }
+
+    // ========================================================
     // DOCTOR ONLINE
-    // ------------------------------
+    // ========================================================
 
     if (user.role === "DOCTOR") {
-
       user.isOnline = true;
-      user.lastSeenAt = new Date();
+
+      user.lastSeenAt =
+        new Date();
 
       await user.save();
 
@@ -351,12 +503,11 @@ export const login = async (
         "=================================",
       );
 
-      // ------------------------------
-      // SOCKET: DOCTOR ONLINE
-      // ------------------------------
+      // ======================================================
+      // SOCKET
+      // ======================================================
 
       if (hospitalId) {
-
         emitDoctorStatus({
           hospitalId,
 
@@ -372,38 +523,36 @@ export const login = async (
           lastSeenAt:
             user.lastSeenAt,
         });
-
       }
     }
 
-    // ------------------------------
+    // ========================================================
     // GENERATE JWT
-    // ------------------------------
+    // ========================================================
 
     const token =
       generateToken(
         user._id.toString(),
+
         user.role,
+
         hospitalId,
       );
 
-    // ------------------------------
+    // ========================================================
     // RESPONSE
-    // ------------------------------
+    // ========================================================
 
     return res.status(200).json({
-
       success: true,
 
       message:
         "Login successful",
 
       data: {
-
         token,
 
         user: {
-
           id:
             user._id,
 
@@ -427,23 +576,46 @@ export const login = async (
           lastSeenAt:
             user.lastSeenAt,
         },
+
+        // ====================================================
+        // SUBSCRIPTION
+        // ====================================================
+
+        subscription:
+          hospital
+            ? {
+                plan:
+                  hospital.plan,
+
+                status:
+                  hospital.subscriptionStatus,
+
+                trialStartedAt:
+                  hospital.trialStartedAt,
+
+                trialEndsAt:
+                  hospital.trialEndsAt,
+
+                subscriptionStartedAt:
+                  hospital.subscriptionStartedAt,
+
+                subscriptionEndsAt:
+                  hospital.subscriptionEndsAt,
+              }
+            : null,
       },
     });
-
   } catch (error) {
-
     console.error(
       "Login error:",
       error,
     );
 
     return res.status(500).json({
-
       success: false,
 
       message:
         "Internal server error",
-
     });
   }
 };

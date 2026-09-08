@@ -16,12 +16,6 @@ export type QueueStatus =
   | "SKIPPED"
   | "CANCELLED";
 
-export interface CreateQueuePayload {
-  patientId: string;
-  departmentId: string;
-  priority: QueuePriority;
-}
-
 export interface QueuePatient {
   _id: string;
   name: string;
@@ -44,44 +38,44 @@ export interface QueueDoctor {
   email?: string;
 }
 export interface QueueData {
-    _id: string;
+  _id: string;
 
-    tokenNumber: number;
+  tokenNumber: number;
 
-    tokenLabel: string;
+  tokenLabel: string;
 
-    name:string;
+  name: string;
 
-    priority:
-        | "NORMAL"
-        | "EMERGENCY";
+  priority:
+  | "NORMAL"
+  | "EMERGENCY";
 
-    status:
-        | "WAITING"
-        | "CALLED"
-        | "SERVING"
-        | "COMPLETED"
-        | "SKIPPED"
-        | "CANCELLED";
+  status:
+  | "WAITING"
+  | "CALLED"
+  | "SERVING"
+  | "COMPLETED"
+  | "SKIPPED"
+  | "CANCELLED";
 
-    patientId: QueuePatient;
+  patientId: QueuePatient;
 
-    departmentId: QueueDepartment;
-    doctorId?: QueueDoctor;
+  departmentId: QueueDepartment;
+  doctorId?: QueueDoctor;
 
-    queueDate: string;
+  queueDate: string;
 
-    estimatedWaitTime?: number;
+  estimatedWaitTime?: number;
 
-    estimatedTurnTime?: string;
+  estimatedTurnTime?: string;
 
-    trackingToken?: string;
+  trackingToken?: string;
 
-    trackingExpiresAt?: string;
+  trackingExpiresAt?: string;
 
-    trackingLinkActive?: boolean;
+  trackingLinkActive?: boolean;
 
-    createdAt: string;
+  createdAt: string;
 }
 
 /* ============================== */
@@ -110,6 +104,13 @@ interface CreateQueueResponse {
     estimatedWaitTime: number;
     estimatedTurnTime: string;
   };
+}
+
+export interface CreateQueuePayload {
+  patientId: string;
+  departmentId: string;
+  doctorId: string;
+  priority: QueuePriority;
 }
 
 /* ============================== */

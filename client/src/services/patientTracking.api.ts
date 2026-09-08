@@ -1,11 +1,11 @@
 import publicApi from "./publicApi";
 
-
 export interface QueueDoctor {
     _id: string;
     name: string;
     email?: string;
 }
+
 export type PatientQueueStatus =
     | "WAITING"
     | "CALLED"
@@ -13,21 +13,45 @@ export type PatientQueueStatus =
     | "COMPLETED"
     | "SKIPPED"
     | "CANCELLED";
+
+export type QueuePriority =
+    | "NORMAL"
+    | "EMERGENCY";
+
+export interface DoctorTimingData {
+    scheduledStartTime?: string | null;
+    scheduledEndTime?: string | null;
+
+    isOnline?: boolean;
+    isLate?: boolean;
+
+    lateByMinutes?: number;
+
+    firstOnlineAt?: string | null;
+    lastSeenAt?: string | null;
+    expectedDoctorStartAt?: string | null;
+
+    averageServiceMinutes?: number;
+
+    message?: string;
+}
+
+export interface AppointmentTrackingData {
+    appointmentCode?: string;
+    appointmentTime?: string | null;
+    scheduledStartTime?: string | null;
+    message?: string;
+}
+
 export interface PatientTrackingData {
     _id: string;
 
     tokenNumber: number;
     tokenLabel: string;
 
-    status:
-    | "WAITING"
-    | "CALLED"
-    | "SERVING"
-    | "COMPLETED"
-    | "SKIPPED"
-    | "CANCELLED";
+    status: PatientQueueStatus;
 
-    priority: "NORMAL" | "EMERGENCY";
+    priority: QueuePriority;
 
     patient: {
         _id: string;
@@ -49,9 +73,14 @@ export interface PatientTrackingData {
 
     doctorOnline: boolean;
 
+    /*
+     * Old field kept for backward compatibility.
+     * New UI mainly uses doctorTiming.scheduledStartTime.
+     */
     doctorShiftStartTime?: string | null;
 
     patientsAhead: number;
+
     offlineMinutes?: number;
 
     averageConsultationMinutes: number;
@@ -62,12 +91,16 @@ export interface PatientTrackingData {
 
     currentServingToken?: string | null;
 
+    doctorTiming?: DoctorTimingData | null;
+
+    appointment?: AppointmentTrackingData | null;
+
     createdAt?: string;
     updatedAt?: string;
 }
+
 interface PatientTrackingResponse {
     success: boolean;
-
     data: PatientTrackingData;
 }
 

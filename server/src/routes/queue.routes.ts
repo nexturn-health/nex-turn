@@ -7,35 +7,60 @@ import {
   startServingPatient,
   completePatient,
   skipPatient,
-  getDoctorQueue
+  getDoctorQueue,
 } from "../controllers/queue.controller";
 
 import {
-    trackQueue,
+  trackQueue,
 } from "../controllers/queueTracking.controller";
-import { protect } from "../middleware/auth.middleware";
-import { authorize } from "../middleware/role.middleware";
+
+import {
+  protect,
+} from "../middleware/auth.middleware";
+
+import {
+  authorize,
+} from "../middleware/role.middleware";
+
+import {
+  requireSubscription,
+} from "../middleware/subscription.middleware";
 
 const router = Router();
 
+/* =========================================================
+   PUBLIC PATIENT TRACKING
 
+   GET /api/queues/track/:trackingToken
+========================================================= */
 
 router.get(
-    "/track/:trackingToken",
-    trackQueue,
+  "/track/:trackingToken",
+  trackQueue,
 );
 
-
-// =====================================
-// AUTHENTICATION
-// =====================================
+/* =========================================================
+   AUTHENTICATION
+========================================================= */
 
 router.use(protect);
 
-// =====================================
-// CREATE QUEUE / GENERATE TOKEN
-// POST /api/queues
-// =====================================
+/* =========================================================
+   ACTIVE SUBSCRIPTION REQUIRED
+
+   BASIC + PREMIUM
+========================================================= */
+
+router.use(requireSubscription);
+
+/* =========================================================
+   CREATE QUEUE / GENERATE TOKEN
+
+   POST /api/queues
+
+   HOSPITAL_ADMIN
+   RECEPTIONIST
+========================================================= */
 
 router.post(
   "/",
@@ -46,10 +71,15 @@ router.post(
   createQueue,
 );
 
-// =====================================
-// GET TODAY'S QUEUE
-// GET /api/queues
-// =====================================
+/* =========================================================
+   GET TODAY'S QUEUE
+
+   GET /api/queues
+
+   HOSPITAL_ADMIN
+   RECEPTIONIST
+   DOCTOR
+========================================================= */
 
 router.get(
   "/",
@@ -61,58 +91,78 @@ router.get(
   getQueues,
 );
 
-// =====================================
-// DOCTOR CALL NEXT PATIENT
-// PATCH /api/queues/call-next
-// =====================================
+/* =========================================================
+   DOCTOR QUEUE
 
-router.patch(
-  "/call-next",
-  authorize("DOCTOR"),
-  callNextPatient,
-);
-
-// =====================================
-// START SERVING
-// PATCH /api/queues/:id/start
-// =====================================
-
-router.patch(
-  "/:id/start",
-  authorize("DOCTOR"),
-  startServingPatient,
-);
-
-// =====================================
-// COMPLETE PATIENT
-// PATCH /api/queues/:id/complete
-// =====================================
-
-router.patch(
-  "/:id/complete",
-  authorize("DOCTOR"),
-  completePatient,
-);
-
-// =====================================
-// SKIP PATIENT
-// PATCH /api/queues/:id/skip
-// =====================================
-
-router.patch(
-  "/:id/skip",
-  authorize("DOCTOR"),
-  skipPatient,
-);
+   GET /api/queues/doctor
+========================================================= */
 
 router.get(
   "/doctor",
-  protect,
-  getDoctorQueue
+  authorize(
+    "DOCTOR",
+  ),
+  getDoctorQueue,
 );
 
-// =====================================
-// EXPORT
-// =====================================
+/* =========================================================
+   DOCTOR CALL NEXT PATIENT
+
+   PATCH /api/queues/call-next
+========================================================= */
+
+router.patch(
+  "/call-next",
+  authorize(
+    "DOCTOR",
+  ),
+  callNextPatient,
+);
+
+/* =========================================================
+   START SERVING
+
+   PATCH /api/queues/:id/start
+========================================================= */
+
+router.patch(
+  "/:id/start",
+  authorize(
+    "DOCTOR",
+  ),
+  startServingPatient,
+);
+
+/* =========================================================
+   COMPLETE PATIENT
+
+   PATCH /api/queues/:id/complete
+========================================================= */
+
+router.patch(
+  "/:id/complete",
+  authorize(
+    "DOCTOR",
+  ),
+  completePatient,
+);
+
+/* =========================================================
+   SKIP PATIENT
+
+   PATCH /api/queues/:id/skip
+========================================================= */
+
+router.patch(
+  "/:id/skip",
+  authorize(
+    "DOCTOR",
+  ),
+  skipPatient,
+);
+
+/* =========================================================
+   EXPORT
+========================================================= */
 
 export default router;

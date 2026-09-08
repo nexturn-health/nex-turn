@@ -1,9 +1,10 @@
 export type UserRole =
-  | "SUPER_ADMIN"
-  | "HOSPITAL_ADMIN"
-  | "RECEPTIONIST"
-  | "DOCTOR"
-  | "PATIENT";
+    | "SUPER_ADMIN"
+    | "HOSPITAL_ADMIN"
+    | "RECEPTIONIST"
+    | "DOCTOR"
+    | "PATIENT"
+    | "LAB_TECHNICIAN";
 
 // ==========================================
 // USER

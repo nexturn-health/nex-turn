@@ -1,4 +1,6 @@
-import { Router } from "express";
+import {
+  Router,
+} from "express";
 
 import {
   createDepartment,
@@ -7,43 +9,111 @@ import {
   deleteDepartment,
 } from "../controllers/department.controller";
 
-import { protect } from "../middleware/auth.middleware";
-import { authorize } from "../middleware/role.middleware";
+import {
+  protect,
+} from "../middleware/auth.middleware";
 
-const router = Router();
+import {
+  authorize,
+} from "../middleware/role.middleware";
 
-router.use(protect);
+import {
+  requireSubscription,
+} from "../middleware/subscription.middleware";
 
-// Create department
-router.post(
-  "/",
-  authorize("HOSPITAL_ADMIN", "SUPER_ADMIN",),
-  createDepartment
+const router =
+  Router();
+
+/* =========================================================
+   AUTHENTICATION
+========================================================= */
+
+router.use(
+  protect,
 );
 
-// Get departments
+/* =========================================================
+   ACTIVE SUBSCRIPTION REQUIRED
+
+   BASIC + PREMIUM
+========================================================= */
+
+router.use(
+  requireSubscription,
+);
+
+/* =========================================================
+   CREATE DEPARTMENT
+
+   POST /api/departments
+========================================================= */
+
+router.post(
+  "/",
+
+  authorize(
+    "HOSPITAL_ADMIN",
+    "SUPER_ADMIN",
+  ),
+
+  createDepartment,
+);
+
+/* =========================================================
+   GET DEPARTMENTS
+
+   GET /api/departments
+========================================================= */
+
 router.get(
   "/",
+
   authorize(
     "SUPER_ADMIN",
     "HOSPITAL_ADMIN",
     "RECEPTIONIST",
+    "DOCTOR",
   ),
+
   getDepartments,
 );
 
-// Update department
+/* =========================================================
+   UPDATE DEPARTMENT
+
+   PUT /api/departments/:id
+========================================================= */
+
 router.put(
   "/:id",
-  authorize("HOSPITAL_ADMIN", "SUPER_ADMIN",),
-  updateDepartment
+
+  authorize(
+    "HOSPITAL_ADMIN",
+    "SUPER_ADMIN",
+  ),
+
+  updateDepartment,
 );
 
-// Delete department
+/* =========================================================
+   DELETE DEPARTMENT
+
+   DELETE /api/departments/:id
+========================================================= */
+
 router.delete(
   "/:id",
-  authorize("HOSPITAL_ADMIN", "SUPER_ADMIN",),
-  deleteDepartment
+
+  authorize(
+    "HOSPITAL_ADMIN",
+    "SUPER_ADMIN",
+  ),
+
+  deleteDepartment,
 );
+
+/* =========================================================
+   EXPORT
+========================================================= */
 
 export default router;

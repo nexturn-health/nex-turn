@@ -1,8 +1,21 @@
-import type { Request, Response } from "express";
+import type {
+  Request,
+  Response,
+} from "express";
+
 import mongoose from "mongoose";
 
-import { Queue } from "../models/Queue.model";
-import { User } from "../models/User.model";
+import {
+  Queue,
+} from "../models/Queue.model";
+
+import {
+  User,
+} from "../models/User.model";
+
+import {
+  getDoctorLiveDelayStatus,
+} from "../services/doctorTiming.service";
 
 // ======================================================
 // CONFIG
@@ -15,51 +28,150 @@ const MAX_HISTORY_FOR_AVERAGE = 20;
 // HELPERS
 // ======================================================
 
+const getObjectId = (
+  value: any,
+): mongoose.Types.ObjectId | null => {
+  const id =
+    value?._id ||
+    value;
+
+  if (
+    !id ||
+    !mongoose.Types.ObjectId.isValid(
+      String(id),
+    )
+  ) {
+    return null;
+  }
+
+  return new mongoose.Types.ObjectId(
+    String(id),
+  );
+};
+
 const getDoctorAverageConsultationMinutes = async (
   doctorId?: mongoose.Types.ObjectId,
 ): Promise<number | null> => {
-  if (!doctorId) return null;
+  if (!doctorId) {
+    return null;
+  }
 
-  const completedQueues = await Queue.find({
-    doctorId,
-    status: "COMPLETED",
-    $or: [
-      { serviceDurationMinutes: { $gt: 0 } },
-      { servingAt: { $exists: true }, completedAt: { $exists: true } },
-    ],
-  })
-    .sort({ completedAt: -1 })
-    .limit(MAX_HISTORY_FOR_AVERAGE)
-    .select("serviceDurationMinutes servingAt completedAt")
-    .lean();
+  const completedQueues: any[] =
+    await Queue.find({
+      doctorId,
 
-  const durations = completedQueues
-    .map((queue: any) => {
-      const stored = Number(queue.serviceDurationMinutes);
-      if (Number.isFinite(stored) && stored > 0) return stored;
+      status:
+        "COMPLETED",
 
-      if (queue.servingAt && queue.completedAt) {
-        const minutes =
-          (new Date(queue.completedAt).getTime() -
-            new Date(queue.servingAt).getTime()) /
-          (60 * 1000);
+      $or: [
+        {
+          serviceDurationMinutes: {
+            $gt:
+              0,
+          },
+        },
+        {
+          servingAt: {
+            $exists:
+              true,
+          },
 
-        if (Number.isFinite(minutes) && minutes > 0) {
-          return minutes;
-        }
-      }
-
-      return 0;
+          completedAt: {
+            $exists:
+              true,
+          },
+        },
+      ],
     })
-    .filter((minutes) => minutes > 0);
+      .sort({
+        completedAt:
+          -1,
+      })
+      .limit(
+        MAX_HISTORY_FOR_AVERAGE,
+      )
+      .select(
+        "serviceDurationMinutes servingAt completedAt",
+      )
+      .lean() as any[];
 
-  if (!durations.length) return null;
+  const durations =
+    completedQueues
+      .map(
+        (
+          queue: any,
+        ) => {
+          const stored =
+            Number(
+              queue.serviceDurationMinutes,
+            );
+
+          if (
+            Number.isFinite(
+              stored,
+            ) &&
+            stored > 0
+          ) {
+            return stored;
+          }
+
+          if (
+            queue.servingAt &&
+            queue.completedAt
+          ) {
+            const minutes =
+              (
+                new Date(
+                  queue.completedAt,
+                ).getTime() -
+                new Date(
+                  queue.servingAt,
+                ).getTime()
+              ) /
+              (
+                60 *
+                1000
+              );
+
+            if (
+              Number.isFinite(
+                minutes,
+              ) &&
+              minutes > 0
+            ) {
+              return minutes;
+            }
+          }
+
+          return 0;
+        },
+      )
+      .filter(
+        (
+          minutes,
+        ) =>
+          minutes > 0,
+      );
+
+  if (
+    !durations.length
+  ) {
+    return null;
+  }
 
   return Math.max(
     1,
     Math.round(
-      durations.reduce((sum, minutes) => sum + minutes, 0) /
-        durations.length,
+      durations.reduce(
+        (
+          sum,
+          minutes,
+        ) =>
+          sum +
+          minutes,
+        0,
+      ) /
+      durations.length,
     ),
   );
 };
@@ -68,193 +180,520 @@ const getDepartmentAverageConsultationMinutes = async (
   hospitalId: mongoose.Types.ObjectId,
   departmentId: mongoose.Types.ObjectId,
 ): Promise<number | null> => {
-  const completedQueues = await Queue.find({
-    hospitalId,
-    departmentId,
-    status: "COMPLETED",
-    $or: [
-      { serviceDurationMinutes: { $gt: 0 } },
-      { servingAt: { $exists: true }, completedAt: { $exists: true } },
-    ],
-  })
-    .sort({ completedAt: -1 })
-    .limit(MAX_HISTORY_FOR_AVERAGE)
-    .select("serviceDurationMinutes servingAt completedAt")
-    .lean();
+  const completedQueues: any[] =
+    await Queue.find({
+      hospitalId,
 
-  const durations = completedQueues
-    .map((queue: any) => {
-      const stored = Number(queue.serviceDurationMinutes);
-      if (Number.isFinite(stored) && stored > 0) return stored;
+      departmentId,
 
-      if (queue.servingAt && queue.completedAt) {
-        const minutes =
-          (new Date(queue.completedAt).getTime() -
-            new Date(queue.servingAt).getTime()) /
-          (60 * 1000);
+      status:
+        "COMPLETED",
 
-        if (Number.isFinite(minutes) && minutes > 0) {
-          return minutes;
-        }
-      }
+      $or: [
+        {
+          serviceDurationMinutes: {
+            $gt:
+              0,
+          },
+        },
+        {
+          servingAt: {
+            $exists:
+              true,
+          },
 
-      return 0;
+          completedAt: {
+            $exists:
+              true,
+          },
+        },
+      ],
     })
-    .filter((minutes) => minutes > 0);
+      .sort({
+        completedAt:
+          -1,
+      })
+      .limit(
+        MAX_HISTORY_FOR_AVERAGE,
+      )
+      .select(
+        "serviceDurationMinutes servingAt completedAt",
+      )
+      .lean() as any[];
 
-  if (!durations.length) return null;
+  const durations =
+    completedQueues
+      .map(
+        (
+          queue: any,
+        ) => {
+          const stored =
+            Number(
+              queue.serviceDurationMinutes,
+            );
 
-  return Math.max(
-    1,
-    Math.round(
-      durations.reduce((sum, minutes) => sum + minutes, 0) /
-        durations.length,
-    ),
-  );
-};
+          if (
+            Number.isFinite(
+              stored,
+            ) &&
+            stored > 0
+          ) {
+            return stored;
+          }
 
-const getTodayOpdStartTime = (
-  shiftStartTime?: string | null,
-): Date | null => {
+          if (
+            queue.servingAt &&
+            queue.completedAt
+          ) {
+            const minutes =
+              (
+                new Date(
+                  queue.completedAt,
+                ).getTime() -
+                new Date(
+                  queue.servingAt,
+                ).getTime()
+              ) /
+              (
+                60 *
+                1000
+              );
+
+            if (
+              Number.isFinite(
+                minutes,
+              ) &&
+              minutes > 0
+            ) {
+              return minutes;
+            }
+          }
+
+          return 0;
+        },
+      )
+      .filter(
+        (
+          minutes,
+        ) =>
+          minutes > 0,
+      );
+
   if (
-    !shiftStartTime ||
-    !/^([01]\d|2[0-3]):([0-5]\d)$/.test(shiftStartTime)
+    !durations.length
   ) {
     return null;
   }
 
-  const [hours, minutes] = shiftStartTime.split(":").map(Number);
-  const start = new Date();
-  start.setHours(hours, minutes, 0, 0);
-
-  return start;
+  return Math.max(
+    1,
+    Math.round(
+      durations.reduce(
+        (
+          sum,
+          minutes,
+        ) =>
+          sum +
+          minutes,
+        0,
+      ) /
+      durations.length,
+    ),
+  );
 };
 
-/**
- * Returns true when queue A should be ahead of queue B.
- * Emergency patients are always ahead of normal patients.
- * Within the same priority, the lower token number is ahead.
- */
-const isQueueAhead = (
-  candidate: any,
-  target: any,
-): boolean => {
-  if (candidate.priority !== target.priority) {
-    return candidate.priority === "EMERGENCY";
+const buildQueueDateTime = (
+  queueDate?: string,
+  time?: string | null,
+): Date | null => {
+  if (
+    !queueDate ||
+    !time ||
+    !/^([01]\d|2[0-3]):([0-5]\d)$/.test(
+      time,
+    )
+  ) {
+    return null;
   }
 
-  return Number(candidate.tokenNumber) < Number(target.tokenNumber);
+  return new Date(
+    `${queueDate}T${time}:00+05:30`,
+  );
 };
 
-/**
- * Calculate a better estimate than simply patientsAhead * average.
- * If somebody is currently serving, only the remaining portion of the
- * average consultation is added. CALLED patients get a full slot.
- */
+const getQueueScheduledTime = (
+  queue: any,
+): string | null => {
+  return (
+    queue.scheduledStartTime ||
+    queue.appointmentId?.confirmedStartTime ||
+    queue.appointmentId?.requestedStartTime ||
+    null
+  );
+};
+
+const getSortTime = (
+  queue: any,
+): number => {
+  const scheduledTime =
+    getQueueScheduledTime(
+      queue,
+    );
+
+  const scheduledDateTime =
+    buildQueueDateTime(
+      queue.queueDate,
+      scheduledTime,
+    );
+
+  if (
+    queue.source ===
+    "APPOINTMENT"
+  ) {
+    return scheduledDateTime
+      ? scheduledDateTime.getTime()
+      : Number.MAX_SAFE_INTEGER;
+  }
+
+  return Number(
+    queue.tokenNumber ||
+    0,
+  );
+};
+
+const sortQueueItems = (
+  first: any,
+  second: any,
+): number => {
+  if (
+    first.status === "SERVING" &&
+    second.status !== "SERVING"
+  ) {
+    return -1;
+  }
+
+  if (
+    second.status === "SERVING" &&
+    first.status !== "SERVING"
+  ) {
+    return 1;
+  }
+
+  if (
+    first.status === "CALLED" &&
+    second.status !== "CALLED"
+  ) {
+    return -1;
+  }
+
+  if (
+    second.status === "CALLED" &&
+    first.status !== "CALLED"
+  ) {
+    return 1;
+  }
+
+  if (
+    first.priority === "EMERGENCY" &&
+    second.priority !== "EMERGENCY"
+  ) {
+    return -1;
+  }
+
+  if (
+    second.priority === "EMERGENCY" &&
+    first.priority !== "EMERGENCY"
+  ) {
+    return 1;
+  }
+
+  return (
+    getSortTime(first) -
+    getSortTime(second)
+  );
+};
+
+const calculateOfflineMinutes = (
+  doctorTiming: any,
+): number => {
+  if (
+    doctorTiming?.isOnline ===
+    true
+  ) {
+    return 0;
+  }
+
+  if (
+    doctorTiming?.lastSeenAt
+  ) {
+    return Math.max(
+      0,
+      Math.floor(
+        (
+          Date.now() -
+          new Date(
+            doctorTiming.lastSeenAt,
+          ).getTime()
+        ) /
+        60000,
+      ),
+    );
+  }
+
+  return doctorTiming?.lateByMinutes ||
+    0;
+};
+
 const calculateLiveEstimate = async ({
   queue,
   hospitalId,
   departmentId,
+  doctorId,
   averageConsultationMinutes,
-  doctorOnline,
-  shiftStartTime,
+  doctorTiming,
 }: {
   queue: any;
   hospitalId: mongoose.Types.ObjectId;
   departmentId: mongoose.Types.ObjectId;
+  doctorId: mongoose.Types.ObjectId | null;
   averageConsultationMinutes: number;
-  doctorOnline: boolean;
-  shiftStartTime: string | null;
+  doctorTiming: any | null;
 }) => {
-  const now = new Date();
+  const now =
+    new Date();
 
-  const activeQueues = await Queue.find({
+  const queueFilter: any = {
     hospitalId,
+
     departmentId,
-    queueDate: queue.queueDate,
-    status: { $in: ["WAITING", "CALLED", "SERVING"] },
-  })
-    .select(
-      "_id tokenNumber priority status servingAt calledAt",
-    )
-    .lean();
 
-  const queuesAhead = activeQueues.filter((candidate: any) => {
-    if (String(candidate._id) === String(queue._id)) return false;
-    return isQueueAhead(candidate, queue);
-  });
+    queueDate:
+      queue.queueDate,
 
-  const waitingAhead = queuesAhead.filter(
-    (item: any) => item.status === "WAITING",
-  );
-
-  const calledAhead = queuesAhead.filter(
-    (item: any) => item.status === "CALLED",
-  );
-
-  const servingAhead = queuesAhead.filter(
-    (item: any) => item.status === "SERVING",
-  );
-
-  let processingStart = now;
-
-  // If the doctor is offline and today's configured shift has not started,
-  // the estimate starts from the shift time instead of from "now".
-  const opdStartDate = getTodayOpdStartTime(shiftStartTime);
+    status: {
+      $in: [
+        "WAITING",
+        "CALLED",
+        "SERVING",
+      ],
+    },
+  };
 
   if (
-    !doctorOnline &&
-    opdStartDate &&
-    opdStartDate.getTime() > now.getTime()
+    doctorId
   ) {
-    processingStart = opdStartDate;
+    queueFilter.$or = [
+      {
+        doctorId,
+      },
+      {
+        doctorId:
+          null,
+      },
+      {
+        doctorId: {
+          $exists:
+            false,
+        },
+      },
+    ];
   }
 
-  let waitMinutes = 0;
+  const activeQueues: any[] =
+    await Queue.find(
+      queueFilter,
+    )
+      .populate(
+        "appointmentId",
+        "appointmentCode requestedStartTime confirmedStartTime endTime paymentStatus status",
+      )
+      .select(
+        "_id tokenLabel tokenNumber priority status source appointmentId scheduledStartTime queueDate servingAt calledAt createdAt doctorId",
+      )
+      .lean() as any[];
 
-  // Current serving patient's remaining time.
-  if (doctorOnline && servingAhead.length > 0) {
-    const serving = servingAhead[0];
+  const sortedQueues =
+    activeQueues.sort(
+      sortQueueItems,
+    );
 
-    if (serving.servingAt) {
-      const elapsedMinutes =
-        (now.getTime() -
-          new Date(serving.servingAt).getTime()) /
-        (60 * 1000);
+  const servingPatient =
+    sortedQueues.find(
+      (
+        item,
+      ) =>
+        item.status ===
+        "SERVING",
+    );
 
-      waitMinutes += Math.max(
+  const calledPatient =
+    sortedQueues.find(
+      (
+        item,
+      ) =>
+        item.status ===
+        "CALLED",
+    );
+
+  const currentServing =
+    servingPatient ||
+    calledPatient;
+
+  const currentServingToken =
+    currentServing?.tokenLabel ||
+    null;
+
+  if (
+    queue.status === "CALLED" ||
+    queue.status === "SERVING"
+  ) {
+    return {
+      currentServingToken:
+        queue.tokenLabel ||
+        currentServingToken,
+
+      patientsAhead:
         0,
-        averageConsultationMinutes - elapsedMinutes,
-      );
-    } else {
-      waitMinutes += averageConsultationMinutes;
-    }
-  } else if (!doctorOnline && servingAhead.length > 0) {
-    waitMinutes += servingAhead.length * averageConsultationMinutes;
+
+      estimatedWaitTime:
+        0,
+
+      estimatedTurnTime:
+        new Date(),
+    };
   }
 
-  waitMinutes +=
-    calledAhead.length * averageConsultationMinutes;
+  const targetIndex =
+    sortedQueues.findIndex(
+      (
+        item,
+      ) =>
+        String(item._id) ===
+        String(queue._id),
+    );
 
-  waitMinutes +=
-    waitingAhead.length * averageConsultationMinutes;
+  const safeTargetIndex =
+    targetIndex >= 0
+      ? targetIndex
+      : sortedQueues.length;
 
-  const estimatedTurnTime = new Date(
-    processingStart.getTime() +
-      waitMinutes * 60 * 1000,
-  );
+  const aheadItems =
+    sortedQueues.slice(
+      0,
+      safeTargetIndex,
+    );
 
-  const estimatedWaitTime = Math.max(
-    0,
-    Math.ceil(
-      (estimatedTurnTime.getTime() - now.getTime()) /
-        (60 * 1000),
-    ),
-  );
+  const patientsAhead =
+    aheadItems.length;
+
+  let remainingCurrentPatient =
+    0;
+
+  if (
+    servingPatient?.servingAt
+  ) {
+    const elapsedMinutes =
+      (
+        now.getTime() -
+        new Date(
+          servingPatient.servingAt,
+        ).getTime()
+      ) /
+      (
+        60 *
+        1000
+      );
+
+    remainingCurrentPatient =
+      Math.max(
+        averageConsultationMinutes -
+        elapsedMinutes,
+        0,
+      );
+  }
+
+  let estimateBaseTime =
+    now;
+
+  if (
+    doctorTiming?.expectedDoctorStartAt
+  ) {
+    const expectedDoctorStartAt =
+      new Date(
+        doctorTiming.expectedDoctorStartAt,
+      );
+
+    if (
+      !Number.isNaN(
+        expectedDoctorStartAt.getTime(),
+      ) &&
+      expectedDoctorStartAt.getTime() >
+      estimateBaseTime.getTime()
+    ) {
+      estimateBaseTime =
+        expectedDoctorStartAt;
+    }
+  }
+
+  const appointmentTime =
+    getQueueScheduledTime(
+      queue,
+    );
+
+  const appointmentDateTime =
+    buildQueueDateTime(
+      queue.queueDate,
+      appointmentTime,
+    );
+
+  /*
+   * Appointment time remains fixed.
+   * Estimated turn time can move later,
+   * but never earlier than appointment time.
+   */
+  if (
+    appointmentDateTime &&
+    appointmentDateTime.getTime() >
+    estimateBaseTime.getTime()
+  ) {
+    estimateBaseTime =
+      appointmentDateTime;
+  }
+
+  const estimatedTurnTime =
+    new Date(
+      estimateBaseTime.getTime() +
+      (
+        remainingCurrentPatient +
+        patientsAhead *
+        averageConsultationMinutes
+      ) *
+      60 *
+      1000,
+    );
+
+  const estimatedWaitTime =
+    Math.max(
+      0,
+      Math.ceil(
+        (
+          estimatedTurnTime.getTime() -
+          now.getTime()
+        ) /
+        (
+          60 *
+          1000
+        ),
+      ),
+    );
 
   return {
-    patientsAhead: queuesAhead.length,
+    currentServingToken,
+
+    patientsAhead,
+
     estimatedWaitTime,
+
     estimatedTurnTime,
   };
 };
@@ -269,229 +708,374 @@ export const trackQueue = async (
   res: Response,
 ) => {
   try {
-    const trackingToken = Array.isArray(req.params.trackingToken)
-      ? req.params.trackingToken[0]
-      : req.params.trackingToken;
+    const trackingToken =
+      Array.isArray(
+        req.params.trackingToken,
+      )
+        ? req.params.trackingToken[0]
+        : req.params.trackingToken;
 
-    // ==================================================
-    // VALIDATE TOKEN
-    // ==================================================
-
-    if (!trackingToken) {
+    if (
+      !trackingToken
+    ) {
       return res.status(400).json({
-        success: false,
-        message: "Tracking token is required",
-      });
-    }
+        success:
+          false,
 
-    // ==================================================
-    // FIND QUEUE
-    // ==================================================
-
-    const queue = await Queue.findOne({
-      trackingToken,
-    })
-      .populate(
-        "patientId",
-        "name phone email patientCode age gender address",
-      )
-      .populate(
-        "departmentId",
-        "name description tokenPrefix",
-      )
-      .populate(
-        "doctorId",
-        "name email isOnline shiftStartTime departmentId",
-      )
-      .lean();
-
-    if (!queue) {
-      return res.status(404).json({
-        success: false,
-        message: "Invalid tracking link",
-      });
-    }
-
-    // ==================================================
-    // SKIPPED TOKEN
-    // ==================================================
-
-    if (queue.status === "SKIPPED") {
-      return res.status(200).json({
-        success: true,
-        code: "TOKEN_SKIPPED",
         message:
-          "Your token was skipped. Please contact reception.",
+          "Tracking token is required",
+      });
+    }
+
+    const queue: any =
+      await Queue.findOne({
+        trackingToken,
+      })
+        .populate(
+          "patientId",
+          "name phone email patientCode age gender address",
+        )
+        .populate(
+          "departmentId",
+          "name description tokenPrefix",
+        )
+        .populate(
+          "doctorId",
+          "name email isOnline shiftStartTime departmentId lastSeenAt",
+        )
+        .populate(
+          "appointmentId",
+          "appointmentCode requestedStartTime confirmedStartTime endTime paymentStatus status",
+        )
+        .lean();
+
+    if (
+      !queue
+    ) {
+      return res.status(404).json({
+        success:
+          false,
+
+        message:
+          "Invalid tracking link",
+      });
+    }
+
+    const hospitalId =
+      getObjectId(
+        queue.hospitalId,
+      );
+
+    const departmentId =
+      getObjectId(
+        queue.departmentId,
+      );
+
+    if (
+      !hospitalId ||
+      !departmentId
+    ) {
+      return res.status(500).json({
+        success:
+          false,
+
+        message:
+          "Queue configuration is invalid",
+      });
+    }
+
+    const appointmentTime =
+      getQueueScheduledTime(
+        queue,
+      );
+
+    const appointment =
+      queue.source === "APPOINTMENT" ||
+        queue.appointmentId ||
+        queue.scheduledStartTime
+        ? {
+          appointmentCode:
+            queue.appointmentId?.appointmentCode ||
+            null,
+
+          appointmentTime,
+
+          scheduledStartTime:
+            appointmentTime,
+
+          message:
+            "Your appointment time is fixed. Estimated turn time may change based on doctor availability and current queue.",
+        }
+        : null;
+
+    /*
+     * Terminal statuses should still return data,
+     * so patient can see final screen instead of invalid link.
+     */
+    if (
+      queue.status === "COMPLETED" ||
+      queue.status === "SKIPPED" ||
+      queue.status === "CANCELLED"
+    ) {
+      return res.status(200).json({
+        success:
+          true,
+
         data: {
-          queueId: queue._id,
-          hospitalId: queue.hospitalId,
-          tokenLabel: queue.tokenLabel,
-          tokenNumber: queue.tokenNumber,
-          status: queue.status,
-          priority: queue.priority,
-          patient: queue.patientId,
-          department: queue.departmentId,
-          doctorId: queue.doctorId || null,
-          doctorOnline: false,
-          doctorShiftStartTime: null,
-          averageConsultationMinutes: DEFAULT_CONSULTATION_MINUTES,
-          currentServingToken: null,
-          patientsAhead: 0,
-          estimatedWaitTime: 0,
-          estimatedTurnTime: null,
-          queueDate: queue.queueDate,
+          _id:
+            queue._id,
+
+          queueId:
+            queue._id,
+
+          hospitalId:
+            queue.hospitalId,
+
+          tokenLabel:
+            queue.tokenLabel,
+
+          tokenNumber:
+            queue.tokenNumber,
+
+          status:
+            queue.status,
+
+          source:
+            queue.source,
+
+          priority:
+            queue.priority,
+
+          patient:
+            queue.patientId,
+
+          department:
+            queue.departmentId,
+
+          doctorId:
+            queue.doctorId ||
+            null,
+
+          doctorOnline:
+            false,
+
+          doctorShiftStartTime:
+            null,
+
+          averageConsultationMinutes:
+            DEFAULT_CONSULTATION_MINUTES,
+
+          currentServingToken:
+            null,
+
+          patientsAhead:
+            0,
+
+          estimatedWaitTime:
+            0,
+
+          estimatedTurnTime:
+            null,
+
+          doctorTiming:
+            null,
+
+          appointment,
+
+          queueDate:
+            queue.queueDate,
+
+          createdAt:
+            queue.createdAt,
+
+          updatedAt:
+            queue.updatedAt,
         },
       });
     }
 
-    // ==================================================
-    // CHECK TRACKING STATUS
-    // ==================================================
-
     if (queue.trackingLinkActive === false) {
-      return res.status(410).json({
-        success: false,
-        code: "TRACKING_TERMINATED",
-        message:
-          "Your token has already been called. Please proceed to the doctor's room.",
-      });
-    }
+      const message =
+        queue.status === "COMPLETED"
+          ? "Your consultation is completed. This tracking token has expired."
+          : queue.status === "SKIPPED"
+            ? "Your token was skipped. Please contact reception."
+            : queue.status === "CANCELLED"
+              ? "This token was cancelled. Please contact reception."
+              : "This tracking token is no longer active.";
 
-    // ==================================================
-    // CHECK EXPIRATION
-    // ==================================================
-
-    if (
-      queue.trackingExpiresAt &&
-      new Date(queue.trackingExpiresAt).getTime() < Date.now()
-    ) {
       return res.status(410).json({
         success: false,
         code: "TRACKING_EXPIRED",
-        message: "This tracking link has expired.",
+        message,
       });
     }
-
-    // ==================================================
-    // IDS
-    // ==================================================
-
-    const hospitalId = queue.hospitalId as mongoose.Types.ObjectId;
-    const departmentId = queue.departmentId?._id as mongoose.Types.ObjectId;
 
     if (
-      !mongoose.Types.ObjectId.isValid(hospitalId) ||
-      !mongoose.Types.ObjectId.isValid(departmentId)
+      queue.trackingExpiresAt &&
+      new Date(
+        queue.trackingExpiresAt,
+      ).getTime() < Date.now()
     ) {
-      return res.status(500).json({
-        success: false,
-        message: "Queue configuration is invalid",
+      return res.status(410).json({
+        success:
+          false,
+
+        code:
+          "TRACKING_EXPIRED",
+
+        message:
+          "This tracking link has expired.",
       });
     }
 
-    // ==================================================
-    // FIND DOCTOR
-    // ==================================================
-    // IMPORTANT:
-    // 1. Once a doctor has been assigned to the queue, use that doctor.
-    // 2. Before assignment, use the active doctor of the department.
-    // This fixes the old situation where patient tracking could show
-    // "doctor not online" simply because queue.doctorId was still null.
+    let doctor: any =
+      null;
 
-    let doctor: any = null;
+    if (
+      queue.doctorId?._id
+    ) {
+      doctor =
+        await User.findOne({
+          _id:
+            queue.doctorId._id,
 
-    if (queue.doctorId?._id) {
-      doctor = await User.findOne({
-        _id: queue.doctorId._id,
-        hospitalId,
-        role: "DOCTOR",
-        isActive: true,
-      })
-        .select("name email isOnline shiftStartTime departmentId")
-        .lean();
+          hospitalId,
+
+          role:
+            "DOCTOR",
+
+          isActive:
+            true,
+        })
+          .select(
+            "name email isOnline shiftStartTime departmentId lastSeenAt",
+          )
+          .lean();
     }
 
-    if (!doctor) {
-      doctor = await User.findOne({
-        hospitalId,
-        departmentId,
-        role: "DOCTOR",
-        isActive: true,
-      })
-        .select("name email isOnline shiftStartTime departmentId")
-        .sort({ isOnline: -1, createdAt: 1 })
-        .lean();
+    if (
+      !doctor
+    ) {
+      doctor =
+        await User.findOne({
+          hospitalId,
+
+          departmentId,
+
+          role:
+            "DOCTOR",
+
+          isActive:
+            true,
+        })
+          .select(
+            "name email isOnline shiftStartTime departmentId lastSeenAt",
+          )
+          .sort({
+            isOnline:
+              -1,
+
+            createdAt:
+              1,
+          })
+          .lean();
     }
 
-    const doctorOnline = doctor?.isOnline === true;
-    const doctorShiftStartTime =
-      typeof doctor?.shiftStartTime === "string"
-        ? doctor.shiftStartTime
+    const doctorId =
+      getObjectId(
+        doctor?._id ||
+        queue.doctorId?._id ||
+        queue.doctorId,
+      );
+
+    let doctorTiming: any =
+      null;
+
+    if (
+      doctorId
+    ) {
+      doctorTiming =
+        await getDoctorLiveDelayStatus({
+          hospitalId,
+
+          doctorId,
+
+          date:
+            queue.queueDate,
+        });
+    }
+
+    const doctorAverage =
+      doctorId
+        ? await getDoctorAverageConsultationMinutes(
+          doctorId,
+        )
         : null;
-
-    // ==================================================
-    // REAL CONSULTATION AVERAGE
-    // ==================================================
-
-    const doctorAverage = doctor?._id
-      ? await getDoctorAverageConsultationMinutes(doctor._id)
-      : null;
 
     const departmentAverage =
       doctorAverage === null
         ? await getDepartmentAverageConsultationMinutes(
-            hospitalId,
-            departmentId,
-          )
+          hospitalId,
+          departmentId,
+        )
         : null;
 
     const averageConsultationMinutes =
-      doctorAverage ??
-      departmentAverage ??
+      doctorTiming?.averageServiceMinutes ||
+      doctorAverage ||
+      departmentAverage ||
       DEFAULT_CONSULTATION_MINUTES;
 
-    // ==================================================
-    // CURRENTLY SERVING
-    // ==================================================
+    const liveEstimate =
+      await calculateLiveEstimate({
+        queue,
 
-    const currentServing = await Queue.findOne({
-      hospitalId,
-      departmentId,
-      queueDate: queue.queueDate,
-      status: "SERVING",
-    })
-      .sort({ servingAt: 1 })
-      .select("tokenLabel tokenNumber doctorId")
-      .lean();
+        hospitalId,
 
-    // ==================================================
-    // LIVE ESTIMATE
-    // ==================================================
+        departmentId,
 
-    const liveEstimate = await calculateLiveEstimate({
-      queue,
-      hospitalId,
-      departmentId,
-      averageConsultationMinutes,
-      doctorOnline,
-      shiftStartTime: doctorShiftStartTime,
-    });
+        doctorId,
 
-    // ==================================================
-    // FINAL DOCTOR DATA
-    // ==================================================
+        averageConsultationMinutes,
 
-    const doctorData = doctor
-      ? {
-          _id: doctor._id,
-          name: doctor.name,
-          email: doctor.email,
+        doctorTiming,
+      });
+
+    const doctorOnline =
+      Boolean(
+        doctorTiming?.isOnline ??
+        doctor?.isOnline,
+      );
+
+    const doctorShiftStartTime =
+      doctorTiming?.scheduledStartTime ||
+      (
+        typeof doctor?.shiftStartTime ===
+          "string"
+          ? doctor.shiftStartTime
+          : null
+      );
+
+    const offlineMinutes =
+      calculateOfflineMinutes(
+        doctorTiming,
+      );
+
+    const doctorData =
+      doctor
+        ? {
+          _id:
+            doctor._id,
+
+          name:
+            doctor.name,
+
+          email:
+            doctor.email,
         }
-      : queue.doctorId || null;
-
-    // ==================================================
-    // DEBUG
-    // ==================================================
+        : queue.doctorId ||
+        null;
 
     console.log("=================================");
     console.log("🔎 PATIENT TRACKING");
@@ -499,14 +1083,15 @@ export const trackQueue = async (
     console.log("Doctor:", doctor?.name || "Not assigned");
     console.log("Doctor Online:", doctorOnline);
     console.log(
-      "OPD Start:",
-      doctorShiftStartTime || "Not configured",
+      "Doctor Late:",
+      doctorTiming?.isLate
+        ? `${doctorTiming.lateByMinutes} min`
+        : "No",
     );
     console.log(
-      "Average Consultation:",
-      `${averageConsultationMinutes} min`,
+      "Appointment Time:",
+      appointmentTime || "Walk-in",
     );
-    console.log("Patients Ahead:", liveEstimate.patientsAhead);
     console.log(
       "Estimated Wait:",
       liveEstimate.estimatedWaitTime,
@@ -515,32 +1100,48 @@ export const trackQueue = async (
       "Estimated Turn:",
       liveEstimate.estimatedTurnTime,
     );
-    console.log(
-      "Current Serving:",
-      currentServing?.tokenLabel || "None",
-    );
     console.log("=================================");
 
-    // ==================================================
-    // RESPONSE
-    // ==================================================
-
     return res.status(200).json({
-      success: true,
-      data: {
-        queueId: queue._id,
-        hospitalId: queue.hospitalId,
-        tokenLabel: queue.tokenLabel,
-        tokenNumber: queue.tokenNumber,
-        status: queue.status,
-        priority: queue.priority,
+      success:
+        true,
 
-        patient: queue.patientId,
-        department: queue.departmentId,
-        doctorId: doctorData,
+      data: {
+        _id:
+          queue._id,
+
+        queueId:
+          queue._id,
+
+        hospitalId:
+          queue.hospitalId,
+
+        tokenLabel:
+          queue.tokenLabel,
+
+        tokenNumber:
+          queue.tokenNumber,
+
+        status:
+          queue.status,
+
+        source:
+          queue.source,
+
+        priority:
+          queue.priority,
+
+        patient:
+          queue.patientId,
+
+        department:
+          queue.departmentId,
+
+        doctorId:
+          doctorData,
 
         currentServingToken:
-          currentServing?.tokenLabel || null,
+          liveEstimate.currentServingToken,
 
         patientsAhead:
           liveEstimate.patientsAhead,
@@ -557,15 +1158,93 @@ export const trackQueue = async (
 
         doctorShiftStartTime,
 
-        queueDate: queue.queueDate,
+        offlineMinutes,
+
+        doctorTiming:
+          doctorTiming
+            ? {
+              scheduledStartTime:
+                doctorTiming.scheduledStartTime ||
+                null,
+
+              scheduledEndTime:
+                doctorTiming.scheduledEndTime ||
+                null,
+
+              isOnline:
+                Boolean(
+                  doctorTiming.isOnline,
+                ),
+
+              isLate:
+                Boolean(
+                  doctorTiming.isLate,
+                ),
+
+              lateByMinutes:
+                doctorTiming.lateByMinutes ||
+                0,
+
+              firstOnlineAt:
+                doctorTiming.firstOnlineAt ||
+                null,
+
+              lastSeenAt:
+                doctorTiming.lastSeenAt ||
+                null,
+
+              expectedDoctorStartAt:
+                doctorTiming.expectedDoctorStartAt ||
+                null,
+
+              averageServiceMinutes:
+                doctorTiming.averageServiceMinutes ||
+                averageConsultationMinutes,
+
+              message:
+                doctorTiming.message ||
+                "Doctor timing is being updated.",
+            }
+            : null,
+
+        appointment,
+
+        queueDate:
+          queue.queueDate,
+
+        createdAt:
+          queue.createdAt,
+
+        updatedAt:
+          queue.updatedAt,
       },
     });
   } catch (error) {
-    console.error("❌ Track queue error:", error);
+    console.error(
+      "❌ Track queue error:",
+      error,
+    );
 
     return res.status(500).json({
-      success: false,
-      message: "Failed to track queue",
+      success:
+        false,
+
+      message:
+        "Failed to track queue",
     });
   }
 };
+
+// ======================================================
+// ALIASES
+// Keep old route imports working
+// ======================================================
+
+export const trackPatientQueue =
+  trackQueue;
+
+export const getQueueTracking =
+  trackQueue;
+
+export const getQueueByTrackingToken =
+  trackQueue;
