@@ -41,6 +41,7 @@ import {
 import {
     recalculateDoctorQueueEstimates,
 } from "../services/queueEstimate.service";
+import { getIO } from "../config/socket";
 
 /* ============================================================
    HELPERS
@@ -282,18 +283,18 @@ export const getAppointmentDoctors =
 
             const departmentId =
                 typeof req.query.departmentId ===
-                "string"
+                    "string"
                     ? req.query.departmentId
                     : undefined;
 
             const filter:
                 any = {
-                    hospitalId,
-                    role:
-                        "DOCTOR",
-                    isActive:
-                        true,
-                };
+                hospitalId,
+                role:
+                    "DOCTOR",
+                isActive:
+                    true,
+            };
 
             if (
                 departmentId
@@ -335,11 +336,11 @@ export const getAppointmentDoctors =
                         (
                             schedule,
                         ) => [
-                            String(
-                                schedule.doctorId,
-                            ),
-                            schedule,
-                        ],
+                                String(
+                                    schedule.doctorId,
+                                ),
+                                schedule,
+                            ],
                     ),
                 );
 
@@ -621,14 +622,14 @@ export const updateDoctorSchedule =
 
             const dayMap:
                 Record<number, string> = {
-                    0: "SUNDAY",
-                    1: "MONDAY",
-                    2: "TUESDAY",
-                    3: "WEDNESDAY",
-                    4: "THURSDAY",
-                    5: "FRIDAY",
-                    6: "SATURDAY",
-                };
+                0: "SUNDAY",
+                1: "MONDAY",
+                2: "TUESDAY",
+                3: "WEDNESDAY",
+                4: "THURSDAY",
+                5: "FRIDAY",
+                6: "SATURDAY",
+            };
 
             const normalizeDay =
                 (
@@ -653,9 +654,9 @@ export const updateDoctorSchedule =
 
                     if (
                         dayMap[
-                            Number(
-                                stringValue,
-                            )
+                        Number(
+                            stringValue,
+                        )
                         ]
                     ) {
                         return dayMap[
@@ -732,14 +733,14 @@ export const updateDoctorSchedule =
 
             const finalAppointmentEnabled =
                 finalConsultationMode ===
-                "OPD_ONLY"
+                    "OPD_ONLY"
                     ? false
                     : appointmentEnabled ??
                     true;
 
             const finalConfirmationRequired =
                 finalConsultationMode ===
-                "ON_CALL_APPOINTMENT"
+                    "ON_CALL_APPOINTMENT"
                     ? true
                     : confirmationRequired ??
                     false;
@@ -994,7 +995,7 @@ export const getDoctorSlots =
 
             return res.status(
                 error?.message ===
-                "Doctor schedule not configured"
+                    "Doctor schedule not configured"
                     ? 404
                     : 500,
             ).json({
@@ -1407,6 +1408,73 @@ export const createAppointment =
                         ],
                     });
 
+                const emitAppointmentUpdate =
+                    (
+                        appointment:
+                            any,
+                        eventName:
+                            "appointment:created" |
+                            "appointment:updated" =
+                            "appointment:updated",
+                    ) => {
+                        try {
+                            const io =
+                                getIO();
+
+                            io.to(
+                                `hospital:${String(
+                                    appointment.hospitalId,
+                                )}`,
+                            ).emit(
+                                eventName,
+                                {
+                                    appointmentId:
+                                        appointment._id,
+
+                                    appointmentCode:
+                                        appointment.appointmentCode,
+
+                                    hospitalId:
+                                        appointment.hospitalId,
+
+                                    patientId:
+                                        appointment.patientId,
+
+                                    doctorId:
+                                        appointment.doctorId,
+
+                                    departmentId:
+                                        appointment.departmentId,
+
+                                    appointmentDate:
+                                        appointment.appointmentDate,
+
+                                    requestedStartTime:
+                                        appointment.requestedStartTime,
+
+                                    confirmedStartTime:
+                                        appointment.confirmedStartTime,
+
+                                    endTime:
+                                        appointment.endTime,
+
+                                    status:
+                                        appointment.status,
+
+                                    paymentStatus:
+                                        appointment.paymentStatus,
+                                },
+                            );
+                        } catch (
+                        socketError
+                        ) {
+                            console.error(
+                                "APPOINTMENT SOCKET EMIT ERROR:",
+                                socketError,
+                            );
+                        }
+                    };
+
                 slot.appointmentId =
                     appointment._id;
 
@@ -1499,8 +1567,8 @@ export const getAppointments =
 
             const filter:
                 any = {
-                    hospitalId,
-                };
+                hospitalId,
+            };
 
             // ============================================================
             // DATE FILTER
@@ -1651,7 +1719,7 @@ export const getAppointments =
                     appointments,
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "GET APPOINTMENTS ERROR:",
@@ -2191,7 +2259,7 @@ export const rescheduleAppointment =
                         },
                     },
                     {
-                      returnDocument: "after",
+                        returnDocument: "after",
                     },
                 );
 
@@ -2771,8 +2839,8 @@ export const collectAppointmentPayment =
                 Number.isFinite(
                     parsedFeeAmount,
                 ) &&
-                parsedFeeAmount >
-                0
+                    parsedFeeAmount >
+                    0
                     ? parsedFeeAmount
                     : parsedPaidAmount;
 

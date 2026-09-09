@@ -46,6 +46,7 @@ import {
     type UpdateDoctorSchedulePayload,
     type WeekDay,
 } from "../../services/appointment.api";
+import socket from "../../socket/socket";
 
 /* ============================================================
    TYPES
@@ -950,27 +951,44 @@ const Appointments =
                 loadAppointments,
             ],
         );
-
-        useEffect(
+useEffect(
+    () => {
+        const handleAppointmentCreated =
             () => {
-                const intervalId =
-                    window.setInterval(
-                        () => {
-                            void loadAppointments();
-                        },
-                        5000,
-                    );
+                void loadAppointments();
+            };
 
-                return () => {
-                    window.clearInterval(
-                        intervalId,
-                    );
-                };
-            },
-            [
-                loadAppointments,
-            ],
+        const handleAppointmentUpdated =
+            () => {
+                void loadAppointments();
+            };
+
+        socket.on(
+            "appointment:created",
+            handleAppointmentCreated,
         );
+
+        socket.on(
+            "appointment:updated",
+            handleAppointmentUpdated,
+        );
+
+        return () => {
+            socket.off(
+                "appointment:created",
+                handleAppointmentCreated,
+            );
+
+            socket.off(
+                "appointment:updated",
+                handleAppointmentUpdated,
+            );
+        };
+    },
+    [
+        loadAppointments,
+    ],
+);
 
         /* ========================================================
            SCHEDULE MODAL
