@@ -59,53 +59,58 @@ export type QueueSource =
     | "APPOINTMENT"
     | "EMERGENCY";
 
+export type QueueCallEligibility =
+    | "READY"
+    | "UPCOMING"
+    | "ACTIVE"
+    | "DONE";
+
+export interface DoctorQueueAppointment {
+    _id?: string;
+    appointmentCode?: string;
+    requestedStartTime?: string | null;
+    confirmedStartTime?: string | null;
+    endTime?: string | null;
+    status?: string;
+    paymentStatus?: string;
+}
+
 export interface DoctorQueueItem {
     _id: string;
     tokenNumber: number;
     tokenLabel: string;
 
     priority: QueuePriority;
-
     source?: QueueSource;
-
-    appointmentId?: {
-        _id?: string;
-        appointmentCode?: string;
-        requestedStartTime?: string;
-        confirmedStartTime?: string;
-        endTime?: string;
-        paymentStatus?: string;
-        status?: string;
-    } | null;
-
-    scheduledStartTime?: string | null;
-
-    paymentStatus?: string | null;
 
     status: QueueStatus;
 
     patient?: QueuePatient;
-
     patientId?: QueuePatient;
 
     departmentId?: QueueDepartment;
-
     doctorId?: QueueDoctor;
 
+    appointmentId?: DoctorQueueAppointment | string | null;
+
+    appointmentCode?: string | null;
+    scheduledStartTime?: string | null;
+    scheduledEndTime?: string | null;
+
+    isAppointment?: boolean;
+    isEmergency?: boolean;
+
+    callEligibility?: QueueCallEligibility;
+    callEligibilityText?: string;
+
     estimatedWaitMinutes?: number;
-
     estimatedWaitTime?: number;
-
     estimatedTurnTime?: string;
 
     calledAt?: string;
-
     servingAt?: string;
-
     completedAt?: string;
-
     createdAt?: string;
-
     updatedAt?: string;
 }
 /* =========================================================
