@@ -62,6 +62,7 @@ import {
   type SubscriptionStatus,
   type UpdateHospitalPayload,
 } from "../../services/super-admin/superAdmin.api";
+import { getDistrictsByState, INDIA_STATES } from "../../store/indiaLocations";
 
 /* ============================================================
    TYPES
@@ -2790,6 +2791,19 @@ const CreateHospitalModal = ({
   ] =
     useState(false);
 
+  const districtOptions =
+    useMemo(
+      () =>
+        form.state
+          ? getDistrictsByState(
+            form.state,
+          )
+          : [],
+      [
+        form.state,
+      ],
+    );
+
   const handleSubmit =
     async (
       event:
@@ -3148,59 +3162,132 @@ const CreateHospitalModal = ({
           description="Patients use this location to find hospitals while booking appointments."
         >
 
-          <TextInput
-            label="State"
-            required
-            value={
-              form.state
-            }
-            placeholder="e.g. Uttar Pradesh"
-            icon={
-              <MapPin
-                size={16}
-              />
-            }
-            onChange={(
-              value,
-            ) =>
-              setForm(
-                (
-                  current,
-                ) => ({
-                  ...current,
-                  state:
-                    value,
-                }),
-              )
-            }
-          />
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-[#355B53]">
+              State
+              <span className="ml-1 text-red-500">
+                *
+              </span>
+            </label>
 
-          <TextInput
-            label="District"
-            required
-            value={
-              form.district
-            }
-            placeholder="e.g. Varanasi"
-            icon={
-              <MapPin
-                size={16}
-              />
-            }
-            onChange={(
-              value,
-            ) =>
-              setForm(
-                (
-                  current,
-                ) => ({
-                  ...current,
-                  district:
-                    value,
-                }),
-              )
-            }
-          />
+            <div className="relative">
+              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#81948C]">
+                <MapPin size={16} />
+              </div>
+
+              <select
+                required
+                value={
+                  form.state
+                }
+                onChange={(
+                  event,
+                ) => {
+                  const selectedState =
+                    event.target.value;
+
+                  setForm(
+                    (
+                      current,
+                    ) => ({
+                      ...current,
+
+                      state:
+                        selectedState,
+
+                      district:
+                        "",
+                    }),
+                  );
+                }}
+                className="min-h-12 w-full rounded-xl border border-[#DCE6E0] bg-[#F9F7F0] px-4 pl-10 text-sm text-[#173C36] outline-none focus:border-[#0F766E] focus:bg-white focus:ring-2 focus:ring-[#D8EFE8]"
+              >
+                <option value="">
+                  Select state
+                </option>
+
+                {INDIA_STATES.map(
+                  (
+                    stateName,
+                  ) => (
+                    <option
+                      key={
+                        stateName
+                      }
+                      value={
+                        stateName
+                      }
+                    >
+                      {stateName}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-[#355B53]">
+              District
+              <span className="ml-1 text-red-500">
+                *
+              </span>
+            </label>
+
+            <div className="relative">
+              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#81948C]">
+                <MapPin size={16} />
+              </div>
+
+              <select
+                required
+                value={
+                  form.district
+                }
+                disabled={
+                  !form.state
+                }
+                onChange={(
+                  event,
+                ) =>
+                  setForm(
+                    (
+                      current,
+                    ) => ({
+                      ...current,
+
+                      district:
+                        event.target.value,
+                    }),
+                  )
+                }
+                className="min-h-12 w-full rounded-xl border border-[#DCE6E0] bg-[#F9F7F0] px-4 pl-10 text-sm text-[#173C36] outline-none focus:border-[#0F766E] focus:bg-white focus:ring-2 focus:ring-[#D8EFE8] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                <option value="">
+                  {form.state
+                    ? "Select district"
+                    : "Select state first"}
+                </option>
+
+                {districtOptions.map(
+                  (
+                    districtName,
+                  ) => (
+                    <option
+                      key={
+                        districtName
+                      }
+                      value={
+                        districtName
+                      }
+                    >
+                      {districtName}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
+          </div>
 
           <TextInput
             label="City"
