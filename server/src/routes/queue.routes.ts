@@ -8,6 +8,8 @@ import {
   completePatient,
   skipPatient,
   getDoctorQueue,
+  takeDoctorBreak,
+  resumeDoctorDuty,
 } from "../controllers/queue.controller";
 
 import {
@@ -117,6 +119,25 @@ router.patch(
     "DOCTOR",
   ),
   callNextPatient,
+);
+
+
+router.patch(
+  "/doctor/break",
+  protect,
+  authorize(
+    "DOCTOR",
+  ),
+  takeDoctorBreak,
+);
+
+router.patch(
+  "/doctor/resume",
+  protect,
+  authorize(
+    "DOCTOR",
+  ),
+  resumeDoctorDuty,
 );
 
 /* =========================================================

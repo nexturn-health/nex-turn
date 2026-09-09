@@ -1,6 +1,6 @@
-import { AlertCircle, Bell, CalendarDays, CheckCircle2, Loader2, LockKeyhole, Phone, RefreshCw, Search, SkipForward, Stethoscope, Ticket, } from "lucide-react";
+import { AlertCircle, Bell, CalendarDays, CheckCircle2, Clock, Loader2, LockKeyhole, Phone, RefreshCw, Search, SkipForward, Stethoscope, Ticket, } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, } from "react";
-import { callNextPatient, completePatient, skipPatient, startServingPatient, } from "../../services/queue.api";
+import { callNextPatient, completePatient, skipPatient, startServingPatient, takeDoctorBreak, resumeDoctorDuty, } from "../../services/queue.api";
 import { getDoctorQueue, type DoctorQueueItem, } from "../../services/doctor.api";
 import api from "../../services/api";
 import { useAuthStore, } from "../../store/authStore";
@@ -9,6 +9,28 @@ import { socket } from "../../socket/socket";
 /* ============================================================
    TYPES
 ============================================================ */
+interface DoctorBreakState {
+    isOnBreak: boolean;
+    breakStartedAt: string | null;
+    breakReason: string | null;
+}
+
+// Narrow API/socket values safely, without `any` or changing shared API types.
+function asRecord(value: unknown): Record<string, unknown> | null {
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : null;
+}
+function readDoctorBreak(value: unknown): DoctorBreakState | null {
+    const doctor = asRecord(value);
+    if (!doctor || typeof doctor.isOnBreak !== "boolean") return null;
+    return {
+        isOnBreak: doctor.isOnBreak,
+        breakStartedAt: typeof doctor.breakStartedAt === "string" ? doctor.breakStartedAt : null,
+        breakReason: typeof doctor.breakReason === "string" ? doctor.breakReason : null,
+    };
+}
+
 interface StartConsultationResponse {
     success: boolean;
     message?: string;
@@ -225,6 +247,12 @@ export default function DoctorQueue() {
     const [tab, setTab,] = useState<"waiting" | "upcoming" | "completed">("waiting");
     const [search, setSearch,] = useState("");
     const [nowMinutes, setNowMinutes,] = useState(getIndiaNowMinutes);
+    const doctorId = useAuthStore((state) => state.user?.id);
+    const [doctorBreak, setDoctorBreak] = useState<DoctorBreakState>({
+        isOnBreak: false,
+        breakStartedAt: null,
+        breakReason: null,
+    });
     const hospitalId = useAuthStore((state) => state.user?.hospitalId);
     const [socketConnected, setSocketConnected] = useState(socket.connected);
     const pendingRefresh = useRef(false);
@@ -248,7 +276,15 @@ export default function DoctorQueue() {
                 try {
                     const data = await getDoctorQueue();
                     if (mounted.current && request === generation.current) {
-                        setQueues(data ?? []);
+                        const rows = Array.isArray(data) ? data : [];
+                        setQueues(rows);
+                        // Only use this doctor's populated record. An empty queue
+                        // must not clear a break that was already confirmed.
+                        const ownDoctor = rows.map((queue) => asRecord(queue.doctorId))
+                            .find((doctor) => doctorId &&
+                                String(doctor?._id ?? doctor?.id ?? "") === doctorId);
+                        const savedBreak = readDoctorBreak(ownDoctor);
+                        if (savedBreak) setDoctorBreak(savedBreak);
                         setUpdated(new Date());
                         setLoadError("");
                     }
@@ -265,7 +301,7 @@ export default function DoctorQueue() {
                 setRefreshing(false);
             }
         }
-    }, []);
+    }, [doctorId]);
 
     // Subscribe to the existing shared socket; no queue API polling.
     useEffect(() => {
@@ -287,12 +323,24 @@ export default function DoctorQueue() {
             scheduleRefresh();
         };
         const handleDisconnect = () => setSocketConnected(false);
+        // Accept break changes from another tab only for the signed-in doctor.
+        const handleDoctorStatus = (payload: unknown) => {
+            const status = asRecord(payload);
+            if (!doctorId || String(status?.doctorId ?? status?.userId ?? "") !== doctorId) return;
+            const nextBreak = readDoctorBreak(status);
+            if (nextBreak) {
+                setDoctorBreak(nextBreak);
+                scheduleRefresh();
+            }
+        };
 
         socket.on("connect", handleConnect);
         socket.on("disconnect", handleDisconnect);
         socket.on("connect_error", handleDisconnect);
         socket.on("queue:updated", scheduleRefresh);
         socket.on("queue:status", scheduleRefresh);
+        socket.on("user:status", handleDoctorStatus);
+        socket.on("doctor:status", handleDoctorStatus);
 
         setSocketConnected(socket.connected);
         if (socket.connected) {
@@ -311,8 +359,10 @@ export default function DoctorQueue() {
             socket.off("connect_error", handleDisconnect);
             socket.off("queue:updated", scheduleRefresh);
             socket.off("queue:status", scheduleRefresh);
+            socket.off("user:status", handleDoctorStatus);
+            socket.off("doctor:status", handleDoctorStatus);
         };
-    }, [hospitalId, loadQueue]);
+    }, [hospitalId, doctorId, loadQueue]);
 
     // This timer updates appointment labels only. It makes NO network request.
     useEffect(() => {
@@ -424,7 +474,8 @@ export default function DoctorQueue() {
         Boolean(consultation) ||
         Boolean(completionRetry) ||
         loading ||
-        Boolean(loadError);
+        Boolean(loadError) ||
+        doctorBreak.isOnBreak;
     async function runAction(label: string, work: () => Promise<void>) {
         if (lock.current) {
             return;
@@ -447,6 +498,34 @@ export default function DoctorQueue() {
             setAction("");
         }
     }
+    // Finish the current visit before pausing. The backend persists the break
+    // and broadcasts it to patient tracking pages.
+    async function handleTakeBreak() {
+        if (current) {
+            setError("Complete or skip the current patient before taking a break.");
+            return;
+        }
+        if (blocked || lock.current) return;
+        await runAction("Take break", async () => {
+            const response: unknown = await takeDoctorBreak("Doctor break");
+            const payload = asRecord(asRecord(response)?.data) ?? asRecord(response);
+            setDoctorBreak({
+                isOnBreak: true,
+                breakStartedAt: typeof payload?.breakStartedAt === "string" ? payload.breakStartedAt : null,
+                breakReason: typeof payload?.breakReason === "string" ? payload.breakReason : "Doctor break",
+            });
+        });
+    }
+
+    async function handleResumeDuty() {
+        // Do not use `blocked`: being on break must not disable Resume.
+        if (lock.current || action || consultation || completionRetry || loading) return;
+        await runAction("Resume duty", async () => {
+            await resumeDoctorDuty();
+            setDoctorBreak({ isOnBreak: false, breakStartedAt: null, breakReason: null });
+        });
+    }
+
     async function callNext() {
         if (blocked ||
             current ||
@@ -604,13 +683,32 @@ export default function DoctorQueue() {
                     <h1>Patient queue</h1>
                     <p>{updated ? `Updated ${updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${socketConnected ? "Live updates on" : "Live updates disconnected"}` : "Today’s patients"}</p>
                 </div>
+                <div className="dqc-header-actions">
+                    <button type="button" className={doctorBreak.isOnBreak ? "dqc-resume" : "dqc-break"}
+                        onClick={() => void (doctorBreak.isOnBreak ? handleResumeDuty() : handleTakeBreak())}
+                        disabled={Boolean(action) || Boolean(consultation) || Boolean(completionRetry) || loading ||
+                            (!doctorBreak.isOnBreak && (Boolean(current) || Boolean(loadError)))}>
+                        {action === "Take break" || action === "Resume duty" ? <Loader2 size={17} className="dqc-spin" /> :
+                            doctorBreak.isOnBreak ? <Stethoscope size={17} /> : <Clock size={17} />}
+                        {doctorBreak.isOnBreak ? "Resume duty" : "Take a break"}
+                    </button>
                 <button type="button" className="dqc-secondary" onClick={() => void loadQueue()}
                     disabled={refreshing || Boolean(action) || Boolean(consultation)}>
                     <RefreshCw size={16} className={refreshing ? "dqc-spin" : ""} />
                     <span>Refresh</span>
                 </button>
+                </div>
             </header>
 
+            {doctorBreak.isOnBreak && (
+                <div className="dqc-break-alert" role="status" aria-live="polite">
+                    <Clock size={20} />
+                    <div><strong>You are on break</strong>
+                        <p>Patients can see “Doctor is on break”. Resume duty to call the next patient.</p>
+                        {doctorBreak.breakReason && <p>{doctorBreak.breakReason}</p>}
+                    </div>
+                </div>
+            )}
             {(error || loadError) && (
                 <div className="dqc-error" role="alert">
                     <AlertCircle size={18} />
@@ -758,6 +856,18 @@ function QueueBadge({ queue }: { queue: DoctorQueueItem }) {
 
 // All styles stay in this file. Mobile uses normal page scrolling.
 const styles = `
+.dqc-header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dqc-break,.dqc-resume{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border-radius:8px;padding:10px 14px;font-size:13px!important;font-weight:600!important;border:1px solid var(--line)}
+.dqc-break{background:#fbf6ec;color:#8c641f;border-color:#e9ddc3}
+.dqc-break:hover:not(:disabled){background:#f4ecd9}
+.dqc-resume{background:#edf4ef;color:var(--green);border-color:#cddfd4}
+.dqc-resume:hover:not(:disabled){background:#dfeee4}
+.dqc-break-alert{max-width:1200px;margin:0 auto 16px;display:flex;align-items:flex-start;gap:12px;padding:14px 18px;border:1px solid #e9ddc3;border-radius:10px;background:#fbf6ec;color:#8c641f}
+.dqc-break-alert svg{flex-shrink:0;margin-top:2px}
+.dqc-break-alert strong{display:block;font-size:14px;font-weight:600}
+.dqc-break-alert p{font-size:12px;line-height:1.6;margin-top:4px!important}
+@media(max-width:600px){.dqc .dqc-header{flex-wrap:wrap}.dqc-header-actions{width:100%}.dqc-header-actions>button{flex:1}}
+
 .dqc{--ink:#193f39;--green:#216959;--muted:#61716b;--line:#e2e8e2;background:#f6f7f3;color:var(--ink);padding:24px;min-height:100%;font-family:inherit;line-height:1.5}
 .dqc *{box-sizing:border-box}
 .dqc h1,.dqc h2,.dqc h3,.dqc p{margin:0}

@@ -105,6 +105,10 @@ export interface IUser extends Document {
     createdAt: Date;
 
     updatedAt: Date;
+    isOnBreak?: boolean;
+    breakStartedAt?: Date | null;
+    breakReason?: string | null;
+    lastResumedAt?: Date | null;
 }
 
 // ============================================================
@@ -327,6 +331,28 @@ const UserSchema = new Schema<IUser>(
             type: Date,
 
             default: undefined,
+        },
+
+        isOnBreak: {
+            type: Boolean,
+            default: false,
+            index: true,
+        },
+
+        breakStartedAt: {
+            type: Date,
+            default: null,
+        },
+
+        breakReason: {
+            type: String,
+            trim: true,
+            default: null,
+        },
+
+        lastResumedAt: {
+            type: Date,
+            default: null,
         },
     },
 

@@ -210,3 +210,27 @@ export const skipPatient =
 
     return response.data.data;
   };
+
+  export const takeDoctorBreak = async (
+    reason?: string,
+) => {
+    const response =
+        await api.patch(
+            "/queues/doctor/break",
+            {
+                reason:
+                    reason || "Break",
+            },
+        );
+
+    return response.data;
+};
+
+export const resumeDoctorDuty = async () => {
+    const response =
+        await api.patch(
+            "/queues/doctor/resume",
+        );
+
+    return response.data;
+};

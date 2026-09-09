@@ -741,7 +741,7 @@ export const trackQueue = async (
         )
         .populate(
           "doctorId",
-          "name email isOnline shiftStartTime departmentId lastSeenAt",
+          "name email isOnline shiftStartTime departmentId lastSeenAt isOnBreak breakStartedAt breakReason lastResumedAt",
         )
         .populate(
           "appointmentId",
@@ -970,7 +970,7 @@ export const trackQueue = async (
             true,
         })
           .select(
-            "name email isOnline shiftStartTime departmentId lastSeenAt",
+            "name email isOnline shiftStartTime departmentId lastSeenAt isOnBreak breakStartedAt breakReason lastResumedAt",
           )
           .sort({
             isOnline:

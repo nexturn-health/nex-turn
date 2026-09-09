@@ -34,6 +34,9 @@ export interface DoctorTimingData {
     averageServiceMinutes?: number;
 
     message?: string;
+    isOnBreak?: boolean;
+    breakStartedAt?: string | null;
+    breakReason?: string | null;
 }
 
 export interface AppointmentTrackingData {

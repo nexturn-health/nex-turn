@@ -20,6 +20,116 @@ import {
 } from "../services/notification.service";
 
 
+
+const getIndiaQueueDate = () => {
+  return new Intl.DateTimeFormat(
+    "en-CA",
+    {
+      timeZone: "Asia/Kolkata",
+    },
+  ).format(new Date());
+};
+
+const getIndiaCurrentTime = () => {
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-GB",
+      {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      },
+    ).formatToParts(new Date());
+
+  const hour =
+    parts.find((part) => part.type === "hour")?.value || "00";
+
+  const minute =
+    parts.find((part) => part.type === "minute")?.value || "00";
+
+  return `${hour}:${minute}`;
+};
+
+const emitDoctorBreakStatus = async ({
+  hospitalId,
+  doctorId,
+  departmentId,
+  isOnBreak,
+  breakStartedAt,
+  breakReason,
+}: {
+  hospitalId: string;
+  doctorId: string;
+  departmentId: string;
+  isOnBreak: boolean;
+  breakStartedAt?: Date | null;
+  breakReason?: string | null;
+}) => {
+  const queueDate =
+    getIndiaQueueDate();
+
+  const payload = {
+    doctorId,
+    departmentId,
+    isOnBreak,
+    breakStartedAt:
+      breakStartedAt || null,
+    breakReason:
+      breakReason || null,
+    message:
+      isOnBreak
+        ? "Doctor is on break"
+        : "Doctor resumed duty",
+  };
+
+  getIO()
+    .to(`hospital:${hospitalId}`)
+    .emit(
+      "doctor:break-status",
+      payload,
+    );
+
+  const activeQueues =
+    await Queue.find({
+      hospitalId,
+      doctorId,
+      departmentId,
+      queueDate,
+      status: {
+        $in: [
+          "WAITING",
+          "CALLED",
+          "SERVING",
+        ],
+      },
+      trackingToken: {
+        $exists: true,
+        $ne: null,
+      },
+    })
+      .select(
+        "_id trackingToken tokenLabel status",
+      )
+      .lean();
+
+  activeQueues.forEach(
+    (queue: any) => {
+      getIO()
+        .to(`queue:${queue.trackingToken}`)
+        .emit(
+          "queue:doctor-status",
+          {
+            ...payload,
+            queueId:
+              queue._id,
+            tokenLabel:
+              queue.tokenLabel,
+          },
+        );
+    },
+  );
+};
 // ======================================================
 // CONSULTATION / OPD ESTIMATION HELPERS
 // ======================================================
@@ -1085,195 +1195,153 @@ export const callNextPatient = async (
   res: Response,
 ) => {
   try {
-    // ============================================================
-    // AUTHENTICATION
-    // ============================================================
+    const hospitalId =
+      req.user?.hospitalId;
 
-    const hospitalId = req.user?.hospitalId;
-    const doctorId = req.user?.userId;
+    const doctorId =
+      req.user?.userId;
 
-    if (!hospitalId || !doctorId) {
+    if (
+      !hospitalId ||
+      !doctorId
+    ) {
       return res.status(401).json({
         success: false,
-        message: "Authentication information missing",
+        message:
+          "Authentication information missing",
       });
     }
 
-    // ============================================================
-    // QUEUE DATE
-    // ============================================================
+    const queueDate =
+      getIndiaQueueDate();
 
-    const queueDate = new Date()
-      .toISOString()
-      .split("T")[0];
+    const currentTime =
+      getIndiaCurrentTime();
 
-    // ============================================================
-    // FIND DOCTOR
-    // ============================================================
-
-    const doctor = await User.findOne({
-      _id: doctorId,
-      role: "DOCTOR",
-      hospitalId,
-      isActive: true,
-    });
+    const doctor =
+      await User.findOne({
+        _id:
+          doctorId,
+        role:
+          "DOCTOR",
+        hospitalId,
+        isActive:
+          true,
+      });
 
     if (!doctor) {
       return res.status(404).json({
         success: false,
-        message: "Doctor not found",
+        message:
+          "Doctor not found",
       });
     }
-
-    // ============================================================
-    // CHECK DEPARTMENT
-    // ============================================================
 
     if (!doctor.departmentId) {
       return res.status(400).json({
         success: false,
-        message: "Doctor has no department assigned",
+        message:
+          "Doctor has no department assigned",
       });
     }
 
-    const departmentId = doctor.departmentId;
+    if (doctor.isOnBreak) {
+      return res.status(409).json({
+        success: false,
+        code:
+          "DOCTOR_ON_BREAK",
+        message:
+          "You are on break. Resume duty before calling the next patient.",
+        data: {
+          isOnBreak:
+            true,
+          breakStartedAt:
+            doctor.breakStartedAt,
+          breakReason:
+            doctor.breakReason,
+        },
+      });
+    }
 
-    // ============================================================
-    // CHECK IF DOCTOR ALREADY HAS A PATIENT
-    // ============================================================
+    const departmentId =
+      doctor.departmentId;
 
-    const currentPatient = await Queue.findOne({
-      hospitalId,
-      doctorId,
-      departmentId,
-      queueDate,
-      status: {
-        $in: ["CALLED", "SERVING"],
-      },
-    });
+    const currentPatient =
+      await Queue.findOne({
+        hospitalId,
+        doctorId,
+        departmentId,
+        queueDate,
+        status: {
+          $in: [
+            "CALLED",
+            "SERVING",
+          ],
+        },
+      });
 
     if (currentPatient) {
       return res.status(409).json({
         success: false,
-        message: "You already have a patient in progress",
-        data: currentPatient,
+        message:
+          "You already have a patient in progress",
+        data:
+          currentPatient,
       });
     }
 
-    // ============================================================
-    // COMMON UPDATE
-    // ============================================================
+    const doctorOwnershipFilter = {
+      $or: [
+        {
+          doctorId,
+        },
+        {
+          doctorId:
+            null,
+        },
+        {
+          doctorId: {
+            $exists:
+              false,
+          },
+        },
+      ],
+    };
 
-    const calledAt = new Date();
-
-    const callUpdate = {
+    const commonUpdate = {
       $set: {
-        status: "CALLED",
-
+        status:
+          "CALLED",
         doctorId,
-
-        calledAt,
-
-        estimatedWaitMinutes: 0,
-
-        estimatedWaitTime: 0,
-
-        estimatedTurnTime: calledAt,
-
-        calledNotificationSent: false,
-
-        nearTurnNotificationSent: false,
+        calledAt:
+          new Date(),
+        estimatedWaitMinutes:
+          0,
+        estimatedWaitTime:
+          0,
+        estimatedTurnTime:
+          new Date(),
+        calledNotificationSent:
+          false,
+        nearTurnNotificationSent:
+          false,
       },
     };
 
-    const unassignedDoctorFilter = [
-      {
-        doctorId: {
-          $exists: false,
-        },
-      },
-      {
-        doctorId: null,
-      },
-    ];
-
-    // ============================================================
-    // STEP 1: FIND EMERGENCY PATIENT FIRST
-    //
-    // IMPORTANT:
-    // Do not use sort: { priority: -1 }
-    // because priority is a string.
-    // NORMAL can come before EMERGENCY in string sorting.
-    // ============================================================
-
-    let nextPatient =
-      await Queue.findOneAndUpdate(
-        {
-          hospitalId,
-
-          departmentId,
-
-          queueDate,
-
-          status: "WAITING",
-
-          priority: "EMERGENCY",
-
-          $or: unassignedDoctorFilter,
-        },
-        callUpdate,
-        {
-          returnDocument: "after",
-
-          sort: {
-            tokenNumber: 1,
-            createdAt: 1,
-          },
-        },
-      )
-        .populate(
-          "patientId",
-          "name phone email patientCode age gender address",
-        )
-        .populate(
-          "departmentId",
-          "name description tokenPrefix",
-        )
-        .populate(
-          "doctorId",
-          "name email",
-        );
-
-    // ============================================================
-    // STEP 2: IF NO EMERGENCY, FIND NORMAL PATIENT
-    // ============================================================
-
-    if (!nextPatient) {
-      nextPatient =
-        await Queue.findOneAndUpdate(
+    const claimQueue =
+      async (
+        query:
+          any,
+        sort:
+          any,
+      ) => {
+        return Queue.findOneAndUpdate(
+          query,
+          commonUpdate,
           {
-            hospitalId,
-
-            departmentId,
-
-            queueDate,
-
-            status: "WAITING",
-
-            priority: {
-              $ne: "EMERGENCY",
-            },
-
-            $or: unassignedDoctorFilter,
-          },
-          callUpdate,
-          {
-             returnDocument: "after",
-
-            sort: {
-              tokenNumber: 1,
-              createdAt: 1,
-            },
+            returnDocument:
+              "after",
+            sort,
           },
         )
           .populate(
@@ -1286,53 +1354,206 @@ export const callNextPatient = async (
           )
           .populate(
             "doctorId",
-            "name email",
+            "name email isOnBreak breakStartedAt breakReason",
+          )
+          .populate(
+            "appointmentId",
+            "appointmentCode requestedStartTime confirmedStartTime endTime status paymentStatus",
           );
-    }
+      };
 
-    // ============================================================
-    // NO WAITING PATIENT
-    // ============================================================
+    /*
+     * CALL PRIORITY:
+     *
+     * 1. Emergency
+     * 2. Appointment whose scheduledStartTime <= current time
+     * 3. Walk-in
+     *
+     * Late appointment remains callable even after slot end.
+     * We do NOT check endTime here.
+     */
+
+    let nextPatient: any =
+      await claimQueue(
+        {
+          hospitalId,
+          departmentId,
+          queueDate,
+          status:
+            "WAITING",
+          $and: [
+            doctorOwnershipFilter,
+            {
+              $or: [
+                {
+                  priority:
+                    "EMERGENCY",
+                },
+                {
+                  source:
+                    "EMERGENCY",
+                },
+              ],
+            },
+          ],
+        },
+        {
+          tokenNumber:
+            1,
+          createdAt:
+            1,
+        },
+      );
 
     if (!nextPatient) {
-      return res.status(404).json({
-        success: false,
-        message: "No patients waiting in your department",
-      });
+      nextPatient =
+        await claimQueue(
+          {
+            hospitalId,
+            departmentId,
+            queueDate,
+            status:
+              "WAITING",
+            source:
+              "APPOINTMENT",
+            scheduledStartTime: {
+              $lte:
+                currentTime,
+            },
+            $and: [
+              doctorOwnershipFilter,
+            ],
+          },
+          {
+            scheduledStartTime:
+              1,
+            tokenNumber:
+              1,
+            createdAt:
+              1,
+          },
+        );
     }
 
-    // ============================================================
-    // LOG ASSIGNMENT
-    // ============================================================
+    if (!nextPatient) {
+      nextPatient =
+        await claimQueue(
+          {
+            hospitalId,
+            departmentId,
+            queueDate,
+            status:
+              "WAITING",
+            priority: {
+              $ne:
+                "EMERGENCY",
+            },
+            $and: [
+              doctorOwnershipFilter,
+              {
+                $or: [
+                  {
+                    source:
+                      "WALK_IN",
+                  },
+                  {
+                    source: {
+                      $exists:
+                        false,
+                    },
+                  },
+                  {
+                    source:
+                      null,
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            tokenNumber:
+              1,
+            createdAt:
+              1,
+          },
+        );
+    }
+
+    if (!nextPatient) {
+      const nextUpcomingAppointment =
+        await Queue.findOne({
+          hospitalId,
+          departmentId,
+          queueDate,
+          status:
+            "WAITING",
+          source:
+            "APPOINTMENT",
+          scheduledStartTime: {
+            $gt:
+              currentTime,
+          },
+          $and: [
+            doctorOwnershipFilter,
+          ],
+        })
+          .sort({
+            scheduledStartTime:
+              1,
+            tokenNumber:
+              1,
+          })
+          .populate(
+            "patientId",
+            "name phone patientCode",
+          )
+          .lean();
+
+      if (nextUpcomingAppointment) {
+        return res.status(409).json({
+          success: false,
+          code:
+            "ONLY_FUTURE_APPOINTMENT_WAITING",
+          message:
+            `Walk-in queue is empty. Next checked-in appointment is at ${nextUpcomingAppointment.scheduledStartTime}. Appointment cannot be called before scheduled time.`,
+          data: {
+            nextUpcomingAppointment,
+          },
+        });
+      }
+
+      return res.status(404).json({
+        success: false,
+        message:
+          "No patients waiting in your department",
+      });
+    }
 
     console.log(
       `📞 Token ${nextPatient.tokenLabel} assigned to doctor ${doctorId}`,
     );
 
-    // ============================================================
-    // CALLED NOTIFICATION
-    // ============================================================
-
     if (!nextPatient.calledNotificationSent) {
       const patient =
         nextPatient.patientId &&
-          typeof nextPatient.patientId === "object"
-          ? (nextPatient.patientId as unknown as {
+        typeof nextPatient.patientId === "object"
+          ? nextPatient.patientId as unknown as {
             name: string;
             phone?: string;
             email?: string;
-          })
+          }
           : null;
 
       if (patient?.phone) {
         try {
           const result =
             await sendCalledNotification({
-              phone: patient.phone,
-
-              patientName: patient.name,
-
-              tokenLabel: nextPatient.tokenLabel,
+              phone:
+                patient.phone,
+              patientName:
+                patient.name,
+              tokenLabel:
+                nextPatient.tokenLabel,
             });
 
           if (result.success) {
@@ -1340,7 +1561,8 @@ export const callNextPatient = async (
               nextPatient._id,
               {
                 $set: {
-                  calledNotificationSent: true,
+                  calledNotificationSent:
+                    true,
                 },
               },
             );
@@ -1360,16 +1582,8 @@ export const callNextPatient = async (
             error,
           );
         }
-      } else {
-        console.log(
-          "⚠️ Called notification skipped: patient phone missing",
-        );
       }
     }
-
-    // ============================================================
-    // UPDATE NEAR-TURN NOTIFICATIONS
-    // ============================================================
 
     try {
       await checkAndSendNearTurnNotifications(
@@ -1384,46 +1598,23 @@ export const callNextPatient = async (
       );
     }
 
-    // ============================================================
-    // HOSPITAL SOCKET
-    // ============================================================
-    const isEmergencyPatient =
-      nextPatient.priority === "EMERGENCY";
-
     getIO()
       .to(`hospital:${hospitalId}`)
       .emit(
         "queue:called",
         {
-          queue: nextPatient,
-
-          queueId: nextPatient._id,
-
+          queue:
+            nextPatient,
+          queueId:
+            nextPatient._id,
           tokenLabel:
             nextPatient.tokenLabel,
-
-          priority:
-            nextPatient.priority,
-
-          isEmergency:
-            isEmergencyPatient,
-
           doctorId,
-
           departmentId,
-
-          status: "CALLED",
-
-          message:
-            isEmergencyPatient
-              ? "Emergency patient has been called."
-              : "Next patient has been called.",
+          status:
+            "CALLED",
         },
       );
-
-    // ============================================================
-    // PATIENT SOCKET
-    // ============================================================
 
     if (nextPatient.trackingToken) {
       const patientRoom =
@@ -1436,23 +1627,12 @@ export const callNextPatient = async (
           {
             queueId:
               nextPatient._id,
-
             status:
               "CALLED",
-
             tokenLabel:
               nextPatient.tokenLabel,
-
-            priority:
-              nextPatient.priority,
-
-            isEmergency:
-              isEmergencyPatient,
-
             message:
-              isEmergencyPatient
-                ? "Your emergency token has been called. Please proceed immediately to the doctor's room."
-                : "Your token has been called. Please proceed to the doctor's room.",
+              "Your token has been called. Please proceed to the doctor's room.",
           },
         );
 
@@ -1464,16 +1644,12 @@ export const callNextPatient = async (
         );
     }
 
-    // ============================================================
-    // RESPONSE
-    // ============================================================
-
     return res.status(200).json({
       success: true,
-
-      message: "Next patient called successfully",
-
-      data: nextPatient,
+      message:
+        "Next patient called successfully",
+      data:
+        nextPatient,
     });
   } catch (error) {
     console.error(
@@ -1483,7 +1659,8 @@ export const callNextPatient = async (
 
     return res.status(500).json({
       success: false,
-      message: "Internal server error",
+      message:
+        "Internal server error",
     });
   }
 };
@@ -2030,3 +2207,272 @@ export const skipPatient =
       });
     }
   };
+
+  export const takeDoctorBreak = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const hospitalId =
+      req.user?.hospitalId;
+
+    const doctorId =
+      req.user?.userId;
+
+    const {
+      reason,
+    } = req.body || {};
+
+    if (
+      !hospitalId ||
+      !doctorId
+    ) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Authentication information missing",
+      });
+    }
+
+    const doctor =
+      await User.findOne({
+        _id:
+          doctorId,
+        hospitalId,
+        role:
+          "DOCTOR",
+        isActive:
+          true,
+      });
+
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Doctor not found",
+      });
+    }
+
+    if (!doctor.departmentId) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Doctor has no department assigned",
+      });
+    }
+
+    const queueDate =
+      getIndiaQueueDate();
+
+    const activePatient =
+      await Queue.findOne({
+        hospitalId,
+        doctorId,
+        departmentId:
+          doctor.departmentId,
+        queueDate,
+        status: {
+          $in: [
+            "CALLED",
+            "SERVING",
+          ],
+        },
+      })
+        .select(
+          "_id tokenLabel status",
+        )
+        .lean();
+
+    if (activePatient) {
+      return res.status(409).json({
+        success: false,
+        code:
+          "ACTIVE_PATIENT_EXISTS",
+        message:
+          `Complete or skip current patient ${activePatient.tokenLabel} before taking a break.`,
+        data: {
+          activePatient,
+        },
+      });
+    }
+
+    if (doctor.isOnBreak) {
+      return res.status(200).json({
+        success: true,
+        message:
+          "Doctor is already on break",
+        data: {
+          isOnBreak:
+            true,
+          breakStartedAt:
+            doctor.breakStartedAt,
+          breakReason:
+            doctor.breakReason,
+        },
+      });
+    }
+
+    const now =
+      new Date();
+
+    doctor.isOnBreak =
+      true;
+
+    doctor.breakStartedAt =
+      now;
+
+    doctor.breakReason =
+      typeof reason === "string" &&
+      reason.trim()
+        ? reason.trim()
+        : "Break";
+
+    await doctor.save();
+
+    await emitDoctorBreakStatus({
+      hospitalId:
+        String(hospitalId),
+      doctorId:
+        String(doctorId),
+      departmentId:
+        String(doctor.departmentId),
+      isOnBreak:
+        true,
+      breakStartedAt:
+        now,
+      breakReason:
+        doctor.breakReason,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Doctor is now on break",
+      data: {
+        isOnBreak:
+          true,
+        breakStartedAt:
+          doctor.breakStartedAt,
+        breakReason:
+          doctor.breakReason,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "❌ Take doctor break error:",
+      error,
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Internal server error",
+    });
+  }
+};
+
+export const resumeDoctorDuty = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const hospitalId =
+      req.user?.hospitalId;
+
+    const doctorId =
+      req.user?.userId;
+
+    if (
+      !hospitalId ||
+      !doctorId
+    ) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Authentication information missing",
+      });
+    }
+
+    const doctor =
+      await User.findOne({
+        _id:
+          doctorId,
+        hospitalId,
+        role:
+          "DOCTOR",
+        isActive:
+          true,
+      });
+
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Doctor not found",
+      });
+    }
+
+    if (!doctor.departmentId) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Doctor has no department assigned",
+      });
+    }
+
+    const now =
+      new Date();
+
+    doctor.isOnBreak =
+      false;
+
+    doctor.breakStartedAt =
+      null;
+
+    doctor.breakReason =
+      null;
+
+    doctor.lastResumedAt =
+      now;
+
+    await doctor.save();
+
+    await emitDoctorBreakStatus({
+      hospitalId:
+        String(hospitalId),
+      doctorId:
+        String(doctorId),
+      departmentId:
+        String(doctor.departmentId),
+      isOnBreak:
+        false,
+      breakStartedAt:
+        null,
+      breakReason:
+        null,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Doctor resumed duty",
+      data: {
+        isOnBreak:
+          false,
+        lastResumedAt:
+          doctor.lastResumedAt,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "❌ Resume doctor duty error:",
+      error,
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Internal server error",
+    });
+  }
+};
