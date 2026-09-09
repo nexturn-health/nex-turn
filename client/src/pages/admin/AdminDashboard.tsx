@@ -429,7 +429,7 @@ const AdminDashboard = () => {
                     </div>
                     <div>
                         <h1 className="font-bold text-slate-900">
-                            NexTurn
+                            NexSynq
                         </h1>
                         <p className="text-xs text-slate-500">
                             Hospital workspace
@@ -1686,7 +1686,7 @@ const PremiumRequiredModal = ({
                             Premium feature
                         </p>
                         <h3 className="mt-1 text-xl font-bold text-slate-900">
-                            Upgrade to NexTurn Premium
+                            Upgrade to NexSynq Premium
                         </h3>
                         <p className="mt-2 text-sm leading-6 text-slate-500">
                             Laboratory management, consultation records,
@@ -1736,13 +1736,13 @@ const SubscriptionExpiredView = ({
                     Subscription expired
                 </p>
                 <h1 className="mt-2 text-2xl font-bold text-slate-900">
-                    NexTurn access needs renewal
+                    NexSynq access needs renewal
                 </h1>
                 <p className="mt-3 text-sm leading-6 text-slate-500">
                     Your {plan} subscription is no longer active.
                     Your hospital data remains stored, but operational
                     features are unavailable until the subscription
-                    is renewed by NexTurn Super Admin.
+                    is renewed by NexSynq Super Admin.
                 </p>
                 <button
                     type="button"
