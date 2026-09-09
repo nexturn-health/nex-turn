@@ -1474,10 +1474,19 @@ export const getAppointments =
                     req,
                 );
 
-            const filter:
-                any = {
-                    hospitalId,
-                };
+            if (
+                !hospitalId
+            ) {
+                return res
+                    .status(401)
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Hospital information not found",
+                    });
+            }
 
             const {
                 date,
@@ -1488,17 +1497,60 @@ export const getAppointments =
             } =
                 req.query;
 
-            if (
-                typeof date ===
-                "string"
-            ) {
-                filter.appointmentDate =
-                    date;
-            }
+            const filter:
+                any = {
+                    hospitalId,
+                };
+
+            // ============================================================
+            // DATE FILTER
+            //
+            // Supports both:
+            // 1. appointmentDate stored as string: "2026-09-09"
+            // 2. appointmentDate stored as Date: ISODate(...)
+            // ============================================================
 
             if (
-                typeof doctorId ===
-                "string" &&
+                typeof date === "string" &&
+                date.trim()
+            ) {
+                const selectedDate =
+                    date.trim();
+
+                const startOfDay =
+                    new Date(
+                        `${selectedDate}T00:00:00.000+05:30`,
+                    );
+
+                const endOfDay =
+                    new Date(
+                        `${selectedDate}T23:59:59.999+05:30`,
+                    );
+
+                filter.$or = [
+                    {
+                        appointmentDate:
+                            selectedDate,
+                    },
+                    {
+                        appointmentDate: {
+                            $gte:
+                                startOfDay,
+
+                            $lte:
+                                endOfDay,
+                        },
+                    },
+                ];
+            }
+
+            // ============================================================
+            // DOCTOR FILTER
+            // ============================================================
+
+            if (
+                typeof doctorId === "string" &&
+                doctorId !== "ALL" &&
                 mongoose.isValidObjectId(
                     doctorId,
                 )
@@ -1507,9 +1559,13 @@ export const getAppointments =
                     doctorId;
             }
 
+            // ============================================================
+            // DEPARTMENT FILTER
+            // ============================================================
+
             if (
-                typeof departmentId ===
-                "string" &&
+                typeof departmentId === "string" &&
+                departmentId !== "ALL" &&
                 mongoose.isValidObjectId(
                     departmentId,
                 )
@@ -1518,25 +1574,39 @@ export const getAppointments =
                     departmentId;
             }
 
+            // ============================================================
+            // STATUS FILTER
+            // ============================================================
+
             if (
-                typeof status ===
-                "string" &&
-                status !==
-                "ALL"
+                typeof status === "string" &&
+                status !== "ALL"
             ) {
                 filter.status =
                     status;
             }
 
+            // ============================================================
+            // PAYMENT STATUS FILTER
+            // ============================================================
+
             if (
-                typeof paymentStatus ===
-                "string" &&
-                paymentStatus !==
-                "ALL"
+                typeof paymentStatus === "string" &&
+                paymentStatus !== "ALL"
             ) {
                 filter.paymentStatus =
                     paymentStatus;
             }
+
+            // Temporary useful log for deployed debugging.
+            console.log(
+                "GET APPOINTMENTS FILTER:",
+                JSON.stringify(
+                    filter,
+                    null,
+                    2,
+                ),
+            );
 
             const appointments =
                 await Appointment.find(
@@ -1561,32 +1631,44 @@ export const getAppointments =
                     .sort({
                         appointmentDate:
                             1,
+
                         requestedStartTime:
                             1,
+
+                        createdAt:
+                            -1,
                     })
                     .lean();
 
             return res.json({
                 success:
                     true,
+
+                count:
+                    appointments.length,
+
                 data:
                     appointments,
             });
-        } catch (error) {
+        } catch (
+            error
+        ) {
             console.error(
                 "GET APPOINTMENTS ERROR:",
                 error,
             );
 
-            return res.status(500).json({
-                success:
-                    false,
-                message:
-                    "Failed to load appointments",
-            });
+            return res
+                .status(500)
+                .json({
+                    success:
+                        false,
+
+                    message:
+                        "Failed to load appointments",
+                });
         }
     };
-
 /* ============================================================
    CONFIRM ON-CALL APPOINTMENT
 ============================================================ */

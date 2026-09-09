@@ -7,6 +7,11 @@ import {
   type PublicHospital, type PublicSlot,
 } from "../../services/appointment/publicAppointment.api";
 
+import {
+  INDIA_STATES,
+  getDistrictsByState,
+} from "../../store/indiaLocations";
+
 // Dates use the patient's local calendar, rather than UTC.
 function today(): string {
   const date = new Date();
@@ -72,8 +77,24 @@ export default function PatientBookAppointment() {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   // Keep the supplied API methods and response shapes unchanged.
-  const states = useBookingList<string>(useCallback(async () => (await getPublicStates()).data || [], []));
-  const districts = useBookingList<string>(useCallback(async () => state ? (await getPublicDistricts(state)).data || [] : [], [state]));
+  const states = {
+    items: INDIA_STATES,
+    loading: false,
+    error: "",
+    retry: () => { },
+  };
+
+  const districts = {
+    items: state
+      ? getDistrictsByState(
+        state,
+      )
+      : [],
+    loading: false,
+    error: "",
+    retry: () => { },
+  };
+
   const hospitals = useBookingList<PublicHospital>(useCallback(async () => state && district
     ? (await getPublicHospitals({ state, district, q: search.trim() || undefined })).data || [] : [], [state, district, search]));
   const departments = useBookingList<PublicDepartment>(useCallback(async () => hospital
