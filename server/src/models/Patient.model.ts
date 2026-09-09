@@ -24,6 +24,9 @@ export interface IPatient
     patientCode: string;
     createdAt: Date;
     updatedAt: Date;
+    noShowCount?: number;
+    lastNoShowAt?: Date | null;
+    onlineBookingBlocked?: boolean;
 }
 
 
@@ -124,6 +127,21 @@ const patientSchema =
                 type: String,
                 required: true,
                 index: true,
+            },
+
+            noShowCount: {
+                type: Number,
+                default: 0,
+            },
+
+            lastNoShowAt: {
+                type: Date,
+                default: null,
+            },
+
+            onlineBookingBlocked: {
+                type: Boolean,
+                default: false,
             },
         },
         {

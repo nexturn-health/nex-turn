@@ -38,6 +38,10 @@ import {
     generateDoctorSlots,
 } from "../services/appointmentSlot.service";
 
+import {
+    getIO,
+} from "../config/socket";
+
 /* ============================================================
    HELPERS
 ============================================================ */
@@ -47,7 +51,6 @@ const getParam =
         value:
             unknown,
     ) => {
-
         if (
             Array.isArray(
                 value,
@@ -70,7 +73,6 @@ const escapeRegex =
         value:
             string,
     ) => {
-
         return value.replace(
             /[.*+?^${}()|[\]\\]/g,
             "\\$&",
@@ -82,7 +84,6 @@ const exactRegex =
         value:
             string,
     ) => {
-
         return new RegExp(
             `^${escapeRegex(
                 value.trim(),
@@ -96,7 +97,6 @@ const normalizePhone =
         value:
             unknown,
     ) => {
-
         const digits =
             String(
                 value ||
@@ -123,7 +123,6 @@ const isValidObjectId =
         value:
             string,
     ) => {
-
         return mongoose.isValidObjectId(
             value,
         );
@@ -134,7 +133,6 @@ const toObjectId =
         value:
             string,
     ) => {
-
         return new mongoose.Types.ObjectId(
             value,
         );
@@ -142,7 +140,6 @@ const toObjectId =
 
 const generateAppointmentCode =
     () => {
-
         return (
             "APT-" +
             crypto
@@ -158,7 +155,6 @@ const generateAppointmentCode =
 
 const generatePatientCode =
     () => {
-
         return (
             "PAT-" +
             Date.now()
@@ -178,12 +174,155 @@ const generatePatientCode =
         );
     };
 
+type ActiveAppointmentStatus =
+    | "REQUESTED"
+    | "BOOKED"
+    | "CONFIRMED"
+    | "ARRIVED"
+    | "CHECKED_IN"
+    | "IN_CONSULTATION"
+    | "RESCHEDULE_REQUESTED";
+
+const ACTIVE_APPOINTMENT_STATUSES:
+    ActiveAppointmentStatus[] = [
+        "REQUESTED",
+        "BOOKED",
+        "CONFIRMED",
+        "ARRIVED",
+        "CHECKED_IN",
+        "IN_CONSULTATION",
+        "RESCHEDULE_REQUESTED",
+    ];
+
+const MAX_ACTIVE_FUTURE_APPOINTMENTS_PER_PATIENT =
+    2;
+
+const MAX_NO_SHOW_ALLOWED =
+    3;
+
+const getDateOnly =
+    (
+        value:
+            unknown,
+    ): string => {
+        if (
+            !value
+        ) {
+            return "";
+        }
+
+        if (
+            typeof value ===
+            "string"
+        ) {
+            return value.slice(
+                0,
+                10,
+            );
+        }
+
+        const date =
+            new Date(
+                value as any,
+            );
+
+        if (
+            Number.isNaN(
+                date.getTime(),
+            )
+        ) {
+            return "";
+        }
+
+        return new Intl.DateTimeFormat(
+            "en-CA",
+            {
+                timeZone:
+                    "Asia/Kolkata",
+                year:
+                    "numeric",
+                month:
+                    "2-digit",
+                day:
+                    "2-digit",
+            },
+        ).format(
+            date,
+        );
+    };
+
+const emitAppointmentUpdate =
+    (
+        appointment:
+            any,
+        eventName:
+            | "appointment:created"
+            | "appointment:updated" =
+            "appointment:updated",
+    ) => {
+        try {
+            const io =
+                getIO();
+
+            io.to(
+                `hospital:${String(
+                    appointment.hospitalId,
+                )}`,
+            ).emit(
+                eventName,
+                {
+                    appointmentId:
+                        appointment._id,
+
+                    appointmentCode:
+                        appointment.appointmentCode,
+
+                    hospitalId:
+                        appointment.hospitalId,
+
+                    patientId:
+                        appointment.patientId,
+
+                    doctorId:
+                        appointment.doctorId,
+
+                    departmentId:
+                        appointment.departmentId,
+
+                    appointmentDate:
+                        appointment.appointmentDate,
+
+                    requestedStartTime:
+                        appointment.requestedStartTime,
+
+                    confirmedStartTime:
+                        appointment.confirmedStartTime,
+
+                    endTime:
+                        appointment.endTime,
+
+                    status:
+                        appointment.status,
+
+                    paymentStatus:
+                        appointment.paymentStatus,
+                },
+            );
+        } catch (
+            socketError
+        ) {
+            console.error(
+                "PUBLIC APPOINTMENT SOCKET EMIT ERROR:",
+                socketError,
+            );
+        }
+    };
+
 const getPublicHospital =
     async (
         hospitalId:
             string,
     ) => {
-
         if (
             !isValidObjectId(
                 hospitalId,
@@ -211,7 +350,6 @@ const getHospitalPublicAddress =
         hospital:
             any,
     ) => {
-
         return (
             hospital.publicAddress ||
             hospital.address?.line1 ||
@@ -278,9 +416,7 @@ export const getPublicStates =
         res:
             Response,
     ) => {
-
         try {
-
             const states =
                 await Hospital.distinct(
                     "state",
@@ -307,21 +443,23 @@ export const getPublicStates =
 
                 data:
                     states
-                        .filter(Boolean)
+                        .filter(
+                            Boolean,
+                        )
                         .sort(),
             });
-
         } catch (
-        error
+            error
         ) {
-
             console.error(
                 "GET PUBLIC STATES ERROR:",
                 error,
             );
 
             return res
-                .status(500)
+                .status(
+                    500,
+                )
                 .json({
                     success:
                         false,
@@ -344,9 +482,7 @@ export const getPublicDistricts =
         res:
             Response,
     ) => {
-
         try {
-
             const state =
                 getParam(
                     req.query.state,
@@ -356,7 +492,9 @@ export const getPublicDistricts =
                 !state
             ) {
                 return res
-                    .status(400)
+                    .status(
+                        400,
+                    )
                     .json({
                         success:
                             false,
@@ -397,21 +535,23 @@ export const getPublicDistricts =
 
                 data:
                     districts
-                        .filter(Boolean)
+                        .filter(
+                            Boolean,
+                        )
                         .sort(),
             });
-
         } catch (
-        error
+            error
         ) {
-
             console.error(
                 "GET PUBLIC DISTRICTS ERROR:",
                 error,
             );
 
             return res
-                .status(500)
+                .status(
+                    500,
+                )
                 .json({
                     success:
                         false,
@@ -434,9 +574,7 @@ export const getPublicHospitals =
         res:
             Response,
     ) => {
-
         try {
-
             const state =
                 getParam(
                     req.query.state,
@@ -454,12 +592,12 @@ export const getPublicHospitals =
 
             const query:
                 any = {
-                publicBookingEnabled:
-                    true,
+                    publicBookingEnabled:
+                        true,
 
-                isActive:
-                    true,
-            };
+                    isActive:
+                        true,
+                };
 
             if (
                 state
@@ -532,18 +670,18 @@ export const getPublicHospitals =
                         sanitizeHospital,
                     ),
             });
-
         } catch (
-        error
+            error
         ) {
-
             console.error(
                 "GET PUBLIC HOSPITALS ERROR:",
                 error,
             );
 
             return res
-                .status(500)
+                .status(
+                    500,
+                )
                 .json({
                     success:
                         false,
@@ -566,9 +704,7 @@ export const getPublicHospitalDepartments =
         res:
             Response,
     ) => {
-
         try {
-
             const hospitalId =
                 getParam(
                     req.params.hospitalId,
@@ -583,7 +719,9 @@ export const getPublicHospitalDepartments =
                 !hospital
             ) {
                 return res
-                    .status(404)
+                    .status(
+                        404,
+                    )
                     .json({
                         success:
                             false,
@@ -617,18 +755,18 @@ export const getPublicHospitalDepartments =
                 data:
                     departments,
             });
-
         } catch (
-        error
+            error
         ) {
-
             console.error(
                 "GET PUBLIC DEPARTMENTS ERROR:",
                 error,
             );
 
             return res
-                .status(500)
+                .status(
+                    500,
+                )
                 .json({
                     success:
                         false,
@@ -651,9 +789,7 @@ export const getPublicHospitalDoctors =
         res:
             Response,
     ) => {
-
         try {
-
             const hospitalId =
                 getParam(
                     req.params.hospitalId,
@@ -679,7 +815,9 @@ export const getPublicHospitalDoctors =
                 !hospital
             ) {
                 return res
-                    .status(404)
+                    .status(
+                        404,
+                    )
                     .json({
                         success:
                             false,
@@ -696,7 +834,9 @@ export const getPublicHospitalDoctors =
                 )
             ) {
                 return res
-                    .status(400)
+                    .status(
+                        400,
+                    )
                     .json({
                         success:
                             false,
@@ -708,18 +848,17 @@ export const getPublicHospitalDoctors =
 
             const doctorQuery:
                 any = {
-                hospitalId:
-                    hospital._id,
+                    hospitalId:
+                        hospital._id,
 
-                role:
-                    "DOCTOR",
+                    role:
+                        "DOCTOR",
 
-                // This allows old doctors also if isActive field is missing.
-                isActive: {
-                    $ne:
-                        false,
-                },
-            };
+                    isActive: {
+                        $ne:
+                            false,
+                    },
+                };
 
             if (
                 departmentId
@@ -729,10 +868,6 @@ export const getPublicHospitalDoctors =
                         departmentId,
                     );
 
-                /*
-                 * Main field is departmentId.
-                 * department is fallback only if any old data used that field.
-                 */
                 doctorQuery.$or = [
                     {
                         departmentId:
@@ -743,8 +878,7 @@ export const getPublicHospitalDoctors =
                             departmentObjectId,
                     },
                     {
-                        departmentId:
-                            departmentId,
+                        departmentId,
                     },
                     {
                         department:
@@ -794,11 +928,11 @@ export const getPublicHospitalDoctors =
                         (
                             schedule,
                         ) => [
-                                String(
-                                    schedule.doctorId,
-                                ),
-                                schedule,
-                            ],
+                            String(
+                                schedule.doctorId,
+                            ),
+                            schedule,
+                        ],
                     ),
                 );
 
@@ -808,7 +942,6 @@ export const getPublicHospitalDoctors =
                         doctor:
                             any,
                     ) => {
-
                         const schedule =
                             scheduleMap.get(
                                 String(
@@ -891,18 +1024,18 @@ export const getPublicHospitalDoctors =
                         }
                         : undefined,
             });
-
         } catch (
-        error
+            error
         ) {
-
             console.error(
                 "GET PUBLIC DOCTORS ERROR:",
                 error,
             );
 
             return res
-                .status(500)
+                .status(
+                    500,
+                )
                 .json({
                     success:
                         false,
@@ -925,9 +1058,7 @@ export const getPublicDoctorSlots =
         res:
             Response,
     ) => {
-
         try {
-
             const hospitalId =
                 getParam(
                     req.params.hospitalId,
@@ -959,7 +1090,9 @@ export const getPublicDoctorSlots =
                 !date
             ) {
                 return res
-                    .status(400)
+                    .status(
+                        400,
+                    )
                     .json({
                         success:
                             false,
@@ -978,7 +1111,9 @@ export const getPublicDoctorSlots =
                 !hospital
             ) {
                 return res
-                    .status(404)
+                    .status(
+                        404,
+                    )
                     .json({
                         success:
                             false,
@@ -1016,7 +1151,9 @@ export const getPublicDoctorSlots =
                 !doctor
             ) {
                 return res
-                    .status(404)
+                    .status(
+                        404,
+                    )
                     .json({
                         success:
                             false,
@@ -1042,7 +1179,9 @@ export const getPublicDoctorSlots =
                 !schedule
             ) {
                 return res
-                    .status(404)
+                    .status(
+                        404,
+                    )
                     .json({
                         success:
                             false,
@@ -1072,7 +1211,9 @@ export const getPublicDoctorSlots =
                 false
             ) {
                 return res
-                    .status(400)
+                    .status(
+                        400,
+                    )
                     .json({
                         success:
                             false,
@@ -1114,7 +1255,7 @@ export const getPublicDoctorSlots =
 
             const selectedDay =
                 dayNames[
-                selectedDate.getDay()
+                    selectedDate.getDay()
                 ];
 
             const daySchedule =
@@ -1202,7 +1343,8 @@ export const getPublicDoctorSlots =
                                             sessions:
                                                 item.sessions,
                                         }),
-                                    ) || [],
+                                    ) ||
+                                    [],
                                 fix:
                                     `Add ${selectedDay} in doctor schedule with APPOINTMENT session.`,
                             }
@@ -1425,12 +1567,10 @@ export const getPublicDoctorSlots =
                         }
                         : undefined,
             });
-
         } catch (
-        error:
-            any
+            error:
+                any
         ) {
-
             console.error(
                 "GET PUBLIC SLOTS ERROR:",
                 error,
@@ -1466,9 +1606,7 @@ export const bookPublicAppointment =
         res:
             Response,
     ) => {
-
         try {
-
             const hospitalId =
                 getParam(
                     req.params.hospitalId,
@@ -1522,7 +1660,9 @@ export const bookPublicAppointment =
                 )
             ) {
                 return res
-                    .status(400)
+                    .status(
+                        400,
+                    )
                     .json({
                         success:
                             false,
@@ -1537,7 +1677,9 @@ export const bookPublicAppointment =
                 2
             ) {
                 return res
-                    .status(400)
+                    .status(
+                        400,
+                    )
                     .json({
                         success:
                             false,
@@ -1552,7 +1694,9 @@ export const bookPublicAppointment =
                 10
             ) {
                 return res
-                    .status(400)
+                    .status(
+                        400,
+                    )
                     .json({
                         success:
                             false,
@@ -1572,7 +1716,9 @@ export const bookPublicAppointment =
                 !hospital
             ) {
                 return res
-                    .status(404)
+                    .status(
+                        404,
+                    )
                     .json({
                         success:
                             false,
@@ -1601,8 +1747,10 @@ export const bookPublicAppointment =
                         role:
                             "DOCTOR",
 
-                        isActive:
-                            true,
+                        isActive: {
+                            $ne:
+                                false,
+                        },
                     }),
 
                     Department.findOne({
@@ -1634,7 +1782,9 @@ export const bookPublicAppointment =
                 !department
             ) {
                 return res
-                    .status(404)
+                    .status(
+                        404,
+                    )
                     .json({
                         success:
                             false,
@@ -1649,7 +1799,9 @@ export const bookPublicAppointment =
                 !schedule.appointmentEnabled
             ) {
                 return res
-                    .status(400)
+                    .status(
+                        400,
+                    )
                     .json({
                         success:
                             false,
@@ -1674,7 +1826,9 @@ export const bookPublicAppointment =
                 )
             ) {
                 return res
-                    .status(400)
+                    .status(
+                        400,
+                    )
                     .json({
                         success:
                             false,
@@ -1682,6 +1836,213 @@ export const bookPublicAppointment =
                         message:
                             "Selected doctor does not belong to selected department",
                     });
+            }
+
+            let patient:
+                any =
+                await Patient.findOne({
+                    hospitalId:
+                        hospital._id,
+
+                    phone:
+                        normalizedPhone,
+                });
+
+            if (
+                !patient
+            ) {
+                patient =
+                    await Patient.create({
+                        hospitalId:
+                            hospital._id,
+
+                        name:
+                            patientName,
+
+                        phone:
+                            normalizedPhone,
+
+                        age:
+                            age
+                                ? Number(
+                                    age,
+                                )
+                                : undefined,
+
+                        gender:
+                            gender ||
+                            "OTHER",
+
+                        patientCode:
+                            generatePatientCode(),
+
+                        registrationDate:
+                            new Date(),
+
+                        noShowCount:
+                            0,
+
+                        onlineBookingBlocked:
+                            false,
+                    } as any);
+            } else {
+                patient.name =
+                    patient.name ||
+                    patientName;
+
+                if (
+                    age &&
+                    !patient.age
+                ) {
+                    patient.age =
+                        Number(
+                            age,
+                        );
+                }
+
+                if (
+                    gender &&
+                    !patient.gender
+                ) {
+                    patient.gender =
+                        gender;
+                }
+
+                if (
+                    !patient.registrationDate
+                ) {
+                    patient.registrationDate =
+                        new Date();
+                }
+
+                await patient.save();
+            }
+
+            const patientAny:
+                any =
+                patient;
+
+            if (
+                patientAny.onlineBookingBlocked
+            ) {
+                return res.status(403).json({
+                    success:
+                        false,
+
+                    message:
+                        "Online booking is blocked for this number because of repeated missed appointments. Please contact hospital reception.",
+                });
+            }
+
+            if (
+                Number(
+                    patientAny.noShowCount ||
+                    0,
+                ) >=
+                MAX_NO_SHOW_ALLOWED
+            ) {
+                return res.status(403).json({
+                    success:
+                        false,
+
+                    message:
+                        "This number has missed multiple appointments. Please contact hospital reception to book.",
+                });
+            }
+
+            const selectedSlot:
+                any =
+                await DoctorSlot.findOne({
+                    _id:
+                        toObjectId(
+                            slotId,
+                        ),
+
+                    hospitalId:
+                        hospital._id,
+
+                    doctorId:
+                        toObjectId(
+                            doctorId,
+                        ),
+
+                    slotType:
+                        "APPOINTMENT",
+                }).lean();
+
+            if (
+                !selectedSlot
+            ) {
+                return res.status(404).json({
+                    success:
+                        false,
+
+                    message:
+                        "Appointment slot not found",
+                });
+            }
+
+            const appointmentDate =
+                getDateOnly(
+                    selectedSlot.date,
+                );
+
+            const duplicateSameDoctorToday =
+                await Appointment.findOne({
+                    hospitalId:
+                        hospital._id,
+
+                    patientId:
+                        patient._id,
+
+                    doctorId:
+                        doctor._id,
+
+                    appointmentDate,
+
+                    status: {
+                        $in:
+                            ACTIVE_APPOINTMENT_STATUSES,
+                    },
+                }).lean();
+
+            if (
+                duplicateSameDoctorToday
+            ) {
+                return res.status(409).json({
+                    success:
+                        false,
+
+                    message:
+                        "You already have an active appointment with this doctor on this date.",
+                });
+            }
+
+            const activeFutureAppointments =
+                await Appointment.countDocuments({
+                    hospitalId:
+                        hospital._id,
+
+                    patientId:
+                        patient._id,
+
+                    status: {
+                        $in:
+                            ACTIVE_APPOINTMENT_STATUSES,
+                    },
+                });
+
+            if (
+                activeFutureAppointments >=
+                MAX_ACTIVE_FUTURE_APPOINTMENTS_PER_PATIENT
+            ) {
+                return res.status(409).json({
+                    success:
+                        false,
+
+                    message:
+                        `You already have ${MAX_ACTIVE_FUTURE_APPOINTMENTS_PER_PATIENT} active appointments. Please complete or cancel old appointments first.`,
+                });
             }
 
             const confirmationRequired =
@@ -1723,11 +2084,14 @@ export const bookPublicAppointment =
                         $set: {
                             status:
                                 targetSlotStatus,
+
+                            patientId:
+                                patient._id,
                         },
                     },
                     {
-                        new:
-                            true,
+                        returnDocument:
+                            "after",
                     },
                 );
 
@@ -1735,7 +2099,9 @@ export const bookPublicAppointment =
                 !slot
             ) {
                 return res
-                    .status(409)
+                    .status(
+                        409,
+                    )
                     .json({
                         success:
                             false,
@@ -1746,83 +2112,6 @@ export const bookPublicAppointment =
             }
 
             try {
-
-                let patient:
-                    any =
-                    await Patient.findOne({
-                        hospitalId:
-                            hospital._id,
-
-                        phone:
-                            normalizedPhone,
-                    });
-
-                if (
-                    !patient
-                ) {
-                    patient =
-                        await Patient.create({
-                            hospitalId:
-                                hospital._id,
-
-                            name:
-                                patientName,
-
-                            phone:
-                                normalizedPhone,
-
-                            age:
-                                age
-                                    ? Number(
-                                        age,
-                                    )
-                                    : undefined,
-
-                            gender:
-                                gender ||
-                                "OTHER",
-
-                            patientCode:
-                                generatePatientCode(),
-
-                            registrationDate:
-                                new Date(),
-                        } as any);
-
-                } else {
-
-                    patient.name =
-                        patient.name ||
-                        patientName;
-
-                    if (
-                        age &&
-                        !patient.age
-                    ) {
-                        patient.age =
-                            Number(
-                                age,
-                            );
-                    }
-
-                    if (
-                        gender &&
-                        !patient.gender
-                    ) {
-                        patient.gender =
-                            gender;
-                    }
-
-                    if (
-                        !patient.registrationDate
-                    ) {
-                        patient.registrationDate =
-                            new Date();
-                    }
-
-                    await patient.save();
-                }
-
                 const appointmentStatus =
                     confirmationRequired
                         ? "REQUESTED"
@@ -1831,11 +2120,6 @@ export const bookPublicAppointment =
                 const appointmentCode =
                     generateAppointmentCode();
 
-                /*
-                 * IMPORTANT:
-                 * Do not pass createdBy: null or history.by: null.
-                 * Your Appointment schema expects ObjectId or undefined.
-                 */
                 const appointment:
                     any =
                     await Appointment.create({
@@ -1872,6 +2156,15 @@ export const bookPublicAppointment =
 
                         status:
                             appointmentStatus,
+
+                        paymentStatus:
+                            "UNPAID",
+
+                        paidAmount:
+                            0,
+
+                        feeAmount:
+                            0,
 
                         confirmationRequired,
 
@@ -1910,8 +2203,15 @@ export const bookPublicAppointment =
 
                 await slot.save();
 
+                emitAppointmentUpdate(
+                    appointment,
+                    "appointment:created",
+                );
+
                 return res
-                    .status(201)
+                    .status(
+                        201,
+                    )
                     .json({
                         success:
                             true,
@@ -1997,11 +2297,9 @@ export const bookPublicAppointment =
                                 appointment.endTime,
                         },
                     });
-
             } catch (
-            error
+                error
             ) {
-
                 await DoctorSlot.updateOne(
                     {
                         _id:
@@ -2023,19 +2321,19 @@ export const bookPublicAppointment =
 
                 throw error;
             }
-
         } catch (
-        error:
-            any
+            error:
+                any
         ) {
-
             console.error(
                 "BOOK PUBLIC APPOINTMENT ERROR:",
                 error,
             );
 
             return res
-                .status(500)
+                .status(
+                    500,
+                )
                 .json({
                     success:
                         false,
@@ -2063,9 +2361,7 @@ export const getPublicAppointmentByCode =
         res:
             Response,
     ) => {
-
         try {
-
             const appointmentCode =
                 getParam(
                     req.params.appointmentCode,
@@ -2082,7 +2378,9 @@ export const getPublicAppointmentByCode =
                 10
             ) {
                 return res
-                    .status(400)
+                    .status(
+                        400,
+                    )
                     .json({
                         success:
                             false,
@@ -2124,7 +2422,9 @@ export const getPublicAppointmentByCode =
                 !appointment
             ) {
                 return res
-                    .status(404)
+                    .status(
+                        404,
+                    )
                     .json({
                         success:
                             false,
@@ -2144,7 +2444,9 @@ export const getPublicAppointmentByCode =
                 phone
             ) {
                 return res
-                    .status(403)
+                    .status(
+                        403,
+                    )
                     .json({
                         success:
                             false,
@@ -2201,18 +2503,18 @@ export const getPublicAppointmentByCode =
                             : null,
                 },
             });
-
         } catch (
-        error
+            error
         ) {
-
             console.error(
                 "GET PUBLIC APPOINTMENT ERROR:",
                 error,
             );
 
             return res
-                .status(500)
+                .status(
+                    500,
+                )
                 .json({
                     success:
                         false,
