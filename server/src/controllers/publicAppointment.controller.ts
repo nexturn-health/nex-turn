@@ -42,6 +42,10 @@ import {
     getIO,
 } from "../config/socket";
 
+import {
+    sendTokenCreatedNotification,
+} from "../services/notification.service";
+
 /* ============================================================
    HELPERS
 ============================================================ */
@@ -316,6 +320,148 @@ const emitAppointmentUpdate =
                 socketError,
             );
         }
+    };
+
+const getClientUrl =
+    () => {
+        return String(
+            process.env.CLIENT_URL ||
+            "http://localhost:5173",
+        ).replace(
+            /\/$/,
+            "",
+        );
+    };
+
+const buildAppointmentTrackingUrl =
+    (
+        appointmentCode:
+            string,
+        phone:
+            string,
+    ) => {
+        return `${getClientUrl()}/appointment-status/${encodeURIComponent(
+            appointmentCode,
+        )}?phone=${encodeURIComponent(
+            phone,
+        )}`;
+    };
+
+const sendAppointmentBookedNotification =
+    ({
+        appointment,
+        patient,
+        hospital,
+        doctor,
+        department,
+        schedule,
+    }: {
+        appointment:
+            any;
+        patient:
+            any;
+        hospital:
+            any;
+        doctor:
+            any;
+        department:
+            any;
+        schedule:
+            any;
+    }): string => {
+        const phone =
+            String(
+                patient.phone ||
+                "",
+            );
+
+        const appointmentTrackingUrl =
+            buildAppointmentTrackingUrl(
+                appointment.appointmentCode,
+                phone,
+            );
+
+        const notificationPayload = {
+            phone,
+
+            email:
+                process.env.TEST_PATIENT_EMAIL ||
+                "",
+
+            patientName:
+                patient.name ||
+                "Patient",
+
+            tokenLabel:
+                appointment.appointmentCode,
+
+            hospitalName:
+                hospital.publicName ||
+                hospital.name ||
+                "Hospital",
+
+            departmentName:
+                department.name ||
+                "Department",
+
+            doctorName:
+                doctor.name ||
+                "Doctor",
+
+            trackingUrl:
+                appointmentTrackingUrl,
+
+            estimatedWaitTime:
+                0,
+
+            doctorShiftStartTime:
+                appointment.requestedStartTime,
+
+            averageConsultationMinutes:
+                Number(
+                    schedule?.slotDurationMinutes ||
+                    15,
+                ),
+        };
+
+        console.log(
+            "📨 STARTING APPOINTMENT BOOKING NOTIFICATION:",
+            {
+                appointmentCode:
+                    appointment.appointmentCode,
+
+                phone,
+
+                trackingUrl:
+                    appointmentTrackingUrl,
+            },
+        );
+
+        void sendTokenCreatedNotification(
+            notificationPayload,
+        )
+            .then(
+                (
+                    result,
+                ) => {
+                    console.log(
+                        "✅ APPOINTMENT BOOKING NOTIFICATION RESULT:",
+                        result,
+                    );
+                },
+            )
+            .catch(
+                (
+                    error,
+                ) => {
+                    console.error(
+                        "❌ APPOINTMENT BOOKING NOTIFICATION FAILED:",
+                        error,
+                    );
+                },
+            );
+
+        return appointmentTrackingUrl;
     };
 
 const getPublicHospital =
@@ -2208,6 +2354,16 @@ export const bookPublicAppointment =
                     "appointment:created",
                 );
 
+                const appointmentTrackingUrl =
+                    sendAppointmentBookedNotification({
+                        appointment,
+                        patient,
+                        hospital,
+                        doctor,
+                        department,
+                        schedule,
+                    });
+
                 return res
                     .status(
                         201,
@@ -2233,6 +2389,9 @@ export const bookPublicAppointment =
 
                             confirmationRequired:
                                 appointment.confirmationRequired,
+
+                            trackingUrl:
+                                appointmentTrackingUrl,
 
                             hospital: {
                                 _id:
