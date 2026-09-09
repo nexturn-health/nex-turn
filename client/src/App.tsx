@@ -49,12 +49,11 @@ const Home = lazy(
 const PatientBookAppointment = lazy(
     () => import("./pages/patient/PatientBookAppointment"),
 );
-
 const AppointmentStatus =
     lazy(
         () =>
             import(
-                "./pages/patient/PatientBookAppointment"
+                "./pages/patient/AppointmentStatus"
             ),
     );
 
@@ -128,6 +127,7 @@ function App() {
                         path="/appointment-status/:appointmentCode"
                         element={<AppointmentStatus />}
                     />
+
 
                     {/* ================================================= */}
                     {/* PUBLIC PATIENT TRACKING */}
