@@ -98,35 +98,35 @@ const WEEK_DAYS: {
     day: WeekDay;
     label: string;
 }[] = [
-    {
-        day: "MONDAY",
-        label: "Mon",
-    },
-    {
-        day: "TUESDAY",
-        label: "Tue",
-    },
-    {
-        day: "WEDNESDAY",
-        label: "Wed",
-    },
-    {
-        day: "THURSDAY",
-        label: "Thu",
-    },
-    {
-        day: "FRIDAY",
-        label: "Fri",
-    },
-    {
-        day: "SATURDAY",
-        label: "Sat",
-    },
-    {
-        day: "SUNDAY",
-        label: "Sun",
-    },
-];
+        {
+            day: "MONDAY",
+            label: "Mon",
+        },
+        {
+            day: "TUESDAY",
+            label: "Tue",
+        },
+        {
+            day: "WEDNESDAY",
+            label: "Wed",
+        },
+        {
+            day: "THURSDAY",
+            label: "Thu",
+        },
+        {
+            day: "FRIDAY",
+            label: "Fri",
+        },
+        {
+            day: "SATURDAY",
+            label: "Sat",
+        },
+        {
+            day: "SUNDAY",
+            label: "Sun",
+        },
+    ];
 
 const STATUS_OPTIONS = [
     "ALL",
@@ -535,7 +535,7 @@ const Appointments =
             selectedDoctorId,
             setSelectedDoctorId,
         ] =
-            useState("");
+            useState("ALL");
 
         const [
             selectedDate,
@@ -693,15 +693,25 @@ const Appointments =
 
         const selectedDoctor =
             useMemo(
-                () =>
-                    doctors.find(
-                        (
-                            doctor,
-                        ) =>
-                            doctor._id ===
-                            selectedDoctorId,
-                    ) ||
-                    null,
+                () => {
+                    if (
+                        !selectedDoctorId ||
+                        selectedDoctorId === "ALL"
+                    ) {
+                        return null;
+                    }
+
+                    return (
+                        doctors.find(
+                            (
+                                doctor,
+                            ) =>
+                                doctor._id ===
+                                selectedDoctorId,
+                        ) ||
+                        null
+                    );
+                },
                 [
                     doctors,
                     selectedDoctorId,
@@ -756,8 +766,14 @@ const Appointments =
                         setSelectedDoctorId(
                             (
                                 current,
-                            ) =>
-                                doctorList.some(
+                            ) => {
+                                if (
+                                    current === "ALL"
+                                ) {
+                                    return "ALL";
+                                }
+
+                                return doctorList.some(
                                     (
                                         doctor,
                                     ) =>
@@ -765,12 +781,12 @@ const Appointments =
                                         current,
                                 )
                                     ? current
-                                    : doctorList[0]?._id ||
-                                    "",
+                                    : "ALL";
+                            },
                         );
                     } catch (
-                        error:
-                            any
+                    error:
+                        any
                     ) {
                         console.error(
                             "Load appointment doctors error:",
@@ -799,6 +815,7 @@ const Appointments =
                 async () => {
                     if (
                         !selectedDoctorId ||
+                        selectedDoctorId === "ALL" ||
                         !selectedDate
                     ) {
                         setSlots([]);
@@ -825,8 +842,8 @@ const Appointments =
                             ),
                         );
                     } catch (
-                        error:
-                            any
+                    error:
+                        any
                     ) {
                         console.error(
                             "Load doctor slots error:",
@@ -869,8 +886,10 @@ const Appointments =
                                     selectedDate,
 
                                 doctorId:
-                                    selectedDoctorId ||
-                                    undefined,
+                                    selectedDoctorId &&
+                                        selectedDoctorId !== "ALL"
+                                        ? selectedDoctorId
+                                        : undefined,
 
                                 status:
                                     selectedStatus,
@@ -884,8 +903,8 @@ const Appointments =
                             ),
                         );
                     } catch (
-                        error:
-                            any
+                    error:
+                        any
                     ) {
                         console.error(
                             "Load appointments error:",
@@ -920,18 +939,35 @@ const Appointments =
 
         useEffect(
             () => {
-                if (
-                    selectedDoctorId
-                ) {
-                    loadSlots();
-                    loadAppointments();
-                }
+                void loadSlots();
+                void loadAppointments();
             },
             [
                 selectedDoctorId,
                 selectedDate,
                 selectedStatus,
                 loadSlots,
+                loadAppointments,
+            ],
+        );
+
+        useEffect(
+            () => {
+                const intervalId =
+                    window.setInterval(
+                        () => {
+                            void loadAppointments();
+                        },
+                        5000,
+                    );
+
+                return () => {
+                    window.clearInterval(
+                        intervalId,
+                    );
+                };
+            },
+            [
                 loadAppointments,
             ],
         );
@@ -990,7 +1026,7 @@ const Appointments =
 
                                                 slotType:
                                                     session.slotType ===
-                                                    "WALK_IN"
+                                                        "WALK_IN"
                                                         ? "WALK_IN"
                                                         : "APPOINTMENT",
                                             }),
@@ -1102,7 +1138,7 @@ const Appointments =
                                     item,
                                 ) =>
                                     item.day ===
-                                    day
+                                        day
                                         ? {
                                             ...item,
                                             ...changes,
@@ -1152,7 +1188,7 @@ const Appointments =
                                                     sessionIndex,
                                                 ) =>
                                                     sessionIndex ===
-                                                    index
+                                                        index
                                                         ? {
                                                             ...session,
                                                             ...changes,
@@ -1183,7 +1219,7 @@ const Appointments =
                                     item,
                                 ) =>
                                     item.day ===
-                                    day
+                                        day
                                         ? {
                                             ...item,
 
@@ -1226,7 +1262,7 @@ const Appointments =
                                     item,
                                 ) =>
                                     item.day ===
-                                    day
+                                        day
                                         ? {
                                             ...item,
 
@@ -1448,8 +1484,8 @@ const Appointments =
                     await loadDoctors();
                     await loadSlots();
                 } catch (
-                    error:
-                        any
+                error:
+                    any
                 ) {
                     console.error(
                         "Save schedule error:",
@@ -1510,8 +1546,8 @@ const Appointments =
                         ),
                     );
                 } catch (
-                    error:
-                        any
+                error:
+                    any
                 ) {
                     console.error(
                         "Patient search error:",
@@ -1632,8 +1668,8 @@ const Appointments =
                     await loadSlots();
                     await loadAppointments();
                 } catch (
-                    error:
-                        any
+                error:
+                    any
                 ) {
                     console.error(
                         "Book appointment error:",
@@ -1674,7 +1710,7 @@ const Appointments =
                     ) &&
                     !window.confirm(
                         type ===
-                        "cancel"
+                            "cancel"
                             ? "Cancel this appointment?"
                             : "Mark this appointment as no-show?",
                     )
@@ -1825,8 +1861,8 @@ const Appointments =
                     await loadSlots();
                     await loadAppointments();
                 } catch (
-                    error:
-                        any
+                error:
+                    any
                 ) {
                     console.error(
                         "Appointment action error:",
@@ -1973,6 +2009,10 @@ const Appointments =
                                 )
                             }
                         >
+                            <option value="ALL">
+                                All doctors · show all appointments
+                            </option>
+
                             {!doctors.length && (
                                 <option value="">
                                     No doctors found
@@ -2122,7 +2162,7 @@ const Appointments =
                         Loading doctors…
                     </div>
                 ) : view ===
-                  "appointments" ? (
+                    "appointments" ? (
                     <section className="am-panel">
                         <div className="am-panel-heading">
                             <div>
@@ -2332,22 +2372,22 @@ const Appointments =
                                                     ].includes(
                                                         status,
                                                     ) && (
-                                                        <button
-                                                            type="button"
-                                                            className="am-button am-secondary"
-                                                            disabled={
-                                                                actionDisabled
-                                                            }
-                                                            onClick={() =>
-                                                                runAppointmentAction(
-                                                                    appointmentId,
-                                                                    "confirm",
-                                                                )
-                                                            }
-                                                        >
-                                                            Confirm
-                                                        </button>
-                                                    )}
+                                                            <button
+                                                                type="button"
+                                                                className="am-button am-secondary"
+                                                                disabled={
+                                                                    actionDisabled
+                                                                }
+                                                                onClick={() =>
+                                                                    runAppointmentAction(
+                                                                        appointmentId,
+                                                                        "confirm",
+                                                                    )
+                                                                }
+                                                            >
+                                                                Confirm
+                                                            </button>
+                                                        )}
 
                                                     {[
                                                         "BOOKED",
@@ -2431,15 +2471,15 @@ const Appointments =
 
                                                     {status ===
                                                         "CHECKED_IN" && (
-                                                        <span className="am-working">
-                                                            <CheckCircle2
-                                                                size={
-                                                                    16
-                                                                }
-                                                            />
-                                                            Token Created
-                                                        </span>
-                                                    )}
+                                                            <span className="am-working">
+                                                                <CheckCircle2
+                                                                    size={
+                                                                        16
+                                                                    }
+                                                                />
+                                                                Token Created
+                                                            </span>
+                                                        )}
 
                                                     {[
                                                         "BOOKED",
@@ -2449,22 +2489,22 @@ const Appointments =
                                                     ].includes(
                                                         status,
                                                     ) && (
-                                                        <button
-                                                            type="button"
-                                                            className="am-button am-secondary"
-                                                            disabled={
-                                                                actionDisabled
-                                                            }
-                                                            onClick={() =>
-                                                                runAppointmentAction(
-                                                                    appointmentId,
-                                                                    "no-show",
-                                                                )
-                                                            }
-                                                        >
-                                                            No show
-                                                        </button>
-                                                    )}
+                                                            <button
+                                                                type="button"
+                                                                className="am-button am-secondary"
+                                                                disabled={
+                                                                    actionDisabled
+                                                                }
+                                                                onClick={() =>
+                                                                    runAppointmentAction(
+                                                                        appointmentId,
+                                                                        "no-show",
+                                                                    )
+                                                                }
+                                                            >
+                                                                No show
+                                                            </button>
+                                                        )}
 
                                                     {[
                                                         "BOOKED",
@@ -2475,38 +2515,38 @@ const Appointments =
                                                     ].includes(
                                                         status,
                                                     ) && (
-                                                        <button
-                                                            type="button"
-                                                            className="am-button am-danger"
-                                                            disabled={
-                                                                actionDisabled
-                                                            }
-                                                            onClick={() =>
-                                                                runAppointmentAction(
-                                                                    appointmentId,
-                                                                    "cancel",
-                                                                )
-                                                            }
-                                                        >
-                                                            Cancel
-                                                        </button>
-                                                    )}
+                                                            <button
+                                                                type="button"
+                                                                className="am-button am-danger"
+                                                                disabled={
+                                                                    actionDisabled
+                                                                }
+                                                                onClick={() =>
+                                                                    runAppointmentAction(
+                                                                        appointmentId,
+                                                                        "cancel",
+                                                                    )
+                                                                }
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                        )}
 
                                                     {actionState?.id ===
                                                         appointmentId && (
-                                                        <span
-                                                            role="status"
-                                                            className="am-working"
-                                                        >
-                                                            <Loader2
-                                                                size={
-                                                                    17
-                                                                }
-                                                                className="am-spin"
-                                                            />
-                                                            Updating…
-                                                        </span>
-                                                    )}
+                                                            <span
+                                                                role="status"
+                                                                className="am-working"
+                                                            >
+                                                                <Loader2
+                                                                    size={
+                                                                        17
+                                                                    }
+                                                                    className="am-spin"
+                                                                />
+                                                                Updating…
+                                                            </span>
+                                                        )}
                                                 </div>
                                             </article>
                                         );
@@ -2560,10 +2600,10 @@ const Appointments =
                                 Loading slots…
                             </div>
                         ) : !(
-                              showAllSlots
-                                  ? slots
-                                  : availableSlots
-                          ).length ? (
+                            showAllSlots
+                                ? slots
+                                : availableSlots
+                        ).length ? (
                             <div className="am-empty">
                                 <Clock3 size={30} />
 
@@ -2631,7 +2671,7 @@ const Appointments =
 
                                             {slot.status ===
                                                 "AVAILABLE" &&
-                                            slot.slotType ===
+                                                slot.slotType ===
                                                 "APPOINTMENT" ? (
                                                 <button
                                                     type="button"
@@ -2652,7 +2692,7 @@ const Appointments =
                                             ) : (
                                                 <span className="am-slot-note">
                                                     {slot.slotType ===
-                                                    "WALK_IN"
+                                                        "WALK_IN"
                                                         ? "Reserved for walk-ins"
                                                         : "Not available for booking"}
                                                 </span>
@@ -3309,69 +3349,68 @@ const Appointments =
 
                             {patients.length >
                                 0 && (
-                                <div className="max-h-56 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 p-2">
-                                    {patients.map(
-                                        (
-                                            patient,
-                                        ) => (
-                                            <button
-                                                key={
-                                                    patient._id
-                                                }
-                                                type="button"
-                                                onClick={() =>
-                                                    setSelectedPatient(
-                                                        patient,
-                                                    )
-                                                }
-                                                className={`flex w-full items-center justify-between rounded-xl p-3 text-left transition ${
-                                                    selectedPatient?._id ===
-                                                    patient._id
+                                    <div className="max-h-56 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 p-2">
+                                        {patients.map(
+                                            (
+                                                patient,
+                                            ) => (
+                                                <button
+                                                    key={
+                                                        patient._id
+                                                    }
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setSelectedPatient(
+                                                            patient,
+                                                        )
+                                                    }
+                                                    className={`flex w-full items-center justify-between rounded-xl p-3 text-left transition ${selectedPatient?._id ===
+                                                        patient._id
                                                         ? "bg-blue-50 ring-2 ring-blue-500"
                                                         : "hover:bg-slate-50"
-                                                }`}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                                                        <UserRound
-                                                            size={
-                                                                17
-                                                            }
-                                                        />
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                                                            <UserRound
+                                                                size={
+                                                                    17
+                                                                }
+                                                            />
+                                                        </div>
+
+                                                        <div>
+                                                            <p className="font-bold text-slate-900">
+                                                                {
+                                                                    patient.name
+                                                                }
+                                                            </p>
+
+                                                            <p className="text-xs text-slate-500">
+                                                                {
+                                                                    patient.phone
+                                                                }{" "}
+                                                                {patient.patientCode
+                                                                    ? `• ${patient.patientCode}`
+                                                                    : ""}
+                                                            </p>
+                                                        </div>
                                                     </div>
 
-                                                    <div>
-                                                        <p className="font-bold text-slate-900">
-                                                            {
-                                                                patient.name
-                                                            }
-                                                        </p>
-
-                                                        <p className="text-xs text-slate-500">
-                                                            {
-                                                                patient.phone
-                                                            }{" "}
-                                                            {patient.patientCode
-                                                                ? `• ${patient.patientCode}`
-                                                                : ""}
-                                                        </p>
-                                                    </div>
-                                                </div>
-
-                                                {selectedPatient?._id ===
-                                                    patient._id && (
-                                                    <CheckCircle2
-                                                        size={
-                                                            18
-                                                        }
-                                                        className="text-blue-600"
-                                                    />
-                                                )}
-                                            </button>
-                                        ),
-                                    )}
-                                </div>
-                            )}
+                                                    {selectedPatient?._id ===
+                                                        patient._id && (
+                                                            <CheckCircle2
+                                                                size={
+                                                                    18
+                                                                }
+                                                                className="text-blue-600"
+                                                            />
+                                                        )}
+                                                </button>
+                                            ),
+                                        )}
+                                    </div>
+                                )}
 
                             <div>
                                 <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
@@ -3504,9 +3543,9 @@ function FormField({
     children,
 }: {
     label:
-        string;
+    string;
     children:
-        ReactNode;
+    ReactNode;
 }) {
     return (
         <label className="am-field">
@@ -3526,13 +3565,13 @@ function Modal({
     onClose,
 }: {
     title:
-        string;
+    string;
     busy:
-        boolean;
+    boolean;
     children:
-        ReactNode;
+    ReactNode;
     onClose:
-        () => void;
+    () => void;
 }) {
     const headingId =
         useId();
@@ -3609,8 +3648,8 @@ function Modal({
 
                 const last =
                     elements[
-                        elements.length -
-                        1
+                    elements.length -
+                    1
                     ];
 
                 if (

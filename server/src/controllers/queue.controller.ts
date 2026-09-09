@@ -1223,7 +1223,7 @@ export const callNextPatient = async (
         },
         callUpdate,
         {
-          new: true,
+          returnDocument: "after",
 
           sort: {
             tokenNumber: 1,
@@ -1268,7 +1268,7 @@ export const callNextPatient = async (
           },
           callUpdate,
           {
-            new: true,
+             returnDocument: "after",
 
             sort: {
               tokenNumber: 1,

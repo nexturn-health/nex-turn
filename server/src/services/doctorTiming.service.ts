@@ -223,7 +223,7 @@ export const markDoctorOnlineAttendance = async ({
                 },
             },
             {
-                new: true,
+                returnDocument: "after",
                 upsert: true,
             },
         );

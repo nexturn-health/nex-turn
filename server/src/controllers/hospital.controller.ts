@@ -1034,7 +1034,7 @@ export const updateHospitalStatus =
             },
           },
           {
-            new: true,
+           returnDocument: "after",
             runValidators: true,
           },
         ).lean();

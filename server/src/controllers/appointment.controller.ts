@@ -2191,8 +2191,7 @@ export const rescheduleAppointment =
                         },
                     },
                     {
-                        new:
-                            true,
+                      returnDocument: "after",
                     },
                 );
 
