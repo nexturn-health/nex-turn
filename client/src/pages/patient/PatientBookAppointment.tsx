@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowLeft, Building2, CalendarDays, CheckCircle2, ChevronRight, HeartPulse, Loader2, MapPin, Search, UserRound } from "lucide-react";
 import {
-  bookPublicAppointment, getPublicDepartments, getPublicDistricts,
-  getPublicDoctors, getPublicHospitals, getPublicSlots, getPublicStates,
+  bookPublicAppointment, getPublicDepartments, 
+  getPublicDoctors, getPublicHospitals, getPublicSlots,
   type PublicBookingResult, type PublicDepartment, type PublicDoctor,
   type PublicHospital, type PublicSlot,
 } from "../../services/appointment/publicAppointment.api";
