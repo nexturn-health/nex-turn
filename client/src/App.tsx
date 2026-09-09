@@ -50,6 +50,14 @@ const PatientBookAppointment = lazy(
     () => import("./pages/patient/PatientBookAppointment"),
 );
 
+const AppointmentStatus =
+    lazy(
+        () =>
+            import(
+                "./pages/patient/PatientBookAppointment"
+            ),
+    );
+
 // ============================================================
 // PAGE LOADER
 // ============================================================
@@ -114,6 +122,11 @@ function App() {
                     <Route
                         path="/book-appointment"
                         element={<PatientBookAppointment />}
+                    />
+
+                    <Route
+                        path="/appointment-status/:appointmentCode"
+                        element={<AppointmentStatus />}
                     />
 
                     {/* ================================================= */}
