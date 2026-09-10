@@ -1,11 +1,46 @@
-import { AlertCircle, Bell, CalendarDays, CheckCircle2, Clock, Loader2, LockKeyhole, Phone, RefreshCw, Search, SkipForward, Stethoscope, Ticket, } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, } from "react";
-import { callNextPatient, completePatient, skipPatient, startServingPatient, takeDoctorBreak, resumeDoctorDuty, } from "../../services/queue.api";
-import { getDoctorQueue, type DoctorQueueItem, } from "../../services/doctor.api";
+import {
+    AlertCircle,
+    Bell,
+    CalendarDays,
+    CheckCircle2,
+    Clock,
+    Loader2,
+    LockKeyhole,
+    Phone,
+    RefreshCw,
+    Search,
+    SkipForward,
+    Stethoscope,
+    Ticket,
+} from "lucide-react";
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
+import {
+    callNextPatient,
+    callSelectedPatient,
+    completePatient,
+    resumeDoctorDuty,
+    skipPatient,
+    startServingPatient,
+    takeDoctorBreak,
+} from "../../services/queue.api";
+import {
+    getDoctorQueue,
+    type DoctorQueueItem,
+} from "../../services/doctor.api";
 import api from "../../services/api";
-import { useAuthStore, } from "../../store/authStore";
+import {
+    useAuthStore,
+} from "../../store/authStore";
 import StartConsultation from "./DoctorConsultation";
-import { socket } from "../../socket/socket";
+import {
+    socket,
+} from "../../socket/socket";
 /* ============================================================
    TYPES
 ============================================================ */
@@ -137,6 +172,54 @@ const getQueueScheduledEndTime = (queue?: DoctorQueueItem | null) => {
         appointment?.endTime ||
         null);
 };
+const DEFAULT_APPOINTMENT_WINDOW_MINUTES = 15;
+
+const getAppointmentStartMinutes = (queue?: DoctorQueueItem | null) => {
+    return timeToMinutes(getQueueScheduledStartTime(queue));
+};
+
+const getAppointmentEndMinutes = (queue?: DoctorQueueItem | null) => {
+    const startMinutes = getAppointmentStartMinutes(queue);
+    const explicitEndMinutes = timeToMinutes(getQueueScheduledEndTime(queue));
+
+    if (explicitEndMinutes !== null) {
+        return explicitEndMinutes;
+    }
+
+    if (startMinutes === null) {
+        return null;
+    }
+
+    return startMinutes + DEFAULT_APPOINTMENT_WINDOW_MINUTES;
+};
+
+const isMissedAppointment = (
+    queue: DoctorQueueItem,
+    nowMinutes: number,
+) => {
+    if (
+        !isAppointmentPatient(queue) ||
+        isEmergencyPatient(queue)
+    ) {
+        return false;
+    }
+
+    if (
+        queue.appointmentCallStatus === "MISSED"
+    ) {
+        return true;
+    }
+
+    const endMinutes =
+        getAppointmentEndMinutes(queue);
+
+    if (endMinutes === null) {
+        return false;
+    }
+
+    return nowMinutes >= endMinutes;
+};
+
 const getAppointmentDeltaMinutes = (queue: DoctorQueueItem, nowMinutes: number) => {
     const scheduledMinutes = timeToMinutes(getQueueScheduledStartTime(queue));
     if (scheduledMinutes === null) {
@@ -148,34 +231,55 @@ const isAppointmentDue = (queue: DoctorQueueItem, nowMinutes: number) => {
     if (isEmergencyPatient(queue)) {
         return true;
     }
+
     if (!isAppointmentPatient(queue)) {
         return true;
     }
-    const delta = getAppointmentDeltaMinutes(queue, nowMinutes);
-    if (delta === null) {
+
+    if (isMissedAppointment(queue, nowMinutes)) {
         return false;
     }
-    return delta <= 0;
+
+    const startMinutes = getAppointmentStartMinutes(queue);
+
+    if (startMinutes === null) {
+        return false;
+    }
+
+    return nowMinutes >= startMinutes;
 };
+
 const getAppointmentDueText = (queue: DoctorQueueItem, nowMinutes: number) => {
     if (isEmergencyPatient(queue)) {
         return "Emergency priority";
     }
+
     if (!isAppointmentPatient(queue)) {
         return "Walk-in token";
     }
+
     const scheduledTime = getQueueScheduledStartTime(queue);
-    const delta = getAppointmentDeltaMinutes(queue, nowMinutes);
-    if (delta === null) {
+    const scheduledEndTime = getQueueScheduledEndTime(queue);
+    const startMinutes = getAppointmentStartMinutes(queue);
+    const endMinutes = getAppointmentEndMinutes(queue);
+
+    if (startMinutes === null) {
         return "Appointment time not set";
     }
-    if (delta <= -1) {
-        return `Due since ${formatAppointmentTime(scheduledTime)} · delayed ${formatDuration(Math.abs(delta))}`;
+
+    if (isMissedAppointment(queue, nowMinutes)) {
+        return `Missed appointment · window ended ${formatAppointmentTime(scheduledEndTime || getQueueScheduledStartTime(queue))}`;
     }
-    if (delta === 0) {
-        return `Due now · ${formatAppointmentTime(scheduledTime)}`;
+
+    if (nowMinutes < startMinutes) {
+        return `Scheduled ${formatAppointmentTime(scheduledTime)} · starts in ${formatDuration(startMinutes - nowMinutes)}`;
     }
-    return `Scheduled ${formatAppointmentTime(scheduledTime)} · starts in ${formatDuration(delta)}`;
+
+    if (endMinutes !== null) {
+        return `Priority window active · until ${formatAppointmentTime(scheduledEndTime || `${Math.floor(endMinutes / 60)}:${String(endMinutes % 60).padStart(2, "0")}`)}`;
+    }
+
+    return `Due now · ${formatAppointmentTime(scheduledTime)}`;
 };
 const sortDoctorWaitingQueue = (first: DoctorQueueItem, second: DoctorQueueItem, nowMinutes: number) => {
     const rank = (queue: DoctorQueueItem) => {
@@ -189,6 +293,11 @@ const sortDoctorWaitingQueue = (first: DoctorQueueItem, second: DoctorQueueItem,
         if (!isAppointmentPatient(queue)) {
             return 2;
         }
+
+        if (isMissedAppointment(queue, nowMinutes)) {
+            return 4;
+        }
+
         return 3;
     };
     const firstRank = rank(first);
@@ -244,7 +353,18 @@ export default function DoctorQueue() {
     } | null>(null);
     const [completionRetry, setCompletionRetry,] = useState<string | null>(null);
     const [premiumNotice, setPremiumNotice,] = useState(false);
-    const [tab, setTab,] = useState<"waiting" | "upcoming" | "completed">("waiting");
+    const [
+        tab,
+        setTab,
+    ] =
+        useState<
+            | "waiting"
+            | "upcoming"
+            | "missed"
+            | "completed"
+        >(
+            "waiting",
+        );
     const [search, setSearch,] = useState("");
     const [nowMinutes, setNowMinutes,] = useState(getIndiaNowMinutes);
     const doctorId = useAuthStore((state) => state.user?.id);
@@ -337,10 +457,17 @@ export default function DoctorQueue() {
         socket.on("connect", handleConnect);
         socket.on("disconnect", handleDisconnect);
         socket.on("connect_error", handleDisconnect);
+        socket.on("queue:created", scheduleRefresh);
+        socket.on("queue:called", scheduleRefresh);
+        socket.on("queue:serving", scheduleRefresh);
+        socket.on("queue:completed", scheduleRefresh);
+        socket.on("queue:skipped", scheduleRefresh);
         socket.on("queue:updated", scheduleRefresh);
         socket.on("queue:status", scheduleRefresh);
+        socket.on("appointment:updated", scheduleRefresh);
         socket.on("user:status", handleDoctorStatus);
         socket.on("doctor:status", handleDoctorStatus);
+        socket.on("doctor:break-status", handleDoctorStatus);
 
         setSocketConnected(socket.connected);
         if (socket.connected) {
@@ -357,10 +484,17 @@ export default function DoctorQueue() {
             socket.off("connect", handleConnect);
             socket.off("disconnect", handleDisconnect);
             socket.off("connect_error", handleDisconnect);
+            socket.off("queue:created", scheduleRefresh);
+            socket.off("queue:called", scheduleRefresh);
+            socket.off("queue:serving", scheduleRefresh);
+            socket.off("queue:completed", scheduleRefresh);
+            socket.off("queue:skipped", scheduleRefresh);
             socket.off("queue:updated", scheduleRefresh);
             socket.off("queue:status", scheduleRefresh);
+            socket.off("appointment:updated", scheduleRefresh);
             socket.off("user:status", handleDoctorStatus);
             socket.off("doctor:status", handleDoctorStatus);
+            socket.off("doctor:break-status", handleDoctorStatus);
         };
     }, [hospitalId, doctorId, loadQueue]);
 
@@ -378,15 +512,47 @@ export default function DoctorQueue() {
     const currentPatient = getQueuePatient(current);
     const waiting = useMemo(() => queues
         .filter((queue) => queue.status ===
-        "WAITING")
+            "WAITING")
         .sort((first, second) => sortDoctorWaitingQueue(first, second, nowMinutes)), [
         queues,
         nowMinutes,
     ]);
-    const ready = waiting.filter((queue) => isAppointmentDue(queue, nowMinutes));
-    const upcoming = waiting.filter((queue) => !isAppointmentDue(queue, nowMinutes));
-    const completed = queues.filter((queue) => queue.status ===
-        "COMPLETED");
+    const missedAppointments =
+        waiting.filter(
+            (queue) =>
+                isMissedAppointment(
+                    queue,
+                    nowMinutes,
+                ),
+        );
+
+    const ready =
+        waiting.filter(
+            (queue) =>
+                !isMissedAppointment(
+                    queue,
+                    nowMinutes,
+                ) &&
+                isAppointmentDue(
+                    queue,
+                    nowMinutes,
+                ),
+        );
+
+    const upcoming =
+        waiting.filter(
+            (queue) =>
+                isAppointmentPatient(queue) &&
+                !isAppointmentDue(
+                    queue,
+                    nowMinutes,
+                ) &&
+                !isMissedAppointment(
+                    queue,
+                    nowMinutes,
+                ),
+        );
+    const completed = queues.filter((queue) => queue.status === "COMPLETED");
     const walkInWaiting = waiting.filter((queue) => !isAppointmentPatient(queue) &&
         !isEmergencyPatient(queue));
     const dueAppointments = ready.filter((queue) => isAppointmentPatient(queue) &&
@@ -402,6 +568,17 @@ export default function DoctorQueue() {
         !walkInWaiting.length &&
         Boolean(nextUpcomingAppointment);
     const activeDoctorAlert = useMemo(() => {
+        if (!current && missedAppointments.length) {
+            const firstMissed = missedAppointments[0];
+
+            return {
+                type: "missed",
+                title: "Missed appointment waiting",
+                message: `${firstMissed.tokenLabel} · ${getQueuePatient(firstMissed)?.name || "Patient"} missed the appointment window. It will not disturb walk-in queue.`,
+                meta: "Open Missed tab to call manually.",
+            };
+        }
+
         if (lateAppointments.length) {
             const firstLate = lateAppointments[0];
             return {
@@ -444,6 +621,7 @@ export default function DoctorQueue() {
         waiting.length,
         lateAppointments,
         dueAppointments,
+        missedAppointments,
         walkInEmptyUpcomingAppointment,
         nextUpcomingAppointment,
         nowMinutes,
@@ -452,7 +630,9 @@ export default function DoctorQueue() {
         ? ready
         : tab === "upcoming"
             ? upcoming
-            : completed;
+            : tab === "missed"
+                ? missedAppointments
+                : completed;
     const filtered = list.filter((queue) => {
         const person = getQueuePatient(queue);
         const searchText = search
@@ -526,6 +706,25 @@ export default function DoctorQueue() {
         });
     }
 
+    async function callMissedAppointment(queue: DoctorQueueItem) {
+        if (blocked || current || doctorBreak.isOnBreak) {
+            return;
+        }
+
+        const person = getQueuePatient(queue);
+        const confirmed = window.confirm(
+            `Call missed appointment ${queue.tokenLabel} ${person?.name ? `for ${person.name}` : ""}? This is a manual override.`,
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        await runAction("Call missed appointment", async () => {
+            await callSelectedPatient(queue._id);
+        });
+    }
+
     async function callNext() {
         if (blocked ||
             current ||
@@ -593,7 +792,7 @@ export default function DoctorQueue() {
         if (!current ||
             blocked ||
             current.status !==
-                "CALLED") {
+            "CALLED") {
             return;
         }
         const id = current._id;
@@ -612,7 +811,7 @@ export default function DoctorQueue() {
         if (!current ||
             blocked ||
             current.status !==
-                "SERVING" ||
+            "SERVING" ||
             isPremium) {
             return;
         }
@@ -692,11 +891,11 @@ export default function DoctorQueue() {
                             doctorBreak.isOnBreak ? <Stethoscope size={17} /> : <Clock size={17} />}
                         {doctorBreak.isOnBreak ? "Resume duty" : "Take a break"}
                     </button>
-                <button type="button" className="dqc-secondary" onClick={() => void loadQueue()}
-                    disabled={refreshing || Boolean(action) || Boolean(consultation)}>
-                    <RefreshCw size={16} className={refreshing ? "dqc-spin" : ""} />
-                    <span>Refresh</span>
-                </button>
+                    <button type="button" className="dqc-secondary" onClick={() => void loadQueue()}
+                        disabled={refreshing || Boolean(action) || Boolean(consultation)}>
+                        <RefreshCw size={16} className={refreshing ? "dqc-spin" : ""} />
+                        <span>Refresh</span>
+                    </button>
                 </div>
             </header>
 
@@ -777,6 +976,12 @@ export default function DoctorQueue() {
                                     <h3>{getQueuePatient(ready[0])?.name || "Patient"}</h3>
                                     <p>Next in queue · {getAppointmentDueText(ready[0], nowMinutes)}</p>
                                 </>
+                            ) : missedAppointments.length ? (
+                                <>
+                                    <span className="dqc-caption">Missed appointment waiting</span>
+                                    <h3>{missedAppointments.length} missed appointment{missedAppointments.length > 1 ? "s" : ""}</h3>
+                                    <p>These patients are not auto-called. Open the Missed tab and call manually when you decide.</p>
+                                </>
                             ) : nextUpcomingAppointment ? (
                                 <>
                                     <span className="dqc-caption">Next checked-in appointment</span>
@@ -804,25 +1009,25 @@ export default function DoctorQueue() {
                     {/* Show one useful notice; empty states are already explained above. */}
                     {!loading && !loadError && activeDoctorAlert && activeDoctorAlert.type !== "empty" &&
                         (activeDoctorAlert.type !== "upcoming" || Boolean(current)) && (
-                        <div className={`dqc-notice ${activeDoctorAlert.type === "late" ? "dqc-notice-late" : ""}`} role="status" aria-live="polite">
-                            <Bell size={17} />
-                            <div><strong>{activeDoctorAlert.title}</strong><p>{activeDoctorAlert.message}</p><small>{activeDoctorAlert.meta}</small></div>
-                        </div>
-                    )}
+                            <div className={`dqc-notice ${activeDoctorAlert.type === "late" ? "dqc-notice-late" : activeDoctorAlert.type === "missed" ? "dqc-notice-missed" : ""}`} role="status" aria-live="polite">
+                                <Bell size={17} />
+                                <div><strong>{activeDoctorAlert.title}</strong><p>{activeDoctorAlert.message}</p><small>{activeDoctorAlert.meta}</small></div>
+                            </div>
+                        )}
                     <div className="dqc-tabs" aria-label="Filter patients">
-                        {(["waiting", "upcoming", "completed"] as const).map((value) => (
+                        {(["waiting", "upcoming", "missed", "completed"] as const).map((value) => (
                             <button type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>
-                                {value === "waiting" ? "Waiting" : value === "upcoming" ? "Upcoming" : "Done"}
-                                <span>{value === "waiting" ? ready.length : value === "upcoming" ? upcoming.length : completed.length}</span>
+                                {value === "waiting" ? "Waiting" : value === "upcoming" ? "Upcoming" : value === "missed" ? "Missed" : "Done"}
+                                <span>{value === "waiting" ? ready.length : value === "upcoming" ? upcoming.length : value === "missed" ? missedAppointments.length : completed.length}</span>
                             </button>
                         ))}
                     </div>
                     <label className="dqc-search"><Search size={17} /><input
                         aria-label="Search patient, phone or token" placeholder="Search name, phone or token"
                         value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-                    <p className="dqc-list-note">{tab === "waiting" ? "Emergency → due appointment → walk-in" : tab === "upcoming" ? "Checked-in patients · available to call at their appointment time" : "Completed visits today"}</p>
+                    <p className="dqc-list-note">{tab === "waiting" ? "Emergency → due appointment within time window → walk-in" : tab === "upcoming" ? "Checked-in appointments waiting for scheduled time" : tab === "missed" ? "Appointment window ended. These patients are not auto-prioritized; call manually only when doctor decides." : "Completed visits today"}</p>
                     {!filtered.length ? (
-                        <div className="dqc-empty"><p>{search ? "No matching patients." : loading ? "Loading patients…" : tab === "completed" ? "No completed visits yet." : "No patients in this list."}</p></div>
+                        <div className="dqc-empty"><p>{search ? "No matching patients." : loading ? "Loading patients…" : tab === "completed" ? "No completed visits yet." : tab === "missed" ? "No missed appointments." : "No patients in this list."}</p></div>
                     ) : (
                         <div className="dqc-list">
                             {filtered.map((queue) => {
@@ -831,9 +1036,18 @@ export default function DoctorQueue() {
                                     <article className="dqc-row" key={queue._id}>
                                         <strong className="dqc-row-token">{queue.tokenLabel}</strong>
                                         <div className="dqc-row-person"><h3>{person?.name || "Patient"}</h3><p>{person?.phone || "No phone"}{person?.patientCode ? ` · ${person.patientCode}` : ""}</p>
-                                            {tab !== "completed" && isAppointmentPatient(queue) && <small className={isAppointmentDue(queue, nowMinutes) ? "dqc-due-text" : ""}>{getAppointmentDueText(queue, nowMinutes)}</small>}
+                                            {tab !== "completed" && isAppointmentPatient(queue) && <small className={isMissedAppointment(queue, nowMinutes) ? "dqc-missed-text" : isAppointmentDue(queue, nowMinutes) ? "dqc-due-text" : ""}>{getAppointmentDueText(queue, nowMinutes)}</small>}
                                         </div>
-                                        {tab === "completed" ? <CheckCircle2 size={17} className="dqc-done" aria-label="Completed" /> : <QueueBadge queue={queue} />}
+                                        {tab === "missed" ? (
+                                            <button
+                                                type="button"
+                                                className="dqc-call-small"
+                                                disabled={blocked || Boolean(current)}
+                                                onClick={() => void callMissedAppointment(queue)}
+                                            >
+                                                Call
+                                            </button>
+                                        ) : tab === "completed" ? <CheckCircle2 size={17} className="dqc-done" aria-label="Completed" /> : <QueueBadge queue={queue} />}
                                     </article>
                                 );
                             })}
@@ -931,6 +1145,11 @@ const styles = `
 .dqc-row p{font-size:12px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}
 .dqc-row small{display:block;font-size:12px;color:var(--muted);margin-top:4px}
 .dqc-row .dqc-due-text{color:#8c641f}
+.dqc-row .dqc-missed-text{color:#a33b2f;font-weight:600}
+.dqc-call-small{display:inline-flex;align-items:center;justify-content:center;min-height:34px;border-radius:7px;border:1px solid #ead6c0;background:#fff8ef;color:#865025;font-size:12px!important;font-weight:650!important;padding:6px 10px}
+.dqc-call-small:hover:not(:disabled){background:#fbe9d2}
+.dqc-notice-missed{background:#fff8ef}
+.dqc-notice-missed>svg,.dqc-notice-missed small{color:#865025}
 .dqc-done{color:var(--green);margin-top:2px}
 .dqc-empty{min-height:150px;padding:24px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;text-align:center;font-size:13px;color:var(--muted)}
 .dqc-error,.dqc-recovery{max-width:1200px;margin:0 auto 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px solid #ead6c0;background:#fff8ef;border-radius:10px;padding:12px 16px;color:#865025;font-size:13px}
