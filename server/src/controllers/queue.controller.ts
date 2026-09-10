@@ -66,69 +66,84 @@ const emitDoctorBreakStatus = async ({
   breakStartedAt?: Date | null;
   breakReason?: string | null;
 }) => {
-  const queueDate =
-    getIndiaQueueDate();
+  const queueDate = getIndiaQueueDate();
 
   const payload = {
+    doctorId: String(doctorId),
+    departmentId: String(departmentId),
+    isOnBreak,
+    breakStartedAt: breakStartedAt || null,
+    breakReason: breakReason || null,
+    message: isOnBreak
+      ? "Doctor is on break"
+      : "Doctor returned to serve",
+  };
+
+  /*
+   * 1. Notify doctor/admin dashboard room.
+   */
+  getIO()
+    .to(`hospital:${String(hospitalId)}`)
+    .emit("doctor:break-status", payload);
+
+  /*
+   * 2. Notify patient tracking pages.
+   *
+   * Important:
+   * Some WAITING queues may not have doctorId assigned yet.
+   * So include:
+   * - doctorId matching this doctor
+   * - doctorId null
+   * - doctorId missing
+   *
+   * This makes patient tracking update even before patient is called.
+   */
+  const activeQueues = await Queue.find({
+    hospitalId,
+    departmentId,
+    queueDate,
+    status: {
+      $in: ["WAITING", "CALLED", "SERVING"],
+    },
+    trackingToken: {
+      $exists: true,
+      $ne: null,
+    },
+    $or: [
+      {
+        doctorId,
+      },
+      {
+        doctorId: null,
+      },
+      {
+        doctorId: {
+          $exists: false,
+        },
+      },
+    ],
+  })
+    .select("_id trackingToken tokenLabel status doctorId")
+    .lean();
+
+  activeQueues.forEach((queue: any) => {
+    getIO()
+      .to(`queue:${queue.trackingToken}`)
+      .emit("queue:doctor-status", {
+        ...payload,
+        queueId: queue._id,
+        tokenLabel: queue.tokenLabel,
+        trackingToken: queue.trackingToken,
+      });
+  });
+
+  console.log("📡 Doctor break status emitted:", {
+    hospitalId,
     doctorId,
     departmentId,
     isOnBreak,
-    breakStartedAt:
-      breakStartedAt || null,
-    breakReason:
-      breakReason || null,
-    message:
-      isOnBreak
-        ? "Doctor is on break"
-        : "Doctor resumed duty",
-  };
-
-  getIO()
-    .to(`hospital:${hospitalId}`)
-    .emit(
-      "doctor:break-status",
-      payload,
-    );
-
-  const activeQueues =
-    await Queue.find({
-      hospitalId,
-      doctorId,
-      departmentId,
-      queueDate,
-      status: {
-        $in: [
-          "WAITING",
-          "CALLED",
-          "SERVING",
-        ],
-      },
-      trackingToken: {
-        $exists: true,
-        $ne: null,
-      },
-    })
-      .select(
-        "_id trackingToken tokenLabel status",
-      )
-      .lean();
-
-  activeQueues.forEach(
-    (queue: any) => {
-      getIO()
-        .to(`queue:${queue.trackingToken}`)
-        .emit(
-          "queue:doctor-status",
-          {
-            ...payload,
-            queueId:
-              queue._id,
-            tokenLabel:
-              queue.tokenLabel,
-          },
-        );
-    },
-  );
+    patientsNotified: activeQueues.length,
+  });
 };
 // ======================================================
 // CONSULTATION / OPD ESTIMATION HELPERS
@@ -1536,7 +1551,7 @@ export const callNextPatient = async (
     if (!nextPatient.calledNotificationSent) {
       const patient =
         nextPatient.patientId &&
-        typeof nextPatient.patientId === "object"
+          typeof nextPatient.patientId === "object"
           ? nextPatient.patientId as unknown as {
             name: string;
             phone?: string;
@@ -2208,7 +2223,7 @@ export const skipPatient =
     }
   };
 
-  export const takeDoctorBreak = async (
+export const takeDoctorBreak = async (
   req: Request,
   res: Response,
 ) => {
@@ -2323,7 +2338,7 @@ export const skipPatient =
 
     doctor.breakReason =
       typeof reason === "string" &&
-      reason.trim()
+        reason.trim()
         ? reason.trim()
         : "Break";
 
@@ -2347,14 +2362,25 @@ export const skipPatient =
     return res.status(200).json({
       success: true,
       message:
-        "Doctor is now on break",
+        "Doctor is on break",
       data: {
+        doctorId:
+          String(doctorId),
+
+        departmentId:
+          String(doctor.departmentId),
+
         isOnBreak:
           true,
+
         breakStartedAt:
           doctor.breakStartedAt,
+
         breakReason:
           doctor.breakReason,
+
+        lastResumedAt:
+          doctor.lastResumedAt || null,
       },
     });
   } catch (error) {
