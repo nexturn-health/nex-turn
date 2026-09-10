@@ -351,7 +351,7 @@ const emitAppointmentUpdate =
                 },
             );
         } catch (
-            socketError
+        socketError
         ) {
             console.error(
                 "APPOINTMENT SOCKET EMIT ERROR:",
@@ -379,18 +379,18 @@ export const getAppointmentDoctors =
 
             const departmentId =
                 typeof req.query.departmentId ===
-                "string"
+                    "string"
                     ? req.query.departmentId
                     : undefined;
 
             const filter:
                 any = {
-                    hospitalId,
-                    role:
-                        "DOCTOR",
-                    isActive:
-                        true,
-                };
+                hospitalId,
+                role:
+                    "DOCTOR",
+                isActive:
+                    true,
+            };
 
             if (
                 departmentId
@@ -432,11 +432,11 @@ export const getAppointmentDoctors =
                         (
                             schedule,
                         ) => [
-                            String(
-                                schedule.doctorId,
-                            ),
-                            schedule,
-                        ],
+                                String(
+                                    schedule.doctorId,
+                                ),
+                                schedule,
+                            ],
                     ),
                 );
 
@@ -466,7 +466,7 @@ export const getAppointmentDoctors =
                     ),
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "GET APPOINTMENT DOCTORS ERROR:",
@@ -556,7 +556,7 @@ export const searchAppointmentPatients =
                     patients,
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "PATIENT SEARCH ERROR:",
@@ -621,7 +621,7 @@ export const getDoctorSchedule =
                     schedule,
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "GET DOCTOR SCHEDULE ERROR:",
@@ -724,14 +724,14 @@ export const updateDoctorSchedule =
 
             const dayMap:
                 Record<number, string> = {
-                    0: "SUNDAY",
-                    1: "MONDAY",
-                    2: "TUESDAY",
-                    3: "WEDNESDAY",
-                    4: "THURSDAY",
-                    5: "FRIDAY",
-                    6: "SATURDAY",
-                };
+                0: "SUNDAY",
+                1: "MONDAY",
+                2: "TUESDAY",
+                3: "WEDNESDAY",
+                4: "THURSDAY",
+                5: "FRIDAY",
+                6: "SATURDAY",
+            };
 
             const normalizeDay =
                 (
@@ -756,9 +756,9 @@ export const updateDoctorSchedule =
 
                     if (
                         dayMap[
-                            Number(
-                                stringValue,
-                            )
+                        Number(
+                            stringValue,
+                        )
                         ]
                     ) {
                         return dayMap[
@@ -847,27 +847,77 @@ export const updateDoctorSchedule =
                     : confirmationRequired ??
                     false;
 
-            const finalHybridPattern =
-                Array.isArray(
-                    hybridPattern,
-                )
-                    ? hybridPattern.filter(
+            const hasOnlyAppointmentSessions =
+                normalizedWeeklyAvailability
+                    .filter(
                         (
-                            item:
-                                string,
+                            day:
+                                any,
                         ) =>
-                            [
-                                "APPOINTMENT",
-                                "WALK_IN",
-                            ].includes(
-                                item,
-                            ),
+                            day.isAvailable,
                     )
-                    : [
+                    .every(
+                        (
+                            day:
+                                any,
+                        ) =>
+                            Array.isArray(
+                                day.sessions,
+                            ) &&
+                            day.sessions.length > 0 &&
+                            day.sessions.every(
+                                (
+                                    session:
+                                        any,
+                                ) =>
+                                    session.slotType ===
+                                    "APPOINTMENT",
+                            ),
+                    );
+
+            const hasOnlyWalkInSessions =
+                normalizedWeeklyAvailability
+                    .filter(
+                        (
+                            day:
+                                any,
+                        ) =>
+                            day.isAvailable,
+                    )
+                    .every(
+                        (
+                            day:
+                                any,
+                        ) =>
+                            Array.isArray(
+                                day.sessions,
+                            ) &&
+                            day.sessions.length > 0 &&
+                            day.sessions.every(
+                                (
+                                    session:
+                                        any,
+                                ) =>
+                                    session.slotType ===
+                                    "WALK_IN",
+                            ),
+                    );
+
+            const finalHybridPattern =
+                finalConsultationMode ===
+                    "HYBRID"
+                    ? [
                         "APPOINTMENT",
                         "WALK_IN",
-                    ];
-
+                    ]
+                    : finalConsultationMode ===
+                        "OPD_ONLY"
+                        ? [
+                            "WALK_IN",
+                        ]
+                        : [
+                            "APPOINTMENT",
+                        ];
             const payload = {
                 hospitalId,
 
@@ -1005,7 +1055,7 @@ export const updateDoctorSchedule =
                     schedule,
             });
         } catch (
-            error: any
+        error: any
         ) {
             console.error(
                 "UPDATE DOCTOR SCHEDULE ERROR:",
@@ -1092,7 +1142,7 @@ export const getDoctorSlots =
                 },
             });
         } catch (
-            error: any
+        error: any
         ) {
             console.error(
                 "GET DOCTOR SLOTS ERROR:",
@@ -1234,7 +1284,7 @@ export const updateDoctorSlot =
                     slot,
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "UPDATE DOCTOR SLOT ERROR:",
@@ -1642,7 +1692,7 @@ export const createAppointment =
                         appointment,
                 });
             } catch (
-                error
+            error
             ) {
                 await DoctorSlot.updateOne(
                     {
@@ -1664,7 +1714,7 @@ export const createAppointment =
                 throw error;
             }
         } catch (
-            error
+        error
         ) {
             console.error(
                 "CREATE APPOINTMENT ERROR:",
@@ -1708,8 +1758,8 @@ export const getAppointments =
 
             const filter:
                 any = {
-                    hospitalId,
-                };
+                hospitalId,
+            };
 
             if (
                 typeof date ===
@@ -1830,7 +1880,7 @@ export const getAppointments =
                     appointments,
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "GET APPOINTMENTS ERROR:",
@@ -1962,7 +2012,7 @@ export const confirmAppointment =
                     appointment,
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "CONFIRM APPOINTMENT ERROR:",
@@ -2100,7 +2150,7 @@ export const rejectAppointment =
                     "Appointment rejected",
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "REJECT APPOINTMENT ERROR:",
@@ -2241,7 +2291,7 @@ export const cancelAppointment =
                     "Appointment cancelled",
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "CANCEL APPOINTMENT ERROR:",
@@ -2497,7 +2547,7 @@ export const rescheduleAppointment =
                     appointment,
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "RESCHEDULE APPOINTMENT ERROR:",
@@ -2682,7 +2732,7 @@ export const markAppointmentNoShow =
                     "Appointment marked as no-show",
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "MARK APPOINTMENT NO SHOW ERROR:",
@@ -2846,7 +2896,7 @@ export const markAppointmentArrived =
                     appointment,
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "MARK APPOINTMENT ARRIVED ERROR:",
@@ -3088,7 +3138,7 @@ export const collectAppointmentPayment =
                     appointment,
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "COLLECT APPOINTMENT PAYMENT ERROR:",
@@ -3480,7 +3530,7 @@ export const checkInAppointment =
                     queueDate,
                 });
             } catch (
-                estimateError
+            estimateError
             ) {
                 console.error(
                     "Appointment queue estimate recalculation failed:",
@@ -3504,7 +3554,7 @@ export const checkInAppointment =
                 },
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "APPOINTMENT CHECK-IN ERROR:",
@@ -3519,6 +3569,284 @@ export const checkInAppointment =
             });
         }
     };
+
+
+/* ============================================================
+BACKEND FIX: CLOSE SAME-DAY PAST APPOINTMENT SLOTS
+Add this in BOTH:
+1) server/src/controllers/appointment.controller.ts
+2) server/src/controllers/publicAppointment.controller.ts
+
+Then call assertAppointmentSlotNotPassed(...) before creating/locking appointment.
+============================================================ */
+
+const getIndiaTodayAndMinutes =
+    () => {
+        const parts =
+            new Intl.DateTimeFormat(
+                "en-GB",
+                {
+                    timeZone:
+                        "Asia/Kolkata",
+                    year:
+                        "numeric",
+                    month:
+                        "2-digit",
+                    day:
+                        "2-digit",
+                    hour:
+                        "2-digit",
+                    minute:
+                        "2-digit",
+                    hour12:
+                        false,
+                },
+            ).formatToParts(
+                new Date(),
+            );
+
+        const getPart =
+            (
+                type:
+                    string,
+            ) =>
+                parts.find(
+                    (
+                        part,
+                    ) =>
+                        part.type ===
+                        type,
+                )?.value || "";
+
+        const hour =
+            Number(
+                getPart(
+                    "hour",
+                ) || "0",
+            );
+
+        const minute =
+            Number(
+                getPart(
+                    "minute",
+                ) || "0",
+            );
+
+        return {
+            date:
+                `${getPart("year")}-${getPart("month")}-${getPart("day")}`,
+
+            minutes:
+                hour * 60 +
+                minute,
+        };
+    };
+
+const timeToMinutes =
+    (
+        value?: string | null,
+    ) => {
+        if (
+            !value
+        ) {
+            return null;
+        }
+
+        const match =
+            String(
+                value,
+            ).match(
+                /^(\d{1,2}):(\d{2})/,
+            );
+
+        if (
+            !match
+        ) {
+            return null;
+        }
+
+        const hours =
+            Number(
+                match[1],
+            );
+
+        const minutes =
+            Number(
+                match[2],
+            );
+
+        if (
+            !Number.isFinite(
+                hours,
+            ) ||
+            !Number.isFinite(
+                minutes,
+            ) ||
+            hours > 23 ||
+            minutes > 59
+        ) {
+            return null;
+        }
+
+        return hours * 60 +
+            minutes;
+    };
+
+const normalizeAppointmentDate =
+    (
+        value:
+            unknown,
+    ) => {
+        if (
+            value instanceof Date
+        ) {
+            return new Intl.DateTimeFormat(
+                "en-CA",
+                {
+                    timeZone:
+                        "Asia/Kolkata",
+                },
+            ).format(
+                value,
+            );
+        }
+
+        return String(
+            value || "",
+        ).slice(
+            0,
+            10,
+        );
+    };
+
+const isAppointmentSlotPassed =
+    (
+        appointmentDate:
+            unknown,
+        startTime:
+            string,
+    ) => {
+        const selectedDate =
+            normalizeAppointmentDate(
+                appointmentDate,
+            );
+
+        const now =
+            getIndiaTodayAndMinutes();
+
+        if (
+            !selectedDate ||
+            selectedDate < now.date
+        ) {
+            return true;
+        }
+
+        if (
+            selectedDate > now.date
+        ) {
+            return false;
+        }
+
+        const slotStartMinutes =
+            timeToMinutes(
+                startTime,
+            );
+
+        if (
+            slotStartMinutes ===
+            null
+        ) {
+            return true;
+        }
+
+        /*
+         * Same-day rule:
+         * 11:00 slot closes at 11:00.
+         * It must close even if it was never booked.
+         */
+        return slotStartMinutes <=
+            now.minutes;
+    };
+
+const assertAppointmentSlotNotPassed =
+    (
+        appointmentDate:
+            unknown,
+        startTime:
+            string,
+    ) => {
+        if (
+            isAppointmentSlotPassed(
+                appointmentDate,
+                startTime,
+            )
+        ) {
+            return {
+                success:
+                    false,
+
+                message:
+                    "This appointment time has already passed. Please select another available slot.",
+
+                code:
+                    "APPOINTMENT_SLOT_TIME_PASSED",
+            };
+        }
+
+        return null;
+    };
+
+/* ============================================================
+   INSERT INSIDE ADMIN createAppointment BEFORE SLOT LOCK / CREATE
+============================================================ */
+
+// Example:
+// const selectedSlot = await DoctorSlot.findById(slotId);
+// const passedSlotError = assertAppointmentSlotNotPassed(
+//     selectedSlot.slotDate || appointmentDate,
+//     selectedSlot.startTime,
+// );
+//
+// if (passedSlotError) {
+//     return res.status(409).json(passedSlotError);
+// }
+
+/* ============================================================
+   INSERT INSIDE PUBLIC bookPublicAppointment BEFORE DoctorSlot.findOneAndUpdate
+============================================================ */
+
+// Example:
+// const passedSlotError = assertAppointmentSlotNotPassed(
+//     appointmentDate,
+//     requestedStartTime,
+// );
+//
+// if (passedSlotError) {
+//     return res.status(409).json(passedSlotError);
+// }
+//
+// Then continue with DoctorSlot.findOneAndUpdate(...)
+
+/* ============================================================
+   UPDATE SLOT LIST RESPONSE TOO
+   Wherever you map/get DoctorSlot response, return:
+============================================================ */
+
+// const isTimePassed = isAppointmentSlotPassed(slot.slotDate || selectedDate, slot.startTime);
+//
+// return {
+//     ...slotObject,
+//     status:
+//         isTimePassed && slot.status === "AVAILABLE"
+//             ? "TIME_PASSED"
+//             : slot.status,
+//     isTimePassed,
+//     canBook:
+//         slot.status === "AVAILABLE" &&
+//         slot.slotType === "APPOINTMENT" &&
+//         !isTimePassed,
+// };
+
 
 /* ============================================================
    DEFAULT EXPORT
@@ -3546,6 +3874,7 @@ const appointmentController = {
     markAppointmentArrived,
     collectAppointmentPayment,
     checkInAppointment,
+    getIndiaTodayAndMinutes
 };
 
 export default appointmentController;

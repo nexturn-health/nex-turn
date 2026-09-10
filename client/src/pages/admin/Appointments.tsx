@@ -951,44 +951,44 @@ const Appointments =
                 loadAppointments,
             ],
         );
-useEffect(
-    () => {
-        const handleAppointmentCreated =
+        useEffect(
             () => {
-                void loadAppointments();
-            };
+                const handleAppointmentCreated =
+                    () => {
+                        void loadAppointments();
+                    };
 
-        const handleAppointmentUpdated =
-            () => {
-                void loadAppointments();
-            };
+                const handleAppointmentUpdated =
+                    () => {
+                        void loadAppointments();
+                    };
 
-        socket.on(
-            "appointment:created",
-            handleAppointmentCreated,
+                socket.on(
+                    "appointment:created",
+                    handleAppointmentCreated,
+                );
+
+                socket.on(
+                    "appointment:updated",
+                    handleAppointmentUpdated,
+                );
+
+                return () => {
+                    socket.off(
+                        "appointment:created",
+                        handleAppointmentCreated,
+                    );
+
+                    socket.off(
+                        "appointment:updated",
+                        handleAppointmentUpdated,
+                    );
+                };
+            },
+            [
+                loadAppointments,
+            ],
         );
-
-        socket.on(
-            "appointment:updated",
-            handleAppointmentUpdated,
-        );
-
-        return () => {
-            socket.off(
-                "appointment:created",
-                handleAppointmentCreated,
-            );
-
-            socket.off(
-                "appointment:updated",
-                handleAppointmentUpdated,
-            );
-        };
-    },
-    [
-        loadAppointments,
-    ],
-);
 
         /* ========================================================
            SCHEDULE MODAL
@@ -1300,7 +1300,282 @@ useEffect(
                 );
             };
 
-        const handleSaveSchedule =
+        const normalizeScheduleFormByMode =
+            (
+                form:
+                    ScheduleForm,
+            ): ScheduleForm => {
+                if (
+                    form.consultationMode ===
+                    "APPOINTMENT_ONLY" ||
+                    form.consultationMode ===
+                    "ON_CALL_APPOINTMENT"
+                ) {
+                    return {
+                        ...form,
+
+                        appointmentEnabled:
+                            true,
+
+                        confirmationRequired:
+                            form.consultationMode ===
+                                "ON_CALL_APPOINTMENT"
+                                ? true
+                                : form.confirmationRequired,
+
+                        hybridPattern:
+                            [
+                                "APPOINTMENT",
+                            ] as HybridPattern[],
+
+                        weeklyAvailability:
+                            form.weeklyAvailability.map(
+                                (
+                                    day,
+                                ) => ({
+                                    ...day,
+
+                                    sessions:
+                                        day.sessions.map(
+                                            (
+                                                session,
+                                            ) => ({
+                                                ...session,
+
+                                                slotType:
+                                                    "APPOINTMENT",
+                                            }),
+                                        ),
+                                }),
+                            ),
+                    };
+                }
+
+                if (
+                    form.consultationMode ===
+                    "OPD_ONLY"
+                ) {
+                    return {
+                        ...form,
+
+                        appointmentEnabled:
+                            false,
+
+                        confirmationRequired:
+                            false,
+
+                        hybridPattern:
+                            [
+                                "WALK_IN",
+                            ] as HybridPattern[],
+
+                        weeklyAvailability:
+                            form.weeklyAvailability.map(
+                                (
+                                    day,
+                                ) => ({
+                                    ...day,
+
+                                    sessions:
+                                        day.sessions.map(
+                                            (
+                                                session,
+                                            ) => ({
+                                                ...session,
+
+                                                slotType:
+                                                    "WALK_IN",
+                                            }),
+                                        ),
+                                }),
+                            ),
+                    };
+                }
+
+                return {
+                    ...form,
+
+                    appointmentEnabled:
+                        true,
+
+                    hybridPattern:
+                        form.hybridPattern?.length
+                            ? form.hybridPattern
+                            : [
+                                "APPOINTMENT",
+                                "WALK_IN",
+                            ] as HybridPattern[],
+                };
+            };
+        const handleConsultationModeChange =
+            (
+                mode:
+                    ConsultationMode,
+            ) => {
+                /*
+                 * IMPORTANT:
+                 * Do not auto-detect consultation mode from sessions.
+                 * The dropdown value is the final source of truth.
+                 */
+                setScheduleForm(
+                    (
+                        previous,
+                    ) => {
+                        if (
+                            mode ===
+                            "HYBRID"
+                        ) {
+                            return {
+                                ...previous,
+
+                                consultationMode:
+                                    "HYBRID",
+
+                                appointmentEnabled:
+                                    true,
+
+                                confirmationRequired:
+                                    false,
+
+                                hybridPattern:
+                                    [
+                                        "APPOINTMENT",
+                                        "WALK_IN",
+                                    ] as HybridPattern[],
+                            };
+                        }
+
+                        if (
+                            mode ===
+                            "APPOINTMENT_ONLY"
+                        ) {
+                            return {
+                                ...previous,
+
+                                consultationMode:
+                                    "APPOINTMENT_ONLY",
+
+                                appointmentEnabled:
+                                    true,
+
+                                confirmationRequired:
+                                    false,
+
+                                hybridPattern:
+                                    [
+                                        "APPOINTMENT",
+                                    ] as HybridPattern[],
+
+                                weeklyAvailability:
+                                    previous.weeklyAvailability.map(
+                                        (
+                                            day,
+                                        ) => ({
+                                            ...day,
+
+                                            sessions:
+                                                day.sessions.map(
+                                                    (
+                                                        session,
+                                                    ) => ({
+                                                        ...session,
+
+                                                        slotType:
+                                                            "APPOINTMENT",
+                                                    }),
+                                                ),
+                                        }),
+                                    ),
+                            };
+                        }
+
+                        if (
+                            mode ===
+                            "ON_CALL_APPOINTMENT"
+                        ) {
+                            return {
+                                ...previous,
+
+                                consultationMode:
+                                    "ON_CALL_APPOINTMENT",
+
+                                appointmentEnabled:
+                                    true,
+
+                                confirmationRequired:
+                                    true,
+
+                                hybridPattern:
+                                    [
+                                        "APPOINTMENT",
+                                    ] as HybridPattern[],
+
+                                weeklyAvailability:
+                                    previous.weeklyAvailability.map(
+                                        (
+                                            day,
+                                        ) => ({
+                                            ...day,
+
+                                            sessions:
+                                                day.sessions.map(
+                                                    (
+                                                        session,
+                                                    ) => ({
+                                                        ...session,
+
+                                                        slotType:
+                                                            "APPOINTMENT",
+                                                    }),
+                                                ),
+                                        }),
+                                    ),
+                            };
+                        }
+
+                        return {
+                            ...previous,
+
+                            consultationMode:
+                                "OPD_ONLY",
+
+                            appointmentEnabled:
+                                false,
+
+                            confirmationRequired:
+                                false,
+
+                            hybridPattern:
+                                [
+                                    "WALK_IN",
+                                ] as HybridPattern[],
+
+                            weeklyAvailability:
+                                previous.weeklyAvailability.map(
+                                    (
+                                        day,
+                                    ) => ({
+                                        ...day,
+
+                                        sessions:
+                                            day.sessions.map(
+                                                (
+                                                    session,
+                                                ) => ({
+                                                    ...session,
+
+                                                    slotType:
+                                                        "WALK_IN",
+                                                }),
+                                            ),
+                                    }),
+                                ),
+                        };
+                    },
+                );
+            };
+
+const handleSaveSchedule =
             async () => {
                 if (
                     !selectedDoctor
@@ -1308,8 +1583,13 @@ useEffect(
                     return;
                 }
 
+                const finalScheduleForm =
+                    normalizeScheduleFormByMode(
+                        scheduleForm,
+                    );
+
                 for (
-                    const day of scheduleForm.weeklyAvailability.filter(
+                    const day of finalScheduleForm.weeklyAvailability.filter(
                         (
                             item,
                         ) =>
@@ -1361,9 +1641,9 @@ useEffect(
 
                 if (
                     !Number.isFinite(
-                        scheduleForm.slotDurationMinutes,
+                        finalScheduleForm.slotDurationMinutes,
                     ) ||
-                    scheduleForm.slotDurationMinutes <
+                    finalScheduleForm.slotDurationMinutes <
                     5
                 ) {
                     setError(
@@ -1374,7 +1654,7 @@ useEffect(
                 }
 
                 const activeDays =
-                    scheduleForm.weeklyAvailability
+                    finalScheduleForm.weeklyAvailability
                         .filter(
                             (
                                 item,
@@ -1433,21 +1713,50 @@ useEffect(
                     const selectedDoctorAny:
                         any =
                         selectedDoctor;
+                    const finalMode =
+                        finalScheduleForm.consultationMode;
 
-                    const payload:
+                    const finalHybridPattern:
+                        HybridPattern[] =
+                        finalMode === "HYBRID"
+                            ? (
+                                finalScheduleForm.hybridPattern?.length
+                                    ? finalScheduleForm.hybridPattern
+                                    : [
+                                        "APPOINTMENT",
+                                        "WALK_IN",
+                                    ] as HybridPattern[]
+                            ).filter(
+                                (
+                                    item,
+                                ): item is HybridPattern =>
+                                    item === "APPOINTMENT" ||
+                                    item === "WALK_IN",
+                            )
+                            : finalMode === "OPD_ONLY"
+                                ? [
+                                    "WALK_IN",
+                                ] as HybridPattern[]
+                                : [
+                                    "APPOINTMENT",
+                                ] as HybridPattern[];
+
+const payload:
                         UpdateDoctorSchedulePayload = {
                         consultationMode:
-                            scheduleForm.consultationMode,
+                            finalMode,
 
                         appointmentEnabled:
-                            scheduleForm.appointmentEnabled,
+                            finalMode !== "OPD_ONLY",
 
                         confirmationRequired:
-                            scheduleForm.confirmationRequired,
+                            finalMode === "ON_CALL_APPOINTMENT"
+                                ? true
+                                : finalScheduleForm.confirmationRequired,
 
                         slotDurationMinutes:
                             Number(
-                                scheduleForm.slotDurationMinutes,
+                                finalScheduleForm.slotDurationMinutes,
                             ),
 
                         weeklyAvailability:
@@ -1459,31 +1768,34 @@ useEffect(
 
                         maxAppointmentsPerDay:
                             Number(
-                                scheduleForm.maxAppointmentsPerDay,
+                                finalScheduleForm.maxAppointmentsPerDay,
                             ),
 
                         maxWalkInsPerDay:
                             Number(
-                                scheduleForm.maxWalkInsPerDay,
+                                finalScheduleForm.maxWalkInsPerDay,
                             ),
 
                         emergencyBufferPerDay:
-                            Number(
-                                scheduleForm.emergencyBufferPerDay,
-                            ),
+                            finalMode === "APPOINTMENT_ONLY" ||
+                            finalMode === "ON_CALL_APPOINTMENT"
+                                ? 0
+                                : Number(
+                                    finalScheduleForm.emergencyBufferPerDay,
+                                ),
 
                         bookingWindowDays:
                             Number(
-                                scheduleForm.bookingWindowDays,
+                                finalScheduleForm.bookingWindowDays,
                             ),
 
                         gracePeriodMinutes:
                             Number(
-                                scheduleForm.gracePeriodMinutes,
+                                finalScheduleForm.gracePeriodMinutes,
                             ),
 
                         hybridPattern:
-                            scheduleForm.hybridPattern,
+                            finalHybridPattern,
                     };
 
                     await updateDoctorSchedule(
@@ -2776,18 +3088,22 @@ useEffect(
                                         }
                                         onChange={(
                                             event,
-                                        ) =>
+                                        ) => {
+                                            const mode =
+                                                event.target.value as ConsultationMode;
+
                                             setScheduleForm(
                                                 (
                                                     previous,
-                                                ) => ({
-                                                    ...previous,
+                                                ) =>
+                                                    normalizeScheduleFormByMode({
+                                                        ...previous,
 
-                                                    consultationMode:
-                                                        event.target.value as ConsultationMode,
-                                                }),
-                                            )
-                                        }
+                                                        consultationMode:
+                                                            mode,
+                                                    }),
+                                            );
+                                        }}
                                         className="form-input"
                                     >
                                         <option value="HYBRID">

@@ -236,19 +236,17 @@ export const generateDoctorSlots =
         date:
             string,
     ) => {
-
         const schedule =
-            await DoctorSchedule.findOne(
-                {
-                    hospitalId,
-                    doctorId,
-                    isActive:
-                        true,
-                },
-            );
+            await DoctorSchedule.findOne({
+                hospitalId,
+                doctorId,
+                isActive:
+                    true,
+            });
 
-        if (!schedule) {
-
+        if (
+            !schedule
+        ) {
             throw new Error(
                 "Doctor schedule not configured",
             );
@@ -267,16 +265,30 @@ export const generateDoctorSlots =
             sessions.length ===
             0
         ) {
-
             return {
                 schedule,
-                slots: [],
+                slots:
+                    [],
             };
         }
 
         const duration =
-            schedule
-                .slotDurationMinutes;
+            Number(
+                schedule.slotDurationMinutes ||
+                15,
+            );
+
+        const maxAppointmentsPerDay =
+            Number(
+                schedule.maxAppointmentsPerDay ||
+                999999,
+            );
+
+        const maxWalkInsPerDay =
+            Number(
+                schedule.maxWalkInsPerDay ||
+                999999,
+            );
 
         const candidates: Array<{
             startTime: string;
@@ -284,8 +296,8 @@ export const generateDoctorSlots =
             slotType:
                 DoctorSlotType;
             status:
-                "AVAILABLE" |
-                "BLOCKED";
+                | "AVAILABLE"
+                | "BLOCKED";
             blockReason?: string;
         }> = [];
 
@@ -298,11 +310,81 @@ export const generateDoctorSlots =
         let walkInCount =
             0;
 
+const getSlotType =
+    (): DoctorSlotType => {
+        /*
+         * FINAL SLOT RULE:
+         *
+         * APPOINTMENT_ONLY    => every slot appointment
+         * ON_CALL_APPOINTMENT => every slot appointment
+         * OPD_ONLY            => every slot walk-in
+         * HYBRID              => use APPOINTMENT + WALK_IN pattern
+         */
+
+        if (
+            schedule.consultationMode ===
+            "OPD_ONLY"
+        ) {
+            return "WALK_IN";
+        }
+
+        if (
+            schedule.consultationMode ===
+                "APPOINTMENT_ONLY" ||
+            schedule.consultationMode ===
+                "ON_CALL_APPOINTMENT"
+        ) {
+            return "APPOINTMENT";
+        }
+
+        /*
+         * HYBRID mode:
+         * Do not check session.slotType here.
+         * HYBRID must alternate by pattern.
+         */
+
+        const pattern:
+            DoctorSlotType[] =
+            Array.isArray(
+                schedule.hybridPattern,
+            ) &&
+            schedule.hybridPattern.length
+                ? schedule.hybridPattern.filter(
+                    (
+                        item:
+                            string,
+                    ): item is DoctorSlotType =>
+                        item === "APPOINTMENT" ||
+                        item === "WALK_IN",
+                )
+                : [
+                    "APPOINTMENT",
+                    "WALK_IN",
+                ];
+
+        const safePattern =
+            pattern.length
+                ? pattern
+                : [
+                    "APPOINTMENT",
+                    "WALK_IN",
+                ] as DoctorSlotType[];
+
+        const selectedType =
+            safePattern[
+                patternIndex %
+                safePattern.length
+            ];
+
+        patternIndex++;
+
+        return selectedType;
+    };
+
         for (
             const session
             of sessions
         ) {
-
             let current =
                 timeToMinutes(
                     session.startTime,
@@ -318,77 +400,72 @@ export const generateDoctorSlots =
                     duration <=
                 end
             ) {
-
                 const slotEnd =
                     current +
                     duration;
 
-                let slotType:
-                    DoctorSlotType;
+                const originalSlotType =
+                    getSlotType();
+
+                let slotType =
+                    originalSlotType;
+
+                let status:
+                    | "AVAILABLE"
+                    | "BLOCKED" =
+                    "AVAILABLE";
+
+                let blockReason:
+                    string | undefined =
+                    undefined;
+
+                const blocked =
+                    isBlocked(
+                        current,
+                        slotEnd,
+                        blockedPeriods,
+                    );
 
                 if (
-                    schedule
-                        .consultationMode ===
-                    "OPD_ONLY"
+                    blocked
                 ) {
+                    status =
+                        "BLOCKED";
 
-                    slotType =
-                        "WALK_IN";
+                    blockReason =
+                        blocked.reason ||
+                        "Doctor unavailable";
+                }
 
-                } else if (
-                    schedule
-                        .consultationMode ===
-                        "APPOINTMENT_ONLY" ||
-                    schedule
-                        .consultationMode ===
-                        "ON_CALL_APPOINTMENT"
+                /*
+                 * Do NOT convert appointment session into walk-in.
+                 * If daily appointment limit is reached, block extra appointment slots.
+                 */
+
+                if (
+                    slotType ===
+                        "APPOINTMENT" &&
+                    appointmentCount >=
+                        maxAppointmentsPerDay
                 ) {
+                    status =
+                        "BLOCKED";
 
-                    slotType =
-                        "APPOINTMENT";
+                    blockReason =
+                        "Daily appointment limit reached";
+                }
 
-                } else {
+                if (
+                    slotType ===
+                        "WALK_IN" &&
+                    walkInCount >=
+                        maxWalkInsPerDay
+                ) {
+                    status =
+                        "BLOCKED";
 
-                    const pattern =
-                        schedule
-                            .hybridPattern
-                            ?.length
-                            ? schedule
-                                .hybridPattern
-                            : [
-                                "APPOINTMENT",
-                                "WALK_IN",
-                            ];
-
-                    slotType =
-                        pattern[
-                            patternIndex %
-                            pattern.length
-                        ] as DoctorSlotType;
-
-                    patternIndex++;
-
-                    if (
-                        slotType ===
-                            "APPOINTMENT" &&
-                        appointmentCount >=
-                            schedule
-                                .maxAppointmentsPerDay
-                    ) {
-                        slotType =
-                            "WALK_IN";
-                    }
-
-                    if (
-                        slotType ===
-                            "WALK_IN" &&
-                        walkInCount >=
-                            schedule
-                                .maxWalkInsPerDay
-                    ) {
-                        slotType =
-                            "APPOINTMENT";
-                    }
+                    blockReason =
+                        "Daily walk-in limit reached";
                 }
 
                 if (
@@ -405,13 +482,6 @@ export const generateDoctorSlots =
                     walkInCount++;
                 }
 
-                const blocked =
-                    isBlocked(
-                        current,
-                        slotEnd,
-                        blockedPeriods,
-                    );
-
                 candidates.push({
                     startTime:
                         minutesToTime(
@@ -425,14 +495,9 @@ export const generateDoctorSlots =
 
                     slotType,
 
-                    status:
-                        blocked
-                            ? "BLOCKED"
-                            : "AVAILABLE",
+                    status,
 
-                    blockReason:
-                        blocked
-                            ?.reason,
+                    blockReason,
                 });
 
                 current =
@@ -441,12 +506,26 @@ export const generateDoctorSlots =
         }
 
         /* ====================================================
-           RESERVE BUFFER SLOTS
+           RESERVE EMERGENCY BUFFER
+
+           Important:
+           Do not convert appointment-only slots into buffer.
+           Buffer should not hide appointment-only schedule.
         ==================================================== */
 
+        const canReserveBuffer =
+            schedule.consultationMode !==
+                "APPOINTMENT_ONLY" &&
+            schedule.consultationMode !==
+                "ON_CALL_APPOINTMENT";
+
         let buffersRemaining =
-            schedule
-                .emergencyBufferPerDay;
+            canReserveBuffer
+                ? Number(
+                    schedule.emergencyBufferPerDay ||
+                    0,
+                )
+                : 0;
 
         for (
             let index =
@@ -457,73 +536,136 @@ export const generateDoctorSlots =
                 0;
             index--
         ) {
-
             if (
-                candidates[index]
-                    .status ===
-                "AVAILABLE"
+                candidates[index].status ===
+                    "AVAILABLE" &&
+                candidates[index].slotType !==
+                    "APPOINTMENT"
             ) {
-
-                candidates[index]
-                    .slotType =
-                    "BUFFER";
+                candidates[index].slotType =
+                    "BUFFER" as DoctorSlotType;
 
                 buffersRemaining--;
             }
         }
 
         /* ====================================================
+           CLEAN OLD AUTO / OLD AVAILABLE SLOTS
+
+           This removes old wrong slots like:
+           10:00 WALK_IN
+           10:15 APPOINTMENT
+           10:30 WALK_IN
+
+           It does NOT remove booked or held appointments.
+        ==================================================== */
+
+        await DoctorSlot.deleteMany({
+            hospitalId,
+            doctorId,
+            date,
+            status: {
+                $in: [
+                    "AVAILABLE",
+                    "BLOCKED",
+                ],
+            },
+            $or: [
+                {
+                    source:
+                        "AUTO",
+                },
+                {
+                    source: {
+                        $exists:
+                            false,
+                    },
+                },
+                {
+                    source:
+                        null,
+                },
+            ],
+        });
+
+        /* ====================================================
            UPSERT SLOTS
+
+           Existing BOOKED / HELD slots are protected.
+           Available slots are refreshed correctly.
         ==================================================== */
 
         for (
             const candidate
             of candidates
         ) {
-
-            await DoctorSlot.updateOne(
-                {
+            const existingSlot =
+                await DoctorSlot.findOne({
                     hospitalId,
                     doctorId,
                     date,
                     startTime:
-                        candidate
-                            .startTime,
-                },
-                {
-                    $setOnInsert: {
-                        hospitalId,
-                        doctorId,
-                        date,
+                        candidate.startTime,
+                });
 
-                        startTime:
-                            candidate
-                                .startTime,
+            if (
+                existingSlot &&
+                [
+                    "BOOKED",
+                    "HELD",
+                ].includes(
+                    existingSlot.status,
+                )
+            ) {
+                continue;
+            }
 
-                        endTime:
-                            candidate
-                                .endTime,
+            if (
+                existingSlot
+            ) {
+                existingSlot.endTime =
+                    candidate.endTime;
 
-                        slotType:
-                            candidate
-                                .slotType,
+                existingSlot.slotType =
+                    candidate.slotType;
 
-                        status:
-                            candidate
-                                .status,
+                existingSlot.status =
+                    candidate.status;
 
-                        blockReason:
-                            candidate
-                                .blockReason,
+                existingSlot.blockReason =
+                    candidate.blockReason;
 
-                        source:
-                            "AUTO",
-                    },
-                },
-                {
-                    upsert: true,
-                },
-            );
+                existingSlot.source =
+                    "AUTO";
+
+                await existingSlot.save();
+
+                continue;
+            }
+
+            await DoctorSlot.create({
+                hospitalId,
+                doctorId,
+                date,
+
+                startTime:
+                    candidate.startTime,
+
+                endTime:
+                    candidate.endTime,
+
+                slotType:
+                    candidate.slotType,
+
+                status:
+                    candidate.status,
+
+                blockReason:
+                    candidate.blockReason,
+
+                source:
+                    "AUTO",
+            });
         }
 
         const slots =
@@ -533,7 +675,8 @@ export const generateDoctorSlots =
                 date,
             })
                 .sort({
-                    startTime: 1,
+                    startTime:
+                        1,
                 })
                 .lean();
 

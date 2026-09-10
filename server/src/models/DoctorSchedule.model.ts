@@ -127,19 +127,33 @@ const SessionSchema =
     new Schema(
         {
             startTime: {
-                type: String,
-                required: true,
-                trim: true,
+                type:
+                    String,
+                required:
+                    true,
             },
 
             endTime: {
-                type: String,
-                required: true,
-                trim: true,
+                type:
+                    String,
+                required:
+                    true,
+            },
+
+            slotType: {
+                type:
+                    String,
+                enum: [
+                    "APPOINTMENT",
+                    "WALK_IN",
+                ],
+                default:
+                    "APPOINTMENT",
             },
         },
         {
-            _id: false,
+            _id:
+                false,
         },
     );
 

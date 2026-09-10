@@ -2684,6 +2684,284 @@ export const getPublicAppointmentByCode =
         }
     };
 
+
+    /* ============================================================
+   BACKEND FIX: CLOSE SAME-DAY PAST APPOINTMENT SLOTS
+   Add this in BOTH:
+   1) server/src/controllers/appointment.controller.ts
+   2) server/src/controllers/publicAppointment.controller.ts
+
+   Then call assertAppointmentSlotNotPassed(...) before creating/locking appointment.
+============================================================ */
+
+const getIndiaTodayAndMinutes =
+    () => {
+        const parts =
+            new Intl.DateTimeFormat(
+                "en-GB",
+                {
+                    timeZone:
+                        "Asia/Kolkata",
+                    year:
+                        "numeric",
+                    month:
+                        "2-digit",
+                    day:
+                        "2-digit",
+                    hour:
+                        "2-digit",
+                    minute:
+                        "2-digit",
+                    hour12:
+                        false,
+                },
+            ).formatToParts(
+                new Date(),
+            );
+
+        const getPart =
+            (
+                type:
+                    string,
+            ) =>
+                parts.find(
+                    (
+                        part,
+                    ) =>
+                        part.type ===
+                        type,
+                )?.value || "";
+
+        const hour =
+            Number(
+                getPart(
+                    "hour",
+                ) || "0",
+            );
+
+        const minute =
+            Number(
+                getPart(
+                    "minute",
+                ) || "0",
+            );
+
+        return {
+            date:
+                `${getPart("year")}-${getPart("month")}-${getPart("day")}`,
+
+            minutes:
+                hour * 60 +
+                minute,
+        };
+    };
+
+const timeToMinutes =
+    (
+        value?: string | null,
+    ) => {
+        if (
+            !value
+        ) {
+            return null;
+        }
+
+        const match =
+            String(
+                value,
+            ).match(
+                /^(\d{1,2}):(\d{2})/,
+            );
+
+        if (
+            !match
+        ) {
+            return null;
+        }
+
+        const hours =
+            Number(
+                match[1],
+            );
+
+        const minutes =
+            Number(
+                match[2],
+            );
+
+        if (
+            !Number.isFinite(
+                hours,
+            ) ||
+            !Number.isFinite(
+                minutes,
+            ) ||
+            hours > 23 ||
+            minutes > 59
+        ) {
+            return null;
+        }
+
+        return hours * 60 +
+            minutes;
+    };
+
+const normalizeAppointmentDate =
+    (
+        value:
+            unknown,
+    ) => {
+        if (
+            value instanceof Date
+        ) {
+            return new Intl.DateTimeFormat(
+                "en-CA",
+                {
+                    timeZone:
+                        "Asia/Kolkata",
+                },
+            ).format(
+                value,
+            );
+        }
+
+        return String(
+            value || "",
+        ).slice(
+            0,
+            10,
+        );
+    };
+
+const isAppointmentSlotPassed =
+    (
+        appointmentDate:
+            unknown,
+        startTime:
+            string,
+    ) => {
+        const selectedDate =
+            normalizeAppointmentDate(
+                appointmentDate,
+            );
+
+        const now =
+            getIndiaTodayAndMinutes();
+
+        if (
+            !selectedDate ||
+            selectedDate < now.date
+        ) {
+            return true;
+        }
+
+        if (
+            selectedDate > now.date
+        ) {
+            return false;
+        }
+
+        const slotStartMinutes =
+            timeToMinutes(
+                startTime,
+            );
+
+        if (
+            slotStartMinutes ===
+            null
+        ) {
+            return true;
+        }
+
+        /*
+         * Same-day rule:
+         * 11:00 slot closes at 11:00.
+         * It must close even if it was never booked.
+         */
+        return slotStartMinutes <=
+            now.minutes;
+    };
+
+const assertAppointmentSlotNotPassed =
+    (
+        appointmentDate:
+            unknown,
+        startTime:
+            string,
+    ) => {
+        if (
+            isAppointmentSlotPassed(
+                appointmentDate,
+                startTime,
+            )
+        ) {
+            return {
+                success:
+                    false,
+
+                message:
+                    "This appointment time has already passed. Please select another available slot.",
+
+                code:
+                    "APPOINTMENT_SLOT_TIME_PASSED",
+            };
+        }
+
+        return null;
+    };
+
+/* ============================================================
+   INSERT INSIDE ADMIN createAppointment BEFORE SLOT LOCK / CREATE
+============================================================ */
+
+// Example:
+// const selectedSlot = await DoctorSlot.findById(slotId);
+// const passedSlotError = assertAppointmentSlotNotPassed(
+//     selectedSlot.slotDate || appointmentDate,
+//     selectedSlot.startTime,
+// );
+//
+// if (passedSlotError) {
+//     return res.status(409).json(passedSlotError);
+// }
+
+/* ============================================================
+   INSERT INSIDE PUBLIC bookPublicAppointment BEFORE DoctorSlot.findOneAndUpdate
+============================================================ */
+
+// Example:
+// const passedSlotError = assertAppointmentSlotNotPassed(
+//     appointmentDate,
+//     requestedStartTime,
+// );
+//
+// if (passedSlotError) {
+//     return res.status(409).json(passedSlotError);
+// }
+//
+// Then continue with DoctorSlot.findOneAndUpdate(...)
+
+/* ============================================================
+   UPDATE SLOT LIST RESPONSE TOO
+   Wherever you map/get DoctorSlot response, return:
+============================================================ */
+
+// const isTimePassed = isAppointmentSlotPassed(slot.slotDate || selectedDate, slot.startTime);
+//
+// return {
+//     ...slotObject,
+//     status:
+//         isTimePassed && slot.status === "AVAILABLE"
+//             ? "TIME_PASSED"
+//             : slot.status,
+//     isTimePassed,
+//     canBook:
+//         slot.status === "AVAILABLE" &&
+//         slot.slotType === "APPOINTMENT" &&
+//         !isTimePassed,
+// };
+
+
 const publicAppointmentController = {
     getPublicStates,
     getPublicDistricts,
@@ -2693,6 +2971,7 @@ const publicAppointmentController = {
     getPublicDoctorSlots,
     bookPublicAppointment,
     getPublicAppointmentByCode,
+    getIndiaTodayAndMinutes
 };
 
 export default publicAppointmentController;
