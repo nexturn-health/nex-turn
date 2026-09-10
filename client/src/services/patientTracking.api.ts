@@ -4,6 +4,10 @@ export interface QueueDoctor {
     _id: string;
     name: string;
     email?: string;
+    isOnline?: boolean;
+    isOnBreak?: boolean;
+    breakStartedAt?: string | null;
+    breakReason?: string | null;
 }
 
 export type PatientQueueStatus =
