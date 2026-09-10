@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, } from "react";
 import { useParams, } from "react-router-dom";
-import { AlertCircle, CheckCircle2, HeartPulse, Loader2, RefreshCw, Stethoscope, Wifi, WifiOff, } from "lucide-react";
+import { AlertCircle, Clock, Users, UserRound, CheckCircle2, HeartPulse, Loader2, RefreshCw, Stethoscope, Wifi, WifiOff, } from "lucide-react";
 import { trackPatientQueue, type PatientTrackingData, } from "../../services/patientTracking.api";
 import { socket, joinPatientQueue, leavePatientQueue, } from "../../socket/socket";
 /* ============================================================
@@ -513,23 +513,23 @@ export default function PatientTracking() {
     }
     const trackingEnded = isCompleted || isCancelled;
     const availabilityTitle = isDoctorOnBreak
-        ? "On a short break"
+        ? "Doctor is on break"
         : isDoctorRecentlyResumed
             ? "Doctor has returned"
             : isDoctorLate
-                ? "Clinic running late"
+                ? "Doctor running late"
                 : doctorOnline === true
                     ? "Doctor is available"
-                    : "Availability awaiting confirmation";
+                    : "Availability not confirmed";
     const availabilityMessage = isDoctorOnBreak
-        ? "Calling is paused. We’ll update this page when the doctor returns."
+        ? "Calling paused. Your token stays active."
         : isDoctorRecentlyResumed
-            ? "Calling has resumed. Please keep your token ready."
+            ? "Calling resumed. Keep your token ready."
             : isDoctorLate
-                ? `The clinic is delayed${lateByMinutes > 0 ? ` by about ${lateByMinutes} min` : ""}. Your estimated turn may change.`
+                ? `Delayed${lateByMinutes > 0 ? ` by about ${lateByMinutes} min` : ""}.`
                 : doctorOnline === true
-                    ? "Please wait for your token to be called."
-                    : "Please check with reception if you need an update.";
+                    ? "Wait for your token to be called."
+                    : "Please check with reception.";
 
     // One compact page: token, next step, queue estimate, and doctor status.
     return (
@@ -555,44 +555,47 @@ export default function PatientTracking() {
                         </section>
                     ) : (
                         <>
-                            <div className="pt-greeting"><h1>Hello, {queue.patient.name}</h1><p>Your visit, at a glance</p></div>
+                            <div className="pt-greeting"><h1>Hello, {queue.patient.name}</h1><p>{doctorName ? doctorLabel : "Doctor to be confirmed"} · {queue.department.name}</p></div>
                             {error && <div className="pt-error" role="alert"><AlertCircle size={16} /><p>Showing your last update. {error}</p></div>}
 
                             <section className="pt-ticket" aria-label="Your token">
                                 <div className="pt-ticket-top"><span>YOUR TOKEN</span>
                                     {queue.priority === "EMERGENCY" && !trackingEnded && <span className="pt-emergency">Emergency</span>}
                                 </div>
-                                <strong className="pt-token">{queue.tokenLabel}</strong>
-                                <div className="pt-department">{queue.department.name}</div>
+                                <div className="pt-token-row"><strong className="pt-token">{queue.tokenLabel}</strong><span className="pt-person-icon"><UserRound size={26} aria-hidden="true" /></span></div>
                                 <div className="pt-status" data-status={status} role={isCalled ? "alert" : "status"} aria-atomic="true">
-                                    <strong>{statusTitle}</strong><p>{statusMessage}</p>
+                                    <strong>{isWaiting ? "You’re in the queue" : statusTitle}</strong>{!isWaiting && <p>{statusMessage}</p>}
                                 </div>
                             </section>
 
+                            {!isSkipped && !trackingEnded && (
+                                <div className="pt-serving"><span>Now serving</span><strong>{queue.currentServingToken || "—"}</strong>
+                                    {!isLive && <small>Last update</small>}
+                                </div>
+                            )}
+
                             {isWaiting && (
                                 <section className="pt-stats" aria-label="Queue estimates">
-                                    <div><span>Patients ahead</span><strong>{queue.patientsAhead ?? "—"}</strong></div>
-                                    <div><span>Est. wait</span><strong>{isDoctorOnBreak ? "Paused" : queue.estimatedWaitTime ?? "—"}{!isDoctorOnBreak && queue.estimatedWaitTime != null && <small> min</small>}</strong></div>
-                                    <div><span>Est. turn</span><strong className="pt-turn">{isDoctorOnBreak ? "Updating" : estimatedTurnTimeLabel || "—"}</strong></div>
+                                    <div><Users size={18} aria-hidden="true" /><span>Patients ahead</span><strong>{queue.patientsAhead ?? "—"}</strong></div>
+                                    <div><Clock size={18} aria-hidden="true" /><span>Estimated wait</span><strong>{isDoctorOnBreak ? "Paused" : queue.estimatedWaitTime ?? "—"}{!isDoctorOnBreak && queue.estimatedWaitTime != null && <small> min</small>}</strong></div>
                                 </section>
                             )}
 
                             {!trackingEnded && (
-                                <section className="pt-doctor" aria-label="Doctor availability">
-                                    <div className="pt-doctor-top"><Stethoscope size={18} aria-hidden="true" />
-                                        <h2>{doctorName ? doctorLabel : "Doctor to be confirmed"}</h2>
-                                    </div>
+                                <section className="pt-doctor" data-break={isDoctorOnBreak} aria-label="Doctor availability">
+
                                     {/* One status replaces repeated break and timing banners. */}
                                     <div className="pt-availability" data-break={isDoctorOnBreak} role="status" aria-live="polite">
-                                        <span className="pt-dot" aria-hidden="true" />
-                                        <div><strong>{availabilityTitle}</strong><p>{availabilityMessage}</p>
+                                        <span className="pt-availability-icon">{isDoctorOnBreak ? <Clock size={20} aria-hidden="true" /> : <Stethoscope size={18} aria-hidden="true" />}</span>
+                                        <div><strong>{availabilityTitle}</strong>{(isDoctorOnBreak || isDoctorLate || isDoctorRecentlyResumed || doctorOnline !== true) && <p>{availabilityMessage}</p>}
                                             {isDoctorOnBreak && doctorBreakStartedLabel && <small>Break started {doctorBreakStartedLabel}</small>}
                                         </div>
                                     </div>
-                                    {(appointment || shiftStartLabel || shiftEndLabel || (isDoctorLate && expectedDoctorStartLabel)) && (
+                                    {(appointment || shiftStartLabel || shiftEndLabel || estimatedTurnTimeLabel || (isDoctorLate && expectedDoctorStartLabel)) && (
                                         <dl className="pt-times">
                                             {appointment && <div><dt>Your appointment</dt><dd>{appointmentTimeLabel || "Ask reception"}</dd></div>}
-                                            {(shiftStartLabel || shiftEndLabel) && <div><dt>Clinic hours</dt><dd>{shiftStartLabel || "—"}{shiftEndLabel ? ` – ${shiftEndLabel}` : " onwards"}</dd></div>}
+                                            {(shiftStartLabel || shiftEndLabel) && <div><dt>Doctor timing</dt><dd>{shiftStartLabel || "—"}{shiftEndLabel ? ` – ${shiftEndLabel}` : " onwards"}</dd></div>}
+                                            {isWaiting && !isDoctorOnBreak && estimatedTurnTimeLabel && <div><dt>Estimated turn</dt><dd>{estimatedTurnTimeLabel}</dd></div>}
                                             {isDoctorLate && expectedDoctorStartLabel && <div><dt>Expected start</dt><dd>{expectedDoctorStartLabel}</dd></div>}
                                         </dl>
                                     )}
@@ -602,18 +605,13 @@ export default function PatientTracking() {
                                 </section>
                             )}
 
-                            {!isSkipped && !trackingEnded && (
-                                <div className="pt-serving"><span>Now serving</span><strong>{queue.currentServingToken || "—"}</strong>
-                                    {!isLive && <small>Last update</small>}
-                                </div>
-                            )}
                             <footer className="pt-footer">
                                 <div><p>{trackingEnded ? "Tracking ended. You can close this page." : lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : "Waiting for an update"}</p>
                                     {!trackingEnded && <small>{isLive ? "Updates automatically" : "Reconnecting · checks every 30 sec"}</small>}
                                 </div>
                                 {!trackingEnded && <button type="button" className="pt-button" disabled={refreshing} onClick={handleManualRefresh} aria-label="Refresh queue"><RefreshCw size={15} className={refreshing ? "pt-spin" : ""} />{refreshing ? "Updating" : "Refresh"}</button>}
                             </footer>
-                            {isWaiting && <p className="pt-disclaimer">Times are estimates and may change. Keep your token ready.</p>}
+                            {isWaiting && <p className="pt-disclaimer">Wait times may change.</p>}
                         </>
                     )}
                 </main>
@@ -628,26 +626,26 @@ function PatientTrackingStyles() {
 .pt-page{--ink:#193e38;--muted:#61726b;--line:#dfe7de;background:#f4f6f1;color:var(--ink);min-height:100dvh;padding:20px 12px;font-family:inherit;line-height:1.45}
 .pt-page *{box-sizing:border-box}
 .pt-page h1,.pt-page h2,.pt-page p{margin:0}
-.pt-shell{max-width:440px;margin:0 auto;background:#fafbf8;border:1px solid var(--line);border-radius:20px;overflow:hidden}
-.pt-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.pt-shell{max-width:440px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:20px;overflow:hidden}
+.pt-header{background:#173d39;color:#f2f6ec;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line)}
 .pt-brand{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700}
-.pt-connection{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:11px;white-space:nowrap}
-.pt-connection[data-live=true]{color:#216957}
+.pt-connection{border:1px solid #ffffff30;border-radius:20px;padding:5px 8px;display:flex;align-items:center;gap:5px;color:#d1e0d3;font-size:11px;white-space:nowrap}
+.pt-connection[data-live=true]{color:#d4ead9}
 .pt-main{padding:16px;display:flex;flex-direction:column;gap:12px}
 .pt-greeting h1{font-size:18px;font-weight:650;overflow-wrap:anywhere}
 .pt-greeting p{font-size:12px;color:var(--muted);margin-top:2px}
-.pt-ticket{border-radius:14px;background:#1c4940;color:#fff;padding:14px 16px;text-align:center}
-.pt-ticket-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:10px;letter-spacing:1.2px;color:#dbe9e0}
+.pt-ticket{border-radius:14px;background:#e8f0df;color:#2e563e;border:1px solid #d8e5ce;padding:14px 16px;text-align:left}
+.pt-ticket-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:10px;letter-spacing:1.2px;color:#607b54}
 .pt-emergency{background:#fff0e9;color:#9b392b;border-radius:5px;padding:3px 6px;letter-spacing:0}
 .pt-token{display:block;font-size:clamp(34px,10vw,48px);font-weight:700;line-height:1.1;margin:7px 0 3px;letter-spacing:-1px;overflow-wrap:anywhere}
 .pt-department{font-size:12px;color:#dbe9e0;overflow-wrap:anywhere}
-.pt-status{border-top:1px solid #ffffff26;margin-top:12px;padding-top:10px}
-.pt-status strong{font-size:15px;font-weight:650}
-.pt-status p{font-size:12px;color:#e0ebe4;line-height:1.5;margin:4px auto 0;max-width:340px}
-.pt-status[data-status=CALLED] strong{color:#f5e8b0}
-.pt-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--line);border-radius:12px;background:white;padding:11px 0}
-.pt-stats>div{text-align:center;padding:0 6px;min-width:0}
-.pt-stats>div+div{border-left:1px solid var(--line)}
+.pt-status{margin-top:4px;padding-top:0}
+.pt-status strong{font-size:13px;font-weight:500;color:#536e49}
+.pt-status p{font-size:12px;color:#425c3d;line-height:1.5;margin:4px auto 0;max-width:340px}
+.pt-status[data-status=CALLED] strong{color:#173d39;font-weight:750;font-size:17px}
+.pt-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.pt-stats>div{text-align:left;padding:12px 14px;min-width:0;border:1px solid var(--line);border-radius:12px;background:#f8faf5}
+.pt-stats svg{color:#4d805e;margin-bottom:5px}
 .pt-stats span{display:block;font-size:10px;color:var(--muted)}
 .pt-stats strong{display:block;font-size:20px;font-weight:650;line-height:1.4;margin-top:3px;overflow-wrap:anywhere}
 .pt-stats small{font-size:11px;font-weight:400}
@@ -656,10 +654,10 @@ function PatientTrackingStyles() {
 .pt-doctor-top{display:flex;align-items:center;gap:8px}
 .pt-doctor-top svg{flex-shrink:0;color:#547365}
 .pt-doctor h2{font-size:14px;font-weight:650;overflow-wrap:anywhere}
-.pt-availability{display:flex;gap:8px;margin-top:9px}
+.pt-availability{display:flex;gap:10px;align-items:flex-start}
 .pt-dot{width:7px;height:7px;flex-shrink:0;border-radius:50%;background:#7c8b80;margin-top:5px}
 .pt-availability[data-break=true] .pt-dot{background:#b78b39}
-.pt-availability strong{font-size:12px;font-weight:600}
+.pt-availability strong{font-size:13px;font-weight:650}
 .pt-availability p,.pt-availability small{font-size:11px;line-height:1.5;color:var(--muted);display:block;margin-top:2px}
 .pt-times{margin:10px 0 0;padding-top:8px;border-top:1px solid var(--line);display:grid;gap:5px;font-size:11px}
 .pt-times>div{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
@@ -667,7 +665,7 @@ function PatientTrackingStyles() {
 .pt-times dd{margin:0;text-align:right;font-weight:600}
 .pt-details{font-size:11px;color:var(--muted);margin-top:8px}
 .pt-details summary{cursor:pointer;padding:6px 0}
-.pt-serving{display:flex;align-items:center;gap:10px;font-size:12px;padding:0 3px;color:var(--muted)}
+.pt-serving{display:flex;align-items:center;gap:10px;font-size:12px;padding:5px 2px;color:var(--muted)}
 .pt-serving strong{font-size:15px;color:var(--ink);margin-left:auto;overflow-wrap:anywhere}
 .pt-serving small{font-size:10px}
 .pt-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:8px;border-top:1px solid var(--line)}
@@ -683,7 +681,15 @@ function PatientTrackingStyles() {
 .pt-empty h1{font-size:20px}.pt-empty p{font-size:13px;color:var(--muted)}
 .pt-spin{animation:pt-spin 1s linear infinite}@keyframes pt-spin{to{transform:rotate(360deg)}}
 @media(max-width:480px){.pt-page{padding:0}.pt-shell{border:0;border-radius:0;min-height:100dvh}.pt-header{padding:12px 16px}.pt-main{padding:12px 14px;gap:10px}.pt-ticket{padding:12px 14px}.pt-doctor{padding:11px 12px}}
-@media(max-height:720px) and (max-width:480px){.pt-header{padding:10px 14px}.pt-main{padding:10px 12px;gap:8px}.pt-greeting p{display:none}.pt-ticket{padding:10px 12px}.pt-token{font-size:36px;margin:4px 0 2px}.pt-status{margin-top:8px;padding-top:7px}.pt-stats{padding:8px 0}.pt-doctor{padding:10px 12px}.pt-footer{padding-top:4px}.pt-times{margin-top:7px;padding-top:6px}}
+@media(max-height:720px) and (max-width:480px){.pt-header{padding:10px 14px}.pt-main{padding:10px 12px;gap:8px}.pt-greeting p{display:none}.pt-ticket{padding:10px 12px}.pt-token{font-size:36px;margin:4px 0 2px}.pt-status{margin-top:8px;padding-top:7px}.pt-stats{padding:0}.pt-doctor{padding:10px 12px}.pt-footer{padding-top:4px}.pt-times{margin-top:7px;padding-top:6px}}
+.pt-token-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pt-person-icon{width:46px;height:46px;display:flex;align-items:center;justify-content:center;background:#f4f8ed;border:1px solid #cadcbc;border-radius:50%;color:#6e8d61;flex-shrink:0}
+.pt-availability-icon{display:flex;padding:5px;color:#537b5d;flex-shrink:0}
+.pt-doctor[data-break=true]{background:#fff4d9;border:1px solid #e2b64f;border-left:4px solid #bd841b}
+.pt-doctor[data-break=true] .pt-availability strong{color:#744707;font-size:15px;font-weight:750}
+.pt-doctor[data-break=true] .pt-availability p,.pt-doctor[data-break=true] .pt-availability small{color:#7c5b25}
+.pt-doctor[data-break=true] .pt-availability-icon{background:#ffe5a6;border-radius:8px;color:#88550e}
+.pt-doctor[data-break=true] .pt-times{border-top-color:#e7d39f}
 @media(prefers-reduced-motion:reduce){.pt-spin{animation:none}}
 `}</style>;
 }
