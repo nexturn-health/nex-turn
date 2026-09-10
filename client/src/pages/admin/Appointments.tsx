@@ -1407,173 +1407,173 @@ const Appointments =
                             ] as HybridPattern[],
                 };
             };
-        const handleConsultationModeChange =
-            (
-                mode:
-                    ConsultationMode,
-            ) => {
-                /*
-                 * IMPORTANT:
-                 * Do not auto-detect consultation mode from sessions.
-                 * The dropdown value is the final source of truth.
-                 */
-                setScheduleForm(
-                    (
-                        previous,
-                    ) => {
-                        if (
-                            mode ===
-                            "HYBRID"
-                        ) {
-                            return {
-                                ...previous,
+        // const handleConsultationModeChange =
+        //     (
+        //         mode:
+        //             ConsultationMode,
+        //     ) => {
+        //         /*
+        //          * IMPORTANT:
+        //          * Do not auto-detect consultation mode from sessions.
+        //          * The dropdown value is the final source of truth.
+        //          */
+        //         setScheduleForm(
+        //             (
+        //                 previous,
+        //             ) => {
+        //                 if (
+        //                     mode ===
+        //                     "HYBRID"
+        //                 ) {
+        //                     return {
+        //                         ...previous,
 
-                                consultationMode:
-                                    "HYBRID",
+        //                         consultationMode:
+        //                             "HYBRID",
 
-                                appointmentEnabled:
-                                    true,
+        //                         appointmentEnabled:
+        //                             true,
 
-                                confirmationRequired:
-                                    false,
+        //                         confirmationRequired:
+        //                             false,
 
-                                hybridPattern:
-                                    [
-                                        "APPOINTMENT",
-                                        "WALK_IN",
-                                    ] as HybridPattern[],
-                            };
-                        }
+        //                         hybridPattern:
+        //                             [
+        //                                 "APPOINTMENT",
+        //                                 "WALK_IN",
+        //                             ] as HybridPattern[],
+        //                     };
+        //                 }
 
-                        if (
-                            mode ===
-                            "APPOINTMENT_ONLY"
-                        ) {
-                            return {
-                                ...previous,
+        //                 if (
+        //                     mode ===
+        //                     "APPOINTMENT_ONLY"
+        //                 ) {
+        //                     return {
+        //                         ...previous,
 
-                                consultationMode:
-                                    "APPOINTMENT_ONLY",
+        //                         consultationMode:
+        //                             "APPOINTMENT_ONLY",
 
-                                appointmentEnabled:
-                                    true,
+        //                         appointmentEnabled:
+        //                             true,
 
-                                confirmationRequired:
-                                    false,
+        //                         confirmationRequired:
+        //                             false,
 
-                                hybridPattern:
-                                    [
-                                        "APPOINTMENT",
-                                    ] as HybridPattern[],
+        //                         hybridPattern:
+        //                             [
+        //                                 "APPOINTMENT",
+        //                             ] as HybridPattern[],
 
-                                weeklyAvailability:
-                                    previous.weeklyAvailability.map(
-                                        (
-                                            day,
-                                        ) => ({
-                                            ...day,
+        //                         weeklyAvailability:
+        //                             previous.weeklyAvailability.map(
+        //                                 (
+        //                                     day,
+        //                                 ) => ({
+        //                                     ...day,
 
-                                            sessions:
-                                                day.sessions.map(
-                                                    (
-                                                        session,
-                                                    ) => ({
-                                                        ...session,
+        //                                     sessions:
+        //                                         day.sessions.map(
+        //                                             (
+        //                                                 session,
+        //                                             ) => ({
+        //                                                 ...session,
 
-                                                        slotType:
-                                                            "APPOINTMENT",
-                                                    }),
-                                                ),
-                                        }),
-                                    ),
-                            };
-                        }
+        //                                                 slotType:
+        //                                                     "APPOINTMENT",
+        //                                             }),
+        //                                         ),
+        //                                 }),
+        //                             ),
+        //                     };
+        //                 }
 
-                        if (
-                            mode ===
-                            "ON_CALL_APPOINTMENT"
-                        ) {
-                            return {
-                                ...previous,
+        //                 if (
+        //                     mode ===
+        //                     "ON_CALL_APPOINTMENT"
+        //                 ) {
+        //                     return {
+        //                         ...previous,
 
-                                consultationMode:
-                                    "ON_CALL_APPOINTMENT",
+        //                         consultationMode:
+        //                             "ON_CALL_APPOINTMENT",
 
-                                appointmentEnabled:
-                                    true,
+        //                         appointmentEnabled:
+        //                             true,
 
-                                confirmationRequired:
-                                    true,
+        //                         confirmationRequired:
+        //                             true,
 
-                                hybridPattern:
-                                    [
-                                        "APPOINTMENT",
-                                    ] as HybridPattern[],
+        //                         hybridPattern:
+        //                             [
+        //                                 "APPOINTMENT",
+        //                             ] as HybridPattern[],
 
-                                weeklyAvailability:
-                                    previous.weeklyAvailability.map(
-                                        (
-                                            day,
-                                        ) => ({
-                                            ...day,
+        //                         weeklyAvailability:
+        //                             previous.weeklyAvailability.map(
+        //                                 (
+        //                                     day,
+        //                                 ) => ({
+        //                                     ...day,
 
-                                            sessions:
-                                                day.sessions.map(
-                                                    (
-                                                        session,
-                                                    ) => ({
-                                                        ...session,
+        //                                     sessions:
+        //                                         day.sessions.map(
+        //                                             (
+        //                                                 session,
+        //                                             ) => ({
+        //                                                 ...session,
 
-                                                        slotType:
-                                                            "APPOINTMENT",
-                                                    }),
-                                                ),
-                                        }),
-                                    ),
-                            };
-                        }
+        //                                                 slotType:
+        //                                                     "APPOINTMENT",
+        //                                             }),
+        //                                         ),
+        //                                 }),
+        //                             ),
+        //                     };
+        //                 }
 
-                        return {
-                            ...previous,
+        //                 return {
+        //                     ...previous,
 
-                            consultationMode:
-                                "OPD_ONLY",
+        //                     consultationMode:
+        //                         "OPD_ONLY",
 
-                            appointmentEnabled:
-                                false,
+        //                     appointmentEnabled:
+        //                         false,
 
-                            confirmationRequired:
-                                false,
+        //                     confirmationRequired:
+        //                         false,
 
-                            hybridPattern:
-                                [
-                                    "WALK_IN",
-                                ] as HybridPattern[],
+        //                     hybridPattern:
+        //                         [
+        //                             "WALK_IN",
+        //                         ] as HybridPattern[],
 
-                            weeklyAvailability:
-                                previous.weeklyAvailability.map(
-                                    (
-                                        day,
-                                    ) => ({
-                                        ...day,
+        //                     weeklyAvailability:
+        //                         previous.weeklyAvailability.map(
+        //                             (
+        //                                 day,
+        //                             ) => ({
+        //                                 ...day,
 
-                                        sessions:
-                                            day.sessions.map(
-                                                (
-                                                    session,
-                                                ) => ({
-                                                    ...session,
+        //                                 sessions:
+        //                                     day.sessions.map(
+        //                                         (
+        //                                             session,
+        //                                         ) => ({
+        //                                             ...session,
 
-                                                    slotType:
-                                                        "WALK_IN",
-                                                }),
-                                            ),
-                                    }),
-                                ),
-                        };
-                    },
-                );
-            };
+        //                                             slotType:
+        //                                                 "WALK_IN",
+        //                                         }),
+        //                                     ),
+        //                             }),
+        //                         ),
+        //                 };
+        //             },
+        //         );
+        //     };
 
 const handleSaveSchedule =
             async () => {
