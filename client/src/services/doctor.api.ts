@@ -112,6 +112,10 @@ export interface DoctorQueueItem {
     completedAt?: string;
     createdAt?: string;
     updatedAt?: string;
+
+    appointmentCallStatus?: "UPCOMING" | "PRIORITY" | "MISSED" | null;
+    appointmentMissedAt?: string | null;
+    manuallyCalledAfterMissedAt?: string | null;
 }
 /* =========================================================
    QUEUE API RESPONSE

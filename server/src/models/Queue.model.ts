@@ -4,7 +4,9 @@ import mongoose, {
 } from "mongoose";
 
 /* ============================================================
+
    QUEUE TYPES
+
 ============================================================ */
 
 export type QueueStatus =
@@ -29,8 +31,15 @@ export type QueuePaymentStatus =
     | "PAID"
     | "REFUNDED";
 
+export type AppointmentCallStatus =
+    | "UPCOMING"
+    | "PRIORITY"
+    | "MISSED";
+
 /* ============================================================
+
    QUEUE INTERFACE
+
 ============================================================ */
 
 export interface IQueue {
@@ -56,6 +65,9 @@ export interface IQueue {
         QueueSource;
 
     scheduledStartTime?:
+        string | null;
+
+    scheduledEndTime?:
         string | null;
 
     sortTime?:
@@ -121,6 +133,15 @@ export interface IQueue {
     completedAt?:
         Date | null;
 
+    appointmentCallStatus?:
+        AppointmentCallStatus;
+
+    appointmentMissedAt?:
+        Date | null;
+
+    manuallyCalledAfterMissedAt?:
+        Date | null;
+
     createdAt?:
         Date;
 
@@ -132,7 +153,9 @@ export type QueueDocument =
     HydratedDocument<IQueue>;
 
 /* ============================================================
+
    QUEUE SCHEMA
+
 ============================================================ */
 
 const queueSchema =
@@ -232,11 +255,22 @@ const queueSchema =
                 type:
                     String,
 
+                trim:
+                    true,
+
                 default:
                     null,
+            },
+
+            scheduledEndTime: {
+                type:
+                    String,
 
                 trim:
                     true,
+
+                default:
+                    null,
             },
 
             sortTime: {
@@ -471,6 +505,39 @@ const queueSchema =
                 default:
                     null,
             },
+
+            appointmentCallStatus: {
+                type:
+                    String,
+
+                enum: [
+                    "UPCOMING",
+                    "PRIORITY",
+                    "MISSED",
+                ],
+
+                default:
+                    "UPCOMING",
+
+                index:
+                    true,
+            },
+
+            appointmentMissedAt: {
+                type:
+                    Date,
+
+                default:
+                    null,
+            },
+
+            manuallyCalledAfterMissedAt: {
+                type:
+                    Date,
+
+                default:
+                    null,
+            },
         },
         {
             timestamps:
@@ -479,14 +546,18 @@ const queueSchema =
     );
 
 /* ============================================================
-   INDEXES
+
+   BASE INDEXES
+
 ============================================================ */
 
 queueSchema.index({
     hospitalId:
         1,
+
     departmentId:
         1,
+
     queueDate:
         1,
 });
@@ -494,10 +565,13 @@ queueSchema.index({
 queueSchema.index({
     hospitalId:
         1,
+
     departmentId:
         1,
+
     queueDate:
         1,
+
     tokenNumber:
         1,
 });
@@ -505,10 +579,13 @@ queueSchema.index({
 queueSchema.index({
     hospitalId:
         1,
+
     departmentId:
         1,
+
     queueDate:
         1,
+
     status:
         1,
 });
@@ -516,10 +593,13 @@ queueSchema.index({
 queueSchema.index({
     hospitalId:
         1,
+
     doctorId:
         1,
+
     queueDate:
         1,
+
     status:
         1,
 });
@@ -527,12 +607,16 @@ queueSchema.index({
 queueSchema.index({
     hospitalId:
         1,
+
     doctorId:
         1,
+
     queueDate:
         1,
+
     source:
         1,
+
     status:
         1,
 });
@@ -540,6 +624,7 @@ queueSchema.index({
 queueSchema.index({
     hospitalId:
         1,
+
     appointmentId:
         1,
 });
@@ -547,10 +632,13 @@ queueSchema.index({
 queueSchema.index({
     hospitalId:
         1,
+
     doctorId:
         1,
+
     queueDate:
         1,
+
     scheduledStartTime:
         1,
 });
@@ -558,10 +646,13 @@ queueSchema.index({
 queueSchema.index({
     hospitalId:
         1,
+
     doctorId:
         1,
+
     queueDate:
         1,
+
     sortTime:
         1,
 });
@@ -569,12 +660,16 @@ queueSchema.index({
 queueSchema.index({
     hospitalId:
         1,
+
     departmentId:
         1,
+
     queueDate:
         1,
+
     status:
         1,
+
     serviceDurationMinutes:
         1,
 });
@@ -582,10 +677,13 @@ queueSchema.index({
 queueSchema.index({
     hospitalId:
         1,
+
     doctorId:
         1,
+
     status:
         1,
+
     completedAt:
         -1,
 });
@@ -593,14 +691,136 @@ queueSchema.index({
 queueSchema.index({
     trackingToken:
         1,
+
     trackingLinkActive:
         1,
+
     trackingExpiresAt:
         1,
 });
 
 /* ============================================================
+
+   APPOINTMENT MISSED FLOW INDEXES
+
+   Used for:
+   - appointment priority only inside time window
+   - upcoming appointment list
+   - missed appointment section
+   - manual call after missed
+
+============================================================ */
+
+queueSchema.index({
+    hospitalId:
+        1,
+
+    departmentId:
+        1,
+
+    queueDate:
+        1,
+
+    status:
+        1,
+
+    source:
+        1,
+
+    scheduledStartTime:
+        1,
+
+    scheduledEndTime:
+        1,
+
+    tokenNumber:
+        1,
+});
+
+queueSchema.index({
+    hospitalId:
+        1,
+
+    departmentId:
+        1,
+
+    queueDate:
+        1,
+
+    status:
+        1,
+
+    source:
+        1,
+
+    appointmentCallStatus:
+        1,
+
+    scheduledStartTime:
+        1,
+
+    tokenNumber:
+        1,
+});
+
+queueSchema.index({
+    hospitalId:
+        1,
+
+    doctorId:
+        1,
+
+    queueDate:
+        1,
+
+    status:
+        1,
+
+    source:
+        1,
+
+    appointmentCallStatus:
+        1,
+
+    appointmentMissedAt:
+        -1,
+});
+
+queueSchema.index({
+    hospitalId:
+        1,
+
+    appointmentId:
+        1,
+
+    appointmentCallStatus:
+        1,
+});
+
+queueSchema.index({
+    hospitalId:
+        1,
+
+    departmentId:
+        1,
+
+    queueDate:
+        1,
+
+    source:
+        1,
+
+    appointmentCallStatus:
+        1,
+
+    appointmentMissedAt:
+        -1,
+});
+
+/* ============================================================
+
    MODEL
+
 ============================================================ */
 
 export const Queue =

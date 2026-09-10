@@ -234,3 +234,13 @@ export const resumeDoctorDuty = async () => {
 
     return response.data;
 };
+
+export const callSelectedPatient = async (
+    queueId: string,
+) => {
+    const response = await api.patch(
+        `/queues/${queueId}/call-selected`,
+    );
+
+    return response.data;
+};

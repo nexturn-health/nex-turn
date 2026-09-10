@@ -3154,6 +3154,228 @@ export const collectAppointmentPayment =
         }
     };
 
+
+    const APPOINTMENT_PRIORITY_WINDOW_MINUTES =
+    15;
+
+const appointmentTimeToMinutes =
+    (
+        value?: string | null,
+    ) => {
+        if (
+            !value
+        ) {
+            return null;
+        }
+
+        const match =
+            String(value).match(
+                /^(\d{1,2}):(\d{2})/,
+            );
+
+        if (
+            !match
+        ) {
+            return null;
+        }
+
+        const hours =
+            Number(
+                match[1],
+            );
+
+        const minutes =
+            Number(
+                match[2],
+            );
+
+        if (
+            !Number.isFinite(
+                hours,
+            ) ||
+            !Number.isFinite(
+                minutes,
+            ) ||
+            hours > 23 ||
+            minutes > 59
+        ) {
+            return null;
+        }
+
+        return hours * 60 + minutes;
+    };
+
+const getIndiaCurrentMinutes =
+    () => {
+        const parts =
+            new Intl.DateTimeFormat(
+                "en-GB",
+                {
+                    timeZone:
+                        "Asia/Kolkata",
+
+                    hour:
+                        "2-digit",
+
+                    minute:
+                        "2-digit",
+
+                    hour12:
+                        false,
+                },
+            ).formatToParts(
+                new Date(),
+            );
+
+        const hour =
+            Number(
+                parts.find(
+                    (
+                        part,
+                    ) =>
+                        part.type ===
+                        "hour",
+                )?.value || "0",
+            );
+
+        const minute =
+            Number(
+                parts.find(
+                    (
+                        part,
+                    ) =>
+                        part.type ===
+                        "minute",
+                )?.value || "0",
+            );
+
+        return hour * 60 + minute;
+    };
+
+const getAppointmentCallStatusForTime =
+    (
+        scheduledStartTime?: string | null,
+        scheduledEndTime?: string | null,
+    ):
+        | "UPCOMING"
+        | "PRIORITY"
+        | "MISSED" => {
+        const nowMinutes =
+            getIndiaCurrentMinutes();
+
+        const startMinutes =
+            appointmentTimeToMinutes(
+                scheduledStartTime,
+            );
+
+        const endMinutes =
+            appointmentTimeToMinutes(
+                scheduledEndTime,
+            );
+
+        if (
+            startMinutes === null
+        ) {
+            return "UPCOMING";
+        }
+
+        if (
+            nowMinutes <
+            startMinutes
+        ) {
+            return "UPCOMING";
+        }
+
+        if (
+            endMinutes !== null &&
+            nowMinutes >=
+                endMinutes
+        ) {
+            return "MISSED";
+        }
+
+        return "PRIORITY";
+    };
+
+    const addMinutesToTime =
+    (
+        time:
+            string | null | undefined,
+
+        minutesToAdd:
+            number,
+    ): string | null => {
+        if (
+            !time ||
+            !/^(\d{1,2}):(\d{2})$/.test(
+                time,
+            )
+        ) {
+            return null;
+        }
+
+        const [
+            hourText,
+            minuteText,
+        ] =
+            time.split(
+                ":",
+            );
+
+        const hours =
+            Number(
+                hourText,
+            );
+
+        const minutes =
+            Number(
+                minuteText,
+            );
+
+        if (
+            !Number.isFinite(
+                hours,
+            ) ||
+            !Number.isFinite(
+                minutes,
+            ) ||
+            hours > 23 ||
+            minutes > 59
+        ) {
+            return null;
+        }
+
+        const totalMinutes =
+            hours * 60 +
+            minutes +
+            minutesToAdd;
+
+        const finalMinutes =
+            totalMinutes %
+            (
+                24 * 60
+            );
+
+        const finalHours =
+            Math.floor(
+                finalMinutes / 60,
+            );
+
+        const finalMinute =
+            finalMinutes % 60;
+
+        return `${String(
+            finalHours,
+        ).padStart(
+            2,
+            "0",
+        )}:${String(
+            finalMinute,
+        ).padStart(
+            2,
+            "0",
+        )}`;
+    };
 /* ============================================================
    CHECK IN → QUEUE
 ============================================================ */
@@ -3185,6 +3407,7 @@ export const checkInAppointment =
                 return res.status(400).json({
                     success:
                         false,
+
                     message:
                         "Invalid appointment ID",
                 });
@@ -3194,6 +3417,7 @@ export const checkInAppointment =
                 await Appointment.findOne({
                     _id:
                         id,
+
                     hospitalId,
                 });
 
@@ -3203,31 +3427,9 @@ export const checkInAppointment =
                 return res.status(404).json({
                     success:
                         false,
+
                     message:
                         "Appointment not found",
-                });
-            }
-
-            if (
-                appointment.status ===
-                "CHECKED_IN" &&
-                appointment.queueId
-            ) {
-                const existingQueue =
-                    await Queue.findById(
-                        appointment.queueId,
-                    );
-
-                return res.json({
-                    success:
-                        true,
-                    message:
-                        "Patient already checked in",
-                    data: {
-                        appointment,
-                        queue:
-                            existingQueue,
-                    },
                 });
             }
 
@@ -3236,6 +3438,7 @@ export const checkInAppointment =
                     "BOOKED",
                     "CONFIRMED",
                     "ARRIVED",
+                    "CHECKED_IN",
                 ].includes(
                     appointment.status,
                 )
@@ -3243,6 +3446,7 @@ export const checkInAppointment =
                 return res.status(409).json({
                     success:
                         false,
+
                     message:
                         "Appointment must be booked, confirmed or arrived before check-in",
                 });
@@ -3255,6 +3459,7 @@ export const checkInAppointment =
                 return res.status(409).json({
                     success:
                         false,
+
                     message:
                         "Collect payment before check-in",
                 });
@@ -3272,6 +3477,7 @@ export const checkInAppointment =
                 return res.status(409).json({
                     success:
                         false,
+
                     message:
                         "Only today's appointment can be checked in",
                 });
@@ -3281,6 +3487,7 @@ export const checkInAppointment =
                 await Department.findOne({
                     _id:
                         appointment.departmentId,
+
                     hospitalId,
                 });
 
@@ -3290,17 +3497,41 @@ export const checkInAppointment =
                 return res.status(404).json({
                     success:
                         false,
+
                     message:
                         "Department not found",
                 });
             }
 
+            const scheduledStartTime =
+                appointment.confirmedStartTime ||
+                appointment.requestedStartTime;
+
+            const scheduledEndTime =
+                appointment.endTime ||
+                addMinutesToTime(
+                    scheduledStartTime,
+                    APPOINTMENT_PRIORITY_WINDOW_MINUTES,
+                );
+
+            const appointmentCallStatus =
+                getAppointmentCallStatusForTime(
+                    scheduledStartTime,
+                    scheduledEndTime,
+                );
+
+            const now =
+                new Date();
+
             const existingQueue =
                 await Queue.findOne({
                     hospitalId,
+
                     appointmentId:
                         appointment._id,
+
                     queueDate,
+
                     status: {
                         $in: [
                             "WAITING",
@@ -3313,6 +3544,28 @@ export const checkInAppointment =
             if (
                 existingQueue
             ) {
+                existingQueue.scheduledStartTime =
+                    existingQueue.scheduledStartTime ||
+                    scheduledStartTime;
+
+                existingQueue.scheduledEndTime =
+                    existingQueue.scheduledEndTime ||
+                    scheduledEndTime;
+
+                existingQueue.appointmentCallStatus =
+                    appointmentCallStatus;
+
+                if (
+                    appointmentCallStatus ===
+                        "MISSED" &&
+                    !existingQueue.appointmentMissedAt
+                ) {
+                    existingQueue.appointmentMissedAt =
+                        now;
+                }
+
+                await existingQueue.save();
+
                 appointment.status =
                     "CHECKED_IN";
 
@@ -3323,7 +3576,14 @@ export const checkInAppointment =
                     !appointment.checkedInAt
                 ) {
                     appointment.checkedInAt =
-                        new Date();
+                        now;
+                }
+
+                if (
+                    !appointment.arrivedAt
+                ) {
+                    appointment.arrivedAt =
+                        now;
                 }
 
                 await appointment.save();
@@ -3336,10 +3596,16 @@ export const checkInAppointment =
                 return res.json({
                     success:
                         true,
+
                     message:
-                        "Patient already has active queue token",
+                        appointmentCallStatus ===
+                        "MISSED"
+                            ? "Patient checked in, but appointment time is missed"
+                            : "Patient already has active queue token",
+
                     data: {
                         appointment,
+
                         queue:
                             existingQueue,
                     },
@@ -3349,8 +3615,10 @@ export const checkInAppointment =
             const lastQueue =
                 await Queue.findOne({
                     hospitalId,
+
                     departmentId:
                         appointment.departmentId,
+
                     queueDate,
                 })
                     .sort({
@@ -3379,10 +3647,6 @@ export const checkInAppointment =
                     "0",
                 )}`;
 
-            const scheduledStartTime =
-                appointment.confirmedStartTime ||
-                appointment.requestedStartTime;
-
             const trackingToken =
                 crypto
                     .randomBytes(
@@ -3395,14 +3659,11 @@ export const checkInAppointment =
             const trackingExpiresAt =
                 new Date(
                     Date.now() +
-                    24 *
-                    60 *
-                    60 *
-                    1000,
+                        24 *
+                            60 *
+                            60 *
+                            1000,
                 );
-
-            const now =
-                new Date();
 
             const queue =
                 await Queue.create({
@@ -3424,6 +3685,19 @@ export const checkInAppointment =
                         "APPOINTMENT",
 
                     scheduledStartTime,
+
+                    scheduledEndTime,
+
+                    appointmentCallStatus,
+
+                    appointmentMissedAt:
+                        appointmentCallStatus ===
+                        "MISSED"
+                            ? now
+                            : null,
+
+                    manuallyCalledAfterMissedAt:
+                        null,
 
                     sortTime:
                         buildSortTime(
@@ -3508,7 +3782,10 @@ export const checkInAppointment =
                 appointment,
                 "CHECKED_IN",
                 req,
-                `Queue token ${queue.tokenLabel} generated`,
+                appointmentCallStatus ===
+                    "MISSED"
+                    ? `Queue token ${queue.tokenLabel} generated as missed appointment`
+                    : `Queue token ${queue.tokenLabel} generated`,
             );
 
             await appointment.save();
@@ -3519,24 +3796,48 @@ export const checkInAppointment =
                         String(
                             hospitalId,
                         ),
+
                     doctorId:
                         String(
                             appointment.doctorId,
                         ),
+
                     departmentId:
                         String(
                             appointment.departmentId,
                         ),
+
                     queueDate,
                 });
             } catch (
-            estimateError
+                estimateError
             ) {
                 console.error(
                     "Appointment queue estimate recalculation failed:",
                     estimateError,
                 );
             }
+
+            const populatedQueue =
+                await Queue.findById(
+                    queue._id,
+                )
+                    .populate(
+                        "patientId",
+                        "name phone email patientCode age gender address",
+                    )
+                    .populate(
+                        "departmentId",
+                        "name description tokenPrefix",
+                    )
+                    .populate(
+                        "doctorId",
+                        "name email isOnBreak breakStartedAt breakReason",
+                    )
+                    .populate(
+                        "appointmentId",
+                        "appointmentCode requestedStartTime confirmedStartTime endTime status paymentStatus",
+                    );
 
             emitAppointmentUpdate(
                 appointment,
@@ -3546,15 +3847,23 @@ export const checkInAppointment =
             return res.json({
                 success:
                     true,
+
                 message:
-                    "Patient checked in successfully",
+                    appointmentCallStatus ===
+                    "MISSED"
+                        ? "Patient checked in, but appointment time is missed"
+                        : "Patient checked in successfully",
+
                 data: {
                     appointment,
-                    queue,
+
+                    queue:
+                        populatedQueue ||
+                        queue,
                 },
             });
         } catch (
-        error
+            error
         ) {
             console.error(
                 "APPOINTMENT CHECK-IN ERROR:",
@@ -3564,6 +3873,7 @@ export const checkInAppointment =
             return res.status(500).json({
                 success:
                     false,
+
                 message:
                     "Failed to check in patient",
             });

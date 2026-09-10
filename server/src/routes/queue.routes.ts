@@ -10,6 +10,7 @@ import {
   getDoctorQueue,
   takeDoctorBreak,
   resumeDoctorDuty,
+  callSelectedPatient,
 } from "../controllers/queue.controller";
 
 import {
@@ -138,6 +139,13 @@ router.patch(
     "DOCTOR",
   ),
   resumeDoctorDuty,
+);
+
+router.patch(
+  "/:id/call-selected",
+  protect,
+  authorize("DOCTOR"),
+  callSelectedPatient,
 );
 
 /* =========================================================
