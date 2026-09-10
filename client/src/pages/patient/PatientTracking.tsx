@@ -203,6 +203,18 @@ export default function PatientTracking() {
             isOnBreak: false,
         });
 
+    const [
+        doctorResumeNotice,
+        setDoctorResumeNotice,
+    ] =
+        useState<{
+            show: boolean;
+            resumedAt?: string | null;
+            message?: string;
+        }>({
+            show: false,
+        });
+
     const refreshQueue =
         useRef<(() => Promise<void>) | null>(
             null,
@@ -231,6 +243,9 @@ export default function PatientTracking() {
                 false;
 
             let timer:
+                number | undefined;
+
+            let resumeNoticeTimer:
                 number | undefined;
 
             let currentQueue:
@@ -263,6 +278,10 @@ export default function PatientTracking() {
 
             setDoctorBreak({
                 isOnBreak: false,
+            });
+
+            setDoctorResumeNotice({
+                show: false,
             });
 
             if (
@@ -595,11 +614,26 @@ export default function PatientTracking() {
                     return;
                 }
 
+                const isNowOnBreak =
+                    Boolean(
+                        data.isOnBreak,
+                    );
+
+                if (
+                    resumeNoticeTimer !==
+                    undefined
+                ) {
+                    window.clearTimeout(
+                        resumeNoticeTimer,
+                    );
+
+                    resumeNoticeTimer =
+                        undefined;
+                }
+
                 setDoctorBreak({
                     isOnBreak:
-                        Boolean(
-                            data.isOnBreak,
-                        ),
+                        isNowOnBreak,
                     breakStartedAt:
                         data.breakStartedAt ||
                         null,
@@ -609,11 +643,42 @@ export default function PatientTracking() {
                     message:
                         data.message ||
                         (
-                            data.isOnBreak
+                            isNowOnBreak
                                 ? "Doctor is on break"
-                                : "Doctor resumed duty"
+                                : "Doctor returned to serve"
                         ),
                 });
+
+                if (
+                    isNowOnBreak
+                ) {
+                    setDoctorResumeNotice({
+                        show: false,
+                    });
+                } else {
+                    setDoctorResumeNotice({
+                        show: true,
+                        resumedAt:
+                            new Date().toISOString(),
+                        message:
+                            data.message ||
+                            "Doctor returned to serve",
+                    });
+
+                    resumeNoticeTimer =
+                        window.setTimeout(
+                            () => {
+                                if (
+                                    active
+                                ) {
+                                    setDoctorResumeNotice({
+                                        show: false,
+                                    });
+                                }
+                            },
+                            20000,
+                        );
+                }
 
                 void loadQueue();
             }
@@ -737,6 +802,16 @@ export default function PatientTracking() {
                 ) {
                     window.clearInterval(
                         timer,
+                    );
+                }
+
+
+                if (
+                    resumeNoticeTimer !==
+                    undefined
+                ) {
+                    window.clearTimeout(
+                        resumeNoticeTimer,
                     );
                 }
 
@@ -941,6 +1016,25 @@ export default function PatientTracking() {
         doctorDataBreak?.breakReason ||
         "Break";
 
+
+    const isDoctorRecentlyResumed =
+        Boolean(
+            doctorResumeNotice.show &&
+            !isDoctorOnBreak &&
+            !isCompleted &&
+            !isCancelled,
+        );
+
+    const doctorResumeMessage =
+        doctorResumeNotice.message ||
+        "Doctor returned to serve";
+
+    const doctorResumeTimeLabel =
+        formatDateTime(
+            doctorResumeNotice.resumedAt ||
+            null,
+        );
+
     const offlineMinutes =
         queue?.offlineMinutes ??
         0;
@@ -975,6 +1069,15 @@ export default function PatientTracking() {
 
         statusMessage =
             "Please wait nearby. Your queue position is safe and calling will resume when the doctor returns.";
+    } else if (
+        isWaiting &&
+        isDoctorRecentlyResumed
+    ) {
+        statusTitle =
+            "Doctor returned to serve";
+
+        statusMessage =
+            "Calling has resumed. Please stay ready and keep watching your live token updates.";
     } else if (
         isWaiting
     ) {
@@ -1333,6 +1436,37 @@ export default function PatientTracking() {
                                 </section>
                             )}
 
+                        {isDoctorRecentlyResumed && (
+                            <section
+                                className="pt-resume-alert"
+                                role="status"
+                                aria-live="polite"
+                            >
+                                <span className="pt-resume-icon">
+                                    <CheckCircle2
+                                        size={20}
+                                        aria-hidden="true"
+                                    />
+                                </span>
+
+                                <div>
+                                    <strong>
+                                        Doctor returned to serve
+                                    </strong>
+
+                                    <p>
+                                        Calling has resumed. Please stay nearby and keep watching your token.
+                                    </p>
+
+                                    <small>
+                                        {doctorResumeTimeLabel
+                                            ? `Resumed at ${doctorResumeTimeLabel}`
+                                            : doctorResumeMessage}
+                                    </small>
+                                </div>
+                            </section>
+                        )}
+
                         {(appointment ||
                             doctorTiming) &&
                             !isCompleted &&
@@ -1375,6 +1509,9 @@ export default function PatientTracking() {
                                             data-break={
                                                 isDoctorOnBreak
                                             }
+                                            data-resume={
+                                                isDoctorRecentlyResumed
+                                            }
                                         >
                                             <span className="pt-info-icon">
                                                 <Stethoscope
@@ -1390,22 +1527,26 @@ export default function PatientTracking() {
                                                 </p>
 
                                                 <h2>
-                                                    {isDoctorOnBreak
-                                                        ? "Doctor is on break"
-                                                        : isDoctorLate
-                                                            ? "Doctor is late today"
-                                                            : doctorOnline
-                                                                ? "Doctor is available"
-                                                                : "Doctor timing update"}
+                                                    {isDoctorRecentlyResumed
+                                                        ? "Doctor returned to serve"
+                                                        : isDoctorOnBreak
+                                                            ? "Doctor is on break"
+                                                            : isDoctorLate
+                                                                ? "Doctor is late today"
+                                                                : doctorOnline
+                                                                    ? "Doctor is available"
+                                                                    : "Doctor timing update"}
                                                 </h2>
 
                                                 <p>
-                                                    {isDoctorOnBreak
-                                                        ? "The doctor has paused calling the next patient. Please wait; your token is still active."
-                                                        : doctorTiming.message ||
-                                                        (isDoctorLate
-                                                            ? `Doctor is running late today by ${lateByMinutes} minutes.`
-                                                            : "Doctor timing is being updated live.")}
+                                                    {isDoctorRecentlyResumed
+                                                        ? "The doctor has resumed duty. Queue calling will continue now."
+                                                        : isDoctorOnBreak
+                                                            ? "The doctor has paused calling the next patient. Please wait; your token is still active."
+                                                            : doctorTiming.message ||
+                                                            (isDoctorLate
+                                                                ? `Doctor is running late today by ${lateByMinutes} minutes.`
+                                                                : "Doctor timing is being updated live.")}
                                                 </p>
 
                                                 <div className="pt-mini-grid">
@@ -1547,6 +1688,9 @@ export default function PatientTracking() {
                                     data-break={
                                         isDoctorOnBreak
                                     }
+                                    data-resume={
+                                        isDoctorRecentlyResumed
+                                    }
                                 >
                                     <summary>
                                         <span
@@ -1562,17 +1706,19 @@ export default function PatientTracking() {
                                         />
 
                                         <span>
-                                            {isDoctorOnBreak
-                                                ? "Doctor is on break"
-                                                : isDoctorLate
-                                                    ? `Doctor is late by ${lateByMinutes} min`
-                                                    : doctorOnline ===
-                                                        true
-                                                        ? "Doctor is available"
+                                            {isDoctorRecentlyResumed
+                                                ? "Doctor returned to serve"
+                                                : isDoctorOnBreak
+                                                    ? "Doctor is on break"
+                                                    : isDoctorLate
+                                                        ? `Doctor is late by ${lateByMinutes} min`
                                                         : doctorOnline ===
-                                                            false
-                                                            ? "Doctor is currently offline"
-                                                            : "Availability not confirmed"}
+                                                            true
+                                                            ? "Doctor is available"
+                                                            : doctorOnline ===
+                                                                false
+                                                                ? "Doctor is currently offline"
+                                                                : "Availability not confirmed"}
                                         </span>
 
                                         <span
@@ -1584,7 +1730,14 @@ export default function PatientTracking() {
                                     </summary>
 
                                     <div className="pt-doctor-details">
-                                        {isDoctorOnBreak ? (
+                                        {isDoctorRecentlyResumed ? (
+                                            <p>
+                                                {doctorLabel} returned to serve. Calling the next patient has resumed.
+                                                {doctorResumeTimeLabel
+                                                    ? ` Resumed at ${doctorResumeTimeLabel}.`
+                                                    : ""}
+                                            </p>
+                                        ) : isDoctorOnBreak ? (
                                             <p>
                                                 {doctorLabel} is currently on break. Calling the next patient is paused until duty resumes.
                                                 {doctorBreakStartedLabel
@@ -1668,9 +1821,11 @@ export default function PatientTracking() {
                                         ? "Tracking ended. You can close this page."
                                         : isDoctorOnBreak
                                             ? "Doctor is on break · live updates continue"
-                                            : isLive
-                                                ? "Queue updates automatically"
-                                                : "Reconnecting · checking every 30 seconds"}
+                                            : isDoctorRecentlyResumed
+                                                ? "Doctor returned to serve · queue updates continue"
+                                                : isLive
+                                                    ? "Queue updates automatically"
+                                                    : "Reconnecting · checking every 30 seconds"}
                                 </span>
                             </div>
 
@@ -1987,6 +2142,12 @@ function PatientTrackingStyles() {
         border-color: #fde68a;
     }
 
+
+    .pt-info-card[data-resume="true"] {
+        background: #ecfdf5;
+        border-color: #bbf7d0;
+    }
+
     .pt-info-icon {
         display: grid;
         place-items: center;
@@ -2006,6 +2167,12 @@ function PatientTrackingStyles() {
     .pt-info-card[data-break="true"] .pt-info-icon {
         background: #fef3c7;
         color: #b45309;
+    }
+
+
+    .pt-info-card[data-resume="true"] .pt-info-icon {
+        background: #d1fae5;
+        color: #047857;
     }
 
     .pt-info-card h2 {
@@ -2088,6 +2255,53 @@ function PatientTrackingStyles() {
         line-height: 1.6;
         font-weight: 700;
         color: #78350f;
+    }
+
+
+    .pt-resume-alert {
+        display: flex;
+        align-items: flex-start;
+        gap: 13px;
+        margin-top: 16px;
+        padding: 18px;
+        border: 1px solid #bbf7d0;
+        border-radius: 16px;
+        background: #ecfdf5;
+        color: #047857;
+    }
+
+    .pt-resume-icon {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        background: #d1fae5;
+        color: #047857;
+        flex-shrink: 0;
+    }
+
+    .pt-resume-alert strong {
+        display: block;
+        font-size: 15px;
+        line-height: 1.45;
+        font-weight: 700;
+    }
+
+    .pt-resume-alert p {
+        margin-top: 5px;
+        font-size: 12px;
+        line-height: 1.7;
+        color: #047857;
+    }
+
+    .pt-resume-alert small {
+        display: block;
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.6;
+        font-weight: 700;
+        color: #065f46;
     }
 
     .pt-stats {
@@ -2195,6 +2409,12 @@ function PatientTrackingStyles() {
         border-color: #fde68a;
     }
 
+
+    .pt-doctor[data-resume="true"] {
+        background: #ecfdf5;
+        border-color: #bbf7d0;
+    }
+
     .pt-doctor summary {
         display: flex;
         align-items: center;
@@ -2227,6 +2447,11 @@ function PatientTrackingStyles() {
 
     .pt-doctor-dot[data-online="true"] {
         background: #52845b;
+    }
+
+
+    .pt-doctor[data-resume="true"] .pt-doctor-dot {
+        background: #047857;
     }
 
     .pt-doctor[data-offline="true"] .pt-doctor-dot,
@@ -2570,6 +2795,30 @@ function PatientTrackingStyles() {
 
         .pt-break-alert p,
         .pt-break-alert small {
+            font-size: 11px;
+            line-height: 1.5;
+        }
+
+
+        .pt-resume-alert {
+            margin-top: 10px;
+            padding: 12px;
+            gap: 10px;
+            border-radius: 12px;
+        }
+
+        .pt-resume-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 9px;
+        }
+
+        .pt-resume-alert strong {
+            font-size: 14px;
+        }
+
+        .pt-resume-alert p,
+        .pt-resume-alert small {
             font-size: 11px;
             line-height: 1.5;
         }
