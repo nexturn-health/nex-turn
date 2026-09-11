@@ -44,12 +44,13 @@ export interface DoctorTimingData {
 }
 
 export interface AppointmentTrackingData {
-    appointmentCode?: string;
+    appointmentCode?: string | null;
     appointmentTime?: string | null;
     scheduledStartTime?: string | null;
+    scheduledEndTime?: string | null;
+    appointmentCallStatus?: "UPCOMING" | "PRIORITY" | "MISSED" | null;
     message?: string;
 }
-
 export interface PatientTrackingData {
     _id: string;
 
@@ -104,6 +105,9 @@ export interface PatientTrackingData {
 
     createdAt?: string;
     updatedAt?: string;
+    source?: "WALK_IN" | "APPOINTMENT" | "EMERGENCY";
+    isAppointment?: boolean;
+
 }
 
 interface PatientTrackingResponse {

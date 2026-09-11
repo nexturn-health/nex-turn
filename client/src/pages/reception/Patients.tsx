@@ -21,9 +21,6 @@ import {
     type ReactNode,
 } from "react";
 
-import {
-    toast,
-} from "react-hot-toast";
 
 import {
     getPatients,
@@ -83,6 +80,18 @@ type ModalType =
     | "new"
     | "register"
     | null;
+
+type PopupType =
+    | "success"
+    | "error";
+
+interface PopupMessage {
+    type: PopupType;
+    title: string;
+    message: string;
+    patientName?: string;
+    tokenLabel?: string;
+}
 
 interface VisitForm {
     departmentId: string;
@@ -194,12 +203,105 @@ function getDoctorTodaySessions(
     ) || [];
 }
 
+function visitTimeToMinutes(
+    value?: string | null,
+): number | null {
+    if (!value) {
+        return null;
+    }
+
+    const match =
+        String(value).match(
+            /^(\d{1,2}):(\d{2})/,
+        );
+
+    if (!match) {
+        return null;
+    }
+
+    const hours =
+        Number(match[1]);
+
+    const minutes =
+        Number(match[2]);
+
+    if (
+        !Number.isFinite(hours) ||
+        !Number.isFinite(minutes) ||
+        hours < 0 ||
+        hours > 23 ||
+        minutes < 0 ||
+        minutes > 59
+    ) {
+        return null;
+    }
+
+    return hours * 60 + minutes;
+}
+
+function getIndiaCurrentMinutes() {
+    const parts =
+        new Intl.DateTimeFormat(
+            "en-GB",
+            {
+                timeZone: "Asia/Kolkata",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+            },
+        ).formatToParts(
+            new Date(),
+        );
+
+    const hour =
+        Number(
+            parts.find(
+                (part) =>
+                    part.type === "hour",
+            )?.value || "0",
+        );
+
+    const minute =
+        Number(
+            parts.find(
+                (part) =>
+                    part.type === "minute",
+            )?.value || "0",
+        );
+
+    return hour * 60 + minute;
+}
+
 function isDoctorAvailableToday(
     doctor: Doctor,
 ) {
-    return getDoctorTodaySessions(
-        doctor,
-    ).length > 0;
+    const sessions =
+        getDoctorTodaySessions(
+            doctor,
+        );
+
+    if (
+        sessions.length === 0
+    ) {
+        return false;
+    }
+
+    const nowMinutes =
+        getIndiaCurrentMinutes();
+
+    return sessions.some(
+        (session) => {
+            const endMinutes =
+                visitTimeToMinutes(
+                    session.endTime,
+                );
+
+            return (
+                endMinutes !== null &&
+                nowMinutes < endMinutes
+            );
+        },
+    );
 }
 
 function getDoctorAvailabilityText(
@@ -225,6 +327,14 @@ function getDoctorAvailabilityText(
                     `${session.startTime} - ${session.endTime}`,
             )
             .join(", ");
+
+    if (
+        !isDoctorAvailableToday(
+            doctor,
+        )
+    ) {
+        return `Duty ended today · ${timing}`;
+    }
 
     if (
         doctor.isOnline
@@ -334,6 +444,110 @@ function PatientDialog({
         </dialog>
     );
 }
+
+function MessagePopup({
+    popup,
+    onClose,
+}: {
+    popup: PopupMessage;
+    onClose: () => void;
+}) {
+    const ref =
+        useRef<HTMLDialogElement>(
+            null,
+        );
+
+    useEffect(
+        () => {
+            const dialog =
+                ref.current;
+
+            if (
+                dialog &&
+                !dialog.open
+            ) {
+                dialog.showModal();
+            }
+
+            return () => {
+                if (
+                    dialog?.open
+                ) {
+                    dialog.close();
+                }
+            };
+        },
+        [popup],
+    );
+
+    const isSuccess =
+        popup.type === "success";
+
+    return (
+        <dialog
+            ref={ref}
+            className={`nsp-popup nsp-popup-${popup.type}`}
+            aria-labelledby="nsp-popup-title"
+            aria-describedby="nsp-popup-message"
+            onCancel={(event) => {
+                event.preventDefault();
+                onClose();
+            }}
+        >
+            <button
+                type="button"
+                className="nsp-popup-close"
+                aria-label="Close message"
+                onClick={onClose}
+            >
+                <X size={18} />
+            </button>
+
+            <div className="nsp-popup-icon">
+                {isSuccess ? (
+                    <CheckCircle2 size={34} />
+                ) : (
+                    <AlertCircle size={34} />
+                )}
+            </div>
+
+            <h2 id="nsp-popup-title">
+                {popup.title}
+            </h2>
+
+            <p id="nsp-popup-message">
+                {popup.message}
+            </p>
+
+            {popup.tokenLabel && (
+                <div className="nsp-popup-token">
+                    <span>
+                        Token
+                    </span>
+
+                    <strong>
+                        {popup.tokenLabel}
+                    </strong>
+
+                    {popup.patientName && (
+                        <small>
+                            {popup.patientName}
+                        </small>
+                    )}
+                </div>
+            )}
+
+            <button
+                type="button"
+                className="nsp-primary nsp-popup-action"
+                onClick={onClose}
+            >
+                {isSuccess ? "Done" : "Okay"}
+            </button>
+        </dialog>
+    );
+}
+
 
 export default function Patients() {
     const [
@@ -463,6 +677,14 @@ export default function Patients() {
             tokenLabel: string;
         } | null>(null);
 
+    const [
+        popup,
+        setPopup,
+    ] =
+        useState<PopupMessage | null>(
+            null,
+        );
+
     const savingRef =
         useRef(false);
 
@@ -471,6 +693,41 @@ export default function Patients() {
 
     const doctorRequestRef =
         useRef(0);
+
+    const showErrorPopup =
+        useCallback(
+            (
+                message: string,
+                title = "Action failed",
+            ) => {
+                setPopup({
+                    type: "error",
+                    title,
+                    message,
+                });
+            },
+            [],
+        );
+
+    const showSuccessPopup =
+        useCallback(
+            ({
+                patientName,
+                tokenLabel,
+            }: {
+                patientName: string;
+                tokenLabel: string;
+            }) => {
+                setPopup({
+                    type: "success",
+                    title: "Token generated",
+                    message: `${patientName} has been added to the queue successfully.`,
+                    patientName,
+                    tokenLabel,
+                });
+            },
+            [],
+        );
 
     const selectedDoctor =
         useMemo(
@@ -567,11 +824,19 @@ export default function Patients() {
                         request ===
                         requestRef.current
                     ) {
-                        setError(
+                        const message =
                             errorMessage(
                                 error,
                                 "Unable to load patients. Please try again.",
-                            ),
+                            );
+
+                        setError(
+                            message,
+                        );
+
+                        showErrorPopup(
+                            message,
+                            "Unable to load patients",
                         );
                     }
                 } finally {
@@ -585,7 +850,7 @@ export default function Patients() {
                     }
                 }
             },
-            [],
+            [showErrorPopup],
         );
 
     const loadDepartments =
@@ -620,11 +885,19 @@ export default function Patients() {
                 } catch (
                     error
                 ) {
-                    setDepartmentError(
+                    const message =
                         errorMessage(
                             error,
                             "Unable to load departments.",
-                        ),
+                        );
+
+                    setDepartmentError(
+                        message,
+                    );
+
+                    showErrorPopup(
+                        message,
+                        "Unable to load departments",
                     );
                 } finally {
                     setDepartmentLoading(
@@ -632,7 +905,7 @@ export default function Patients() {
                     );
                 }
             },
-            [],
+            [showErrorPopup],
         );
 
     const loadDoctors =
@@ -714,8 +987,16 @@ export default function Patients() {
                         filteredDoctors.length ===
                         0
                     ) {
+                        const message =
+                            "No doctor is assigned to this department.";
+
                         setDoctorError(
-                            "No doctor is assigned to this department.",
+                            message,
+                        );
+
+                        showErrorPopup(
+                            message,
+                            "Doctor unavailable",
                         );
                     }
                 } catch (
@@ -725,11 +1006,19 @@ export default function Patients() {
                         request ===
                         doctorRequestRef.current
                     ) {
-                        setDoctorError(
+                        const message =
                             errorMessage(
                                 error,
                                 "Unable to load doctors.",
-                            ),
+                            );
+
+                        setDoctorError(
+                            message,
+                        );
+
+                        showErrorPopup(
+                            message,
+                            "Unable to load doctors",
                         );
                     }
                 } finally {
@@ -743,7 +1032,7 @@ export default function Patients() {
                     }
                 }
             },
-            [],
+            [showErrorPopup],
         );
 
     useEffect(
@@ -934,32 +1223,56 @@ export default function Patients() {
         if (
             !visit.departmentId
         ) {
+            const message =
+                "Select a department to continue.";
+
             setFormError(
-                "Select a department to continue.",
+                message,
             );
 
-            return;
+            showErrorPopup(
+                message,
+                "Cannot generate token",
+            );
+
+            return false;
         }
 
         if (
             !visit.doctorId
         ) {
+            const message =
+                "Select a doctor to continue.";
+
             setFormError(
-                "Select a doctor to continue.",
+                message,
             );
 
-            return;
+            showErrorPopup(
+                message,
+                "Cannot generate token",
+            );
+
+            return false;
         }
 
         if (
             !selectedDoctor ||
             !selectedDoctorAvailable
         ) {
+            const message =
+                "Selected doctor timing is ended or not available today. Choose another doctor or department.";
+
             setFormError(
-                "Selected doctor is not available today. Choose another doctor or department.",
+                message,
             );
 
-            return;
+            showErrorPopup(
+                message,
+                "Doctor unavailable",
+            );
+
+            return false;
         }
 
         const response =
@@ -998,6 +1311,13 @@ export default function Patients() {
             },
         );
 
+        showSuccessPopup(
+            {
+                patientName,
+                tokenLabel,
+            },
+        );
+
         setModal(
             null,
         );
@@ -1009,6 +1329,8 @@ export default function Patients() {
         resetVisit();
 
         await loadPatients();
+
+        return true;
     }
 
     async function savePatient(
@@ -1026,8 +1348,16 @@ export default function Patients() {
             !form.name.trim() ||
             !form.phone.trim()
         ) {
+            const message =
+                "Enter the patient’s name and phone number.";
+
             setFormError(
-                "Enter the patient’s name and phone number.",
+                message,
+            );
+
+            showErrorPopup(
+                message,
+                "Missing patient details",
             );
 
             return;
@@ -1039,8 +1369,16 @@ export default function Patients() {
             ) ||
             form.age < 0
         ) {
+            const message =
+                "Enter a valid age.";
+
             setFormError(
-                "Enter a valid age.",
+                message,
+            );
+
+            showErrorPopup(
+                message,
+                "Invalid age",
             );
 
             return;
@@ -1049,8 +1387,16 @@ export default function Patients() {
         if (
             !canGenerateToken
         ) {
+            const message =
+                "Select department and available doctor before generating token.";
+
             setFormError(
-                "Select department and available doctor before generating token.",
+                message,
+            );
+
+            showErrorPopup(
+                message,
+                "Cannot generate token",
             );
 
             return;
@@ -1097,22 +1443,26 @@ export default function Patients() {
                 );
             }
 
-            await createTokenForPatient(
-                {
-                    patientId,
-                    patientName:
-                        createdPatient.name ||
-                        form.name.trim(),
-                },
-            );
+            const tokenCreated =
+                await createTokenForPatient(
+                    {
+                        patientId,
+                        patientName:
+                            createdPatient.name ||
+                            form.name.trim(),
+                    },
+                );
+
+            if (
+                !tokenCreated
+            ) {
+                return;
+            }
 
             setForm(
                 emptyForm(),
             );
 
-            toast.success(
-                "Patient added and token generated.",
-            );
         } catch (
             error
         ) {
@@ -1124,6 +1474,11 @@ export default function Patients() {
 
             setFormError(
                 message,
+            );
+
+            showErrorPopup(
+                message,
+                "Unable to add patient",
             );
 
             if (
@@ -1171,8 +1526,16 @@ export default function Patients() {
         if (
             !canGenerateToken
         ) {
+            const message =
+                "Select department and available doctor before generating token.";
+
             setFormError(
-                "Select department and available doctor before generating token.",
+                message,
+            );
+
+            showErrorPopup(
+                message,
+                "Cannot generate token",
             );
 
             return;
@@ -1199,17 +1562,22 @@ export default function Patients() {
                 },
             );
 
-            toast.success(
-                "Token generated successfully.",
-            );
         } catch (
             error
         ) {
-            setFormError(
+            const message =
                 errorMessage(
                     error,
                     "Unable to generate token. Please try again.",
-                ),
+                );
+
+            setFormError(
+                message,
+            );
+
+            showErrorPopup(
+                message,
+                "Unable to generate token",
             );
         } finally {
             savingRef.current =
@@ -1406,6 +1774,16 @@ export default function Patients() {
                                 },
                             )}
                         </div>
+
+                        {selectedDoctor &&
+                            !selectedDoctorAvailable && (
+                                <p
+                                    className="nsp-warning"
+                                    role="alert"
+                                >
+                                    Doctor duty timing has ended for today. Token generation is closed for this doctor.
+                                </p>
+                            )}
                     </section>
                 )}
 
@@ -1491,6 +1869,17 @@ export default function Patients() {
                 {styles}
                 {extraStyles}
             </style>
+
+            {popup && (
+                <MessagePopup
+                    popup={popup}
+                    onClose={() =>
+                        setPopup(
+                            null,
+                        )
+                    }
+                />
+            )}
 
             <header className="nsp-header">
                 <div>
@@ -2149,8 +2538,9 @@ export default function Patients() {
 
 const extraStyles = `
 .nsp-section-divider{display:flex;align-items:center;gap:12px;margin:24px 0 18px;color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.nsp-section-divider:before,.nsp-section-divider:after{content:"";height:1px;background:var(--line);flex:1}.nsp-doctor-box{margin-top:18px;padding:16px;border:1px solid var(--line);border-radius:14px;background:#fafbf8}.nsp-doctor-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.nsp-doctor-head h3{margin-top:5px!important}.nsp-doctor-list{display:grid;gap:10px}.nsp-doctor-card{display:grid;grid-template-columns:auto 34px 1fr auto;align-items:center;gap:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:white;cursor:pointer}.nsp-doctor-card:has(input:checked){background:#edf3e6;border-color:#78a58b}.nsp-doctor-card[data-available=false]{background:#f6f2ee;color:#95877a}.nsp-doctor-card input{accent-color:var(--green)}.nsp-doctor-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:#edf3e6;color:var(--green)}.nsp-doctor-card strong{display:block;font-size:13px}.nsp-doctor-card small{display:block;margin-top:4px;font-size:11px;color:var(--muted);line-height:1.5}.nsp-doctor-card em{font-style:normal;font-size:10px;font-weight:800;padding:5px 8px;border-radius:30px;background:#edf3e6;color:var(--green);white-space:nowrap}.nsp-doctor-card[data-available=false] em{background:#fff1ed;color:#9b3e2b}.nsp-warning{padding:12px;border-radius:10px;background:#fff8e8;border:1px solid #eddcb6;color:#8a6117;font-size:12px;line-height:1.6}.nsp-help{margin-top:12px!important;color:var(--muted);font-size:12px;line-height:1.6}.nsp-register{justify-content:center}@media(max-width:640px){.nsp-doctor-card{grid-template-columns:auto 30px 1fr}.nsp-doctor-card em{grid-column:2/-1;justify-self:start}.nsp-section-divider{margin:20px 0 14px}}
-`;
+@media(max-width:480px){.nsp-popup{width:calc(100% - 24px);max-height:calc(100dvh - 24px);padding:24px 18px 20px}}`;
 // All styles live in this file and are scoped to this page.
 const styles = `
+.nsp-popup{position:fixed!important;top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;transform:translate(-50%,-50%)!important;margin:0!important;width:calc(100% - 32px);max-width:420px;max-height:calc(100dvh - 32px);overflow:auto;border:0;border-radius:22px;padding:28px 24px 24px;background:#fff;color:var(--ink);box-shadow:0 28px 90px #102d2940;text-align:center}.nsp-popup::backdrop{background:#102d2966;backdrop-filter:blur(4px)}.nsp-popup-close{position:absolute;top:12px;right:12px;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:transparent;color:var(--muted)}.nsp-popup-close:hover{background:#f1f4ee}.nsp-popup-icon{width:66px;height:66px;margin:0 auto 16px;display:grid;place-items:center;border-radius:20px}.nsp-popup-success .nsp-popup-icon{background:#e5f3e9;color:var(--green)}.nsp-popup-error .nsp-popup-icon{background:#fff1ed;color:#9b3e2b}.nsp-popup h2{font-size:22px;font-weight:750;margin:0 0 9px!important}.nsp-popup p{font-size:14px;line-height:1.6;color:var(--muted);margin:0!important}.nsp-popup-token{margin:18px 0 4px;padding:15px;border-radius:16px;background:#f6f8f3;border:1px solid var(--line)}.nsp-popup-token span{display:block;font-size:11px;color:var(--muted);font-weight:750;text-transform:uppercase;letter-spacing:.1em}.nsp-popup-token strong{display:block;margin-top:5px;font-size:26px;color:var(--green);letter-spacing:-.4px}.nsp-popup-token small{display:block;margin-top:4px;font-size:13px;color:var(--muted)}.nsp-popup-action{width:100%;margin-top:20px}.nsp-popup-error .nsp-popup-action{background:#9b3e2b;border-color:#9b3e2b}.nsp-popup-error .nsp-popup-action:hover:not(:disabled){background:#813321}
 .nsp{--ink:#173d39;--muted:#6b7c75;--line:#dfe6dc;--green:#176957;color:var(--ink);background:#f5f6f2;min-height:100%;padding:32px;font-family:inherit}.nsp *{box-sizing:border-box}.nsp button,.nsp input,.nsp select,.nsp textarea{font:inherit}.nsp button{cursor:pointer;transition:background .18s,box-shadow .18s}.nsp button:disabled{opacity:.55;cursor:not-allowed}.nsp button:focus-visible,.nsp input:focus-visible,.nsp select:focus-visible,.nsp textarea:focus-visible{outline:3px solid #95c4b4;outline-offset:3px}.nsp h1,.nsp h2,.nsp h3,.nsp p{margin:0}.nsp-header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:24px}.nsp-eyebrow{font-size:10px;letter-spacing:.15em;font-weight:700;color:var(--green)}.nsp h1{font-size:32px;font-weight:750;letter-spacing:-1px;margin:7px 0}.nsp-header p,.nsp-form-intro{font-size:14px;color:var(--muted);line-height:1.6}.nsp-primary,.nsp-secondary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:10px 17px;border-radius:12px;font-size:13px!important;font-weight:650!important;white-space:nowrap}.nsp-primary{background:var(--green);border:1px solid var(--green);color:white}.nsp-primary:hover:not(:disabled){background:#125442}.nsp-secondary{background:white;border:1px solid var(--line);color:var(--ink)}.nsp-secondary:hover:not(:disabled){background:#edf3e6}.nsp-summary{display:flex;flex-wrap:wrap;gap:20px;background:#eaf0e1;border:1px solid #dde6d4;padding:16px 20px;border-radius:15px;margin-bottom:22px;font-size:13px}.nsp-summary>span{display:flex;align-items:center;gap:8px}.nsp-summary strong{font-size:18px}.nsp-panel{background:#fff;border:1px solid var(--line);border-radius:20px;overflow:hidden}.nsp-toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px;border-bottom:1px solid var(--line)}.nsp-tabs{display:flex;gap:4px;padding:4px;background:#f1f4ee;border-radius:12px}.nsp-tabs button{border:0;background:transparent;color:var(--muted);padding:10px 14px;border-radius:9px;font-size:13px;font-weight:650;white-space:nowrap}.nsp-tabs button[aria-pressed=true]{background:#173d39;color:white}.nsp-tabs span{margin-left:6px;opacity:.75;font-size:11px}.nsp-search{display:flex;align-items:center;gap:10px;min-width:0;width:320px;background:#f8faf6;border:1px solid var(--line);border-radius:12px;padding:0 12px;color:var(--muted)}.nsp-search input{min-width:0;width:100%;height:44px;background:transparent;border:0;color:var(--ink);font-size:13px}.nsp-icon{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:40px;height:40px;border:0;border-radius:10px;background:transparent;color:inherit}.nsp-icon:hover{background:#eaf0e1}.nsp-list-heading{display:flex;justify-content:space-between;padding:20px 22px 12px}.nsp-list-heading h2{font-size:15px;font-weight:700}.nsp-list-heading>span{font-size:12px;color:var(--muted)}.nsp-list{padding:0 22px 12px}.nsp-patient{display:grid;grid-template-columns:minmax(160px,1.4fr) minmax(105px,.8fr) minmax(115px,.8fr) minmax(100px,1fr) auto;align-items:center;gap:18px;padding:20px 0;border-bottom:1px solid #edf0e9}.nsp-patient:last-child{border-bottom:0}.nsp-person{display:flex;align-items:center;gap:12px;min-width:0}.nsp-person>div:last-child{min-width:0}.nsp-avatar{width:42px;height:42px;flex-shrink:0;display:grid;place-items:center;border-radius:14px;background:#edf3e6;color:var(--green);font-weight:700}.nsp h3{font-size:14px;font-weight:700;overflow-wrap:anywhere}.nsp-code{font-size:11px;color:var(--muted);margin-top:4px!important;overflow-wrap:anywhere}.nsp-detail{display:flex;flex-direction:column;gap:5px;min-width:0;font-size:13px;overflow-wrap:anywhere}.nsp-detail small,.nsp-selected small{font-size:11px;color:var(--muted)}.nsp-visit{display:inline-flex;gap:6px;align-items:center;font-size:11px;font-weight:600;color:var(--green);background:#edf3e6;padding:8px 10px;border-radius:30px;white-space:nowrap}.nsp-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:13px;padding:65px 20px;color:var(--muted)}.nsp-empty h3{font-size:17px;color:var(--ink)}.nsp-empty p{font-size:13px;max-width:350px;line-height:1.6}.nsp-receipt{display:flex;align-items:center;gap:13px;padding:16px;background:#e5f3e9;border:1px solid #c8e1d2;border-radius:15px;margin-bottom:18px}.nsp-receipt>div{flex:1}.nsp-receipt p{font-size:13px;margin-top:4px}.nsp-error{background:#fff1ed;border:1px solid #f1d5cb;color:#9b3e2b;padding:12px 14px;border-radius:10px;font-size:13px;line-height:1.5;margin:12px 0!important}.nsp-error button{background:transparent;border:0;text-decoration:underline;color:inherit;font-weight:700}.nsp-dialog{color:var(--ink);background:white;border:1px solid var(--line);border-radius:22px;padding:0;width:calc(100% - 28px);max-width:510px;max-height:90dvh;margin:auto;overflow:auto;box-shadow:0 24px 90px #12362b30}.nsp-dialog::backdrop{background:#102d2966;backdrop-filter:blur(4px)}.nsp-dialog-head{display:flex;align-items:center;justify-content:space-between;padding:22px 24px;border-bottom:1px solid var(--line)}.nsp-dialog-head small{font-size:11px;color:var(--green);font-weight:650}.nsp-dialog-head h2{font-size:22px;margin-top:5px}.nsp-form-body{padding:22px 24px}.nsp-form-intro{margin-bottom:20px!important}.nsp-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}.nsp-fields label{display:flex;flex-direction:column;gap:8px;font-size:12px;font-weight:650;min-width:0}.nsp-wide{grid-column:1/-1}.nsp-fields label small{font-weight:400;color:var(--muted)}.nsp-fields input,.nsp-fields select,.nsp-fields textarea{width:100%;border:1px solid var(--line);border-radius:10px;min-height:44px;padding:11px 12px;background:#fafbf8;color:var(--ink);font-size:14px}.nsp-fields textarea{resize:vertical}.nsp-actions{position:sticky;bottom:0;background:white;display:flex;justify-content:flex-end;gap:10px;padding:17px 24px;border-top:1px solid var(--line)}.nsp-selected{padding:16px;background:#edf3e6;border-radius:13px;margin-bottom:20px;overflow-wrap:anywhere}.nsp-selected p{font-size:13px;margin:6px 0}.nsp-priority{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:22px 0 0;padding:0;border:0}.nsp-priority legend{font-size:12px;font-weight:650;margin-bottom:10px}.nsp-priority label{display:flex;align-items:center;gap:9px;padding:13px;border:1px solid var(--line);border-radius:12px;cursor:pointer}.nsp-priority label:has(input:checked){background:#edf3e6;border-color:#78a58b}.nsp-priority input{accent-color:var(--green)}.nsp-priority strong,.nsp-priority small{display:block;font-size:12px}.nsp-priority small{font-size:11px;font-weight:400;color:var(--muted);margin-top:4px}.nsp-spin{animation:nsp-spin 1s linear infinite}@keyframes nsp-spin{to{transform:rotate(360deg)}}@media(min-width:1400px){.nsp{padding:36px 48px}}@media(max-width:1100px){.nsp-patient{grid-template-columns:1.3fr 1fr 1fr}.nsp-address{grid-column:2}.nsp-register,.nsp-visit{justify-self:end}.nsp-person{align-self:start;grid-row:span 2}}@media(max-width:640px){.nsp{padding:20px 14px}.nsp-header{align-items:flex-start;gap:12px}.nsp h1{font-size:27px}.nsp-header p{font-size:12px;max-width:230px}.nsp-eyebrow{font-size:8px;letter-spacing:.09em}.nsp-header>.nsp-primary{padding:10px;font-size:12px!important;margin-top:20px}.nsp-summary{gap:15px;padding:12px;font-size:11px;margin-bottom:16px}.nsp-summary strong{font-size:16px}.nsp-toolbar{flex-direction:column;align-items:stretch;padding:14px;gap:12px}.nsp-tabs button{flex:1}.nsp-search{width:100%}.nsp-list-heading{padding:18px 15px 12px}.nsp-list{padding:0 14px 14px;display:grid;gap:12px}.nsp-patient{grid-template-columns:1fr 1fr;gap:14px;padding:16px;border:1px solid var(--line)!important;border-radius:14px}.nsp-person{grid-column:1/-1;grid-row:auto}.nsp-address{grid-column:1/-1}.nsp-register,.nsp-visit{grid-column:1/-1;justify-self:stretch;justify-content:center}.nsp-dialog-head{padding:18px}.nsp-form-body{padding:18px}.nsp-actions{padding:14px 18px}.nsp-actions>*{flex:1}.nsp-priority{gap:8px}.nsp-priority label{padding:10px}.nsp-receipt{gap:9px;padding:12px}.nsp-receipt p{font-size:12px}}@media(prefers-reduced-motion:reduce){.nsp *{animation:none!important;transition:none!important}}
 `;

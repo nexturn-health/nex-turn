@@ -79,29 +79,25 @@ export interface DoctorQueueItem {
     _id: string;
     tokenNumber: number;
     tokenLabel: string;
-
-    priority: QueuePriority;
+    priority: "NORMAL" | "EMERGENCY";
     source?: QueueSource;
+    status: "WAITING" | "CALLED" | "SERVING" | "COMPLETED" | "SKIPPED" | "CANCELLED";
 
-    status: QueueStatus;
-
-    patient?: QueuePatient;
-    patientId?: QueuePatient;
-
-    departmentId?: QueueDepartment;
-    doctorId?: QueueDoctor;
+    patient?: any;
+    patientId?: any;
+    departmentId?: any;
+    doctorId?: any;
 
     appointmentId?: DoctorQueueAppointment | string | null;
-
     appointmentCode?: string | null;
     scheduledStartTime?: string | null;
     scheduledEndTime?: string | null;
+    appointmentCallStatus?: "UPCOMING" | "PRIORITY" | "MISSED" | null;
+    appointmentMissedAt?: string | null;
+    manuallyCalledAfterMissedAt?: string | null;
 
     isAppointment?: boolean;
     isEmergency?: boolean;
-
-    callEligibility?: QueueCallEligibility;
-    callEligibilityText?: string;
 
     estimatedWaitMinutes?: number;
     estimatedWaitTime?: number;
@@ -112,10 +108,6 @@ export interface DoctorQueueItem {
     completedAt?: string;
     createdAt?: string;
     updatedAt?: string;
-
-    appointmentCallStatus?: "UPCOMING" | "PRIORITY" | "MISSED" | null;
-    appointmentMissedAt?: string | null;
-    manuallyCalledAfterMissedAt?: string | null;
 }
 /* =========================================================
    QUEUE API RESPONSE

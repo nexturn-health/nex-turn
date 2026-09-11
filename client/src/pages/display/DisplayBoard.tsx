@@ -81,9 +81,40 @@ const EMERGENCY_ANNOUNCEMENT_TEXT: Record<DisplayLanguage, (token: string, dept:
   ML: (t, d) => `അടിയന്തര ടോക്കൺ ${t}, ദയവായി ഉടൻ ${d} ലേക്ക് വരിക.`,
 };
 
+type DisplayTokenSource = "WALK_IN" | "APPOINTMENT" | "EMERGENCY";
+
+type BreakAwareDoctor = {
+  name?: string | null;
+  isOnline?: boolean | null;
+  isOnBreak?: boolean | null;
+  breakStartedAt?: string | Date | null;
+  breakReason?: string | null;
+};
+
 type EmergencyAwareDisplayQueue = DisplayQueue & {
   priority?: "NORMAL" | "EMERGENCY";
-  source?: "WALK_IN" | "APPOINTMENT" | "EMERGENCY";
+  source?: DisplayTokenSource;
+  scheduledStartTime?: string | null;
+  scheduledEndTime?: string | null;
+  appointmentCallStatus?: "UPCOMING" | "PRIORITY" | "MISSED" | null;
+  doctorId?: (DisplayQueue["doctorId"] & BreakAwareDoctor) | null;
+};
+
+type BreakAwareDisplayResponse = DisplayResponse & {
+  doctorOnBreak?: boolean | null;
+  doctorBreakStartedAt?: string | Date | null;
+  doctorBreakReason?: string | null;
+  breakStartedAt?: string | Date | null;
+  breakReason?: string | null;
+  doctorStatus?: {
+    isOnBreak?: boolean | null;
+    breakStartedAt?: string | Date | null;
+    breakReason?: string | null;
+  } | null;
+  current?: EmergencyAwareDisplayQueue[];
+  next?: EmergencyAwareDisplayQueue[];
+  waiting?: EmergencyAwareDisplayQueue[];
+  emergency?: EmergencyAwareDisplayQueue[];
 };
 
 function isEmergencyQueue(queue?: DisplayQueue | null): boolean {
@@ -116,6 +147,32 @@ const DOCTOR_ONLINE_TEXT: Record<DisplayLanguage, (name: string) => string> = {
   GU: (n) => `ડૉક્ટર ${n} હવે ઑનલાઇન છે.`,
   PA: (n) => `ਡਾਕਟਰ ${n} ਹੁਣ ਔਨਲਾਈਨ ਹਨ.`,
   ML: (n) => `ഡോക്ടർ ${n} ഇപ്പോൾ ഓൺലൈനിലാണ്.`,
+};
+
+const DOCTOR_BREAK_TEXT: Record<DisplayLanguage, (name: string) => string> = {
+  EN: (n) => `Doctor ${n} is on break. Queue is paused. Please wait for the next announcement.`,
+  HI: (n) => `डॉक्टर ${n} ब्रेक पर हैं। कतार अभी रुकी हुई है। कृपया अगले अनाउंसमेंट की प्रतीक्षा करें।`,
+  BN: (n) => `ডাক্তার ${n} বিরতিতে আছেন। অনুগ্রহ করে পরবর্তী ঘোষণার জন্য অপেক্ষা করুন।`,
+  MR: (n) => `डॉक्टर ${n} ब्रेकवर आहेत. कृपया पुढील घोषणेची प्रतीक्षा करा.`,
+  TA: (n) => `டாக்டர் ${n} இடைவேளையில் உள்ளார். அடுத்த அறிவிப்புக்காக காத்திருக்கவும்.`,
+  TE: (n) => `డాక్టర్ ${n} విరామంలో ఉన్నారు. దయచేసి తదుపరి ప్రకటన కోసం వేచి ఉండండి.`,
+  KN: (n) => `ಡಾಕ್ಟರ್ ${n} ವಿರಾಮದಲ್ಲಿದ್ದಾರೆ. ದಯವಿಟ್ಟು ಮುಂದಿನ ಘೋಷಣೆಗೆ ಕಾಯಿರಿ.`,
+  GU: (n) => `ડૉક્ટર ${n} બ્રેક પર છે. કૃપા કરીને આગળની જાહેરાતની રાહ જુઓ.`,
+  PA: (n) => `ਡਾਕਟਰ ${n} ਬ੍ਰੇਕ 'ਤੇ ਹਨ। ਕਿਰਪਾ ਕਰਕੇ ਅਗਲੀ ਘੋਸ਼ਣਾ ਦੀ ਉਡੀਕ ਕਰੋ।`,
+  ML: (n) => `ഡോക്ടർ ${n} ഇടവേളയിലാണ്. ദയവായി അടുത്ത പ്രഖ്യാപനം കാത്തിരിക്കുക.`,
+};
+
+const DOCTOR_RESUME_TEXT: Record<DisplayLanguage, (name: string) => string> = {
+  EN: (n) => `Doctor ${n} has resumed duty. Queue will continue now.`,
+  HI: (n) => `डॉक्टर ${n} वापस आ गए हैं। कतार अब फिर से शुरू होगी।`,
+  BN: (n) => `ডাক্তার ${n} আবার কাজ শুরু করেছেন। কিউ এখন চলবে।`,
+  MR: (n) => `डॉक्टर ${n} पुन्हा ड्युटीवर आले आहेत. कतार आता सुरू होईल.`,
+  TA: (n) => `டாக்டர் ${n} மீண்டும் பணிக்கு வந்துள்ளார். வரிசை இப்போது தொடரும்.`,
+  TE: (n) => `డాక్టర్ ${n} తిరిగి విధుల్లో చేరారు. క్యూ ఇప్పుడు కొనసాగుతుంది.`,
+  KN: (n) => `ಡಾಕ್ಟರ್ ${n} ಮತ್ತೆ ಕರ್ತವ್ಯಕ್ಕೆ ಬಂದಿದ್ದಾರೆ. ಸಾಲು ಈಗ ಮುಂದುವರಿಯುತ್ತದೆ.`,
+  GU: (n) => `ડૉક્ટર ${n} ફરી ડ્યૂટી પર આવી ગયા છે. કતાર હવે ચાલુ રહેશે.`,
+  PA: (n) => `ਡਾਕਟਰ ${n} ਮੁੜ ਡਿਊਟੀ 'ਤੇ ਆ ਗਏ ਹਨ। ਕਤਾਰ ਹੁਣ ਜਾਰੀ ਰਹੇਗੀ।`,
+  ML: (n) => `ഡോക്ടർ ${n} വീണ്ടും ഡ്യൂട്ടിയിൽ എത്തിയിട്ടുണ്ട്. ക്യൂ ഇപ്പോൾ തുടരും.`,
 };
 
 const POLL_INTERVAL_MS = 1_000;
@@ -445,6 +502,168 @@ function useSpeechAnnouncer(voicesRef: { current: SpeechSynthesisVoice[] }) {
   };
 }
 
+
+function getQueueSource(queue?: DisplayQueue | null): DisplayTokenSource {
+  const item = queue as EmergencyAwareDisplayQueue | null | undefined;
+
+  if (
+    item?.priority === "EMERGENCY" ||
+    item?.source === "EMERGENCY"
+  ) {
+    return "EMERGENCY";
+  }
+
+  if (
+    item?.source === "APPOINTMENT" ||
+    String(item?.tokenLabel || "").includes("-A")
+  ) {
+    return "APPOINTMENT";
+  }
+
+  return "WALK_IN";
+}
+
+function tokenTypeLabel(queue?: DisplayQueue | null) {
+  const source = getQueueSource(queue);
+
+  if (source === "EMERGENCY") return "Emergency";
+  if (source === "APPOINTMENT") return "Appointment";
+  return "Walk-in";
+}
+
+function tokenTypeClass(queue?: DisplayQueue | null) {
+  const source = getQueueSource(queue);
+
+  if (source === "EMERGENCY") return "emergency";
+  if (source === "APPOINTMENT") return "appointment";
+  return "walkin";
+}
+
+function getDoctorBreakInfo(data?: DisplayResponse | null) {
+  const item = data as BreakAwareDisplayResponse | null | undefined;
+
+  const allQueues = [
+    ...(item?.current || []),
+    ...(item?.next || []),
+    ...(item?.waiting || []),
+    ...(item?.emergency || []),
+  ];
+
+  const queueDoctor = allQueues.find(
+    (queue) =>
+      Boolean(
+        (queue as EmergencyAwareDisplayQueue)?.doctorId &&
+          typeof (queue as EmergencyAwareDisplayQueue).doctorId === "object",
+      ),
+  )?.doctorId as BreakAwareDoctor | null | undefined;
+
+  const isOnBreak = Boolean(
+    item?.doctorOnBreak ??
+      item?.doctorStatus?.isOnBreak ??
+      queueDoctor?.isOnBreak ??
+      false,
+  );
+
+  const breakStartedAt =
+    item?.doctorBreakStartedAt ??
+    item?.breakStartedAt ??
+    item?.doctorStatus?.breakStartedAt ??
+    queueDoctor?.breakStartedAt ??
+    null;
+
+  const breakReason =
+    item?.doctorBreakReason ??
+    item?.breakReason ??
+    item?.doctorStatus?.breakReason ??
+    queueDoctor?.breakReason ??
+    null;
+
+  return {
+    isOnBreak,
+    breakStartedAt,
+    breakReason,
+  };
+}
+
+function formatBreakTime(value?: string | Date | null) {
+  if (!value) return null;
+
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return null;
+  }
+
+  return date.toLocaleTimeString(
+    "en-IN",
+    {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    },
+  );
+}
+
+function DoctorBreakPanel({
+  doctorName,
+  breakStartedAt,
+  breakReason,
+  current,
+}: {
+  doctorName?: string | null;
+  breakStartedAt?: string | Date | null;
+  breakReason?: string | null;
+  current: DisplayQueue[];
+}) {
+  const breakTime =
+    formatBreakTime(
+      breakStartedAt,
+    );
+
+  const pausedToken =
+    current[0];
+
+  return (
+    <div className="tv-break-panel">
+      <span className="tv-break-pill">
+        Doctor on break
+      </span>
+
+      <h2>
+        {doctorLabel(doctorName)} is on break
+      </h2>
+
+      <p>
+        Queue is paused. Please wait for the doctor to resume duty.
+      </p>
+
+      {pausedToken && (
+        <div className="tv-paused-token">
+          <span>Current paused token</span>
+          <strong>{pausedToken.tokenLabel}</strong>
+        </div>
+      )}
+
+      <div className="tv-break-meta">
+        {breakTime && (
+          <span>Started at {breakTime}</span>
+        )}
+
+        {breakReason && (
+          <span>Reason: {breakReason}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Hook: derives voice announcements from display state changes
 
 function useAnnouncements(
@@ -455,6 +674,7 @@ function useAnnouncements(
   const lastAnnouncedToken = useRef<string | null>(null);
   const lastDoctorId = useRef<string | null>(null);
   const lastDoctorOnline = useRef<boolean | null>(null);
+  const lastDoctorBreak = useRef<boolean | null>(null);
   const isFirstLoad = useRef(true);
 
   // Reset announcement state whenever we switch to a different display.
@@ -462,6 +682,7 @@ function useAnnouncements(
     lastAnnouncedToken.current = null;
     lastDoctorId.current = null;
     lastDoctorOnline.current = null;
+    lastDoctorBreak.current = null;
     isFirstLoad.current = true;
   }, [displayKey]);
 
@@ -471,15 +692,19 @@ function useAnnouncements(
     const { display, current = [] } = data;
     if (!display.voiceEnabled || !display.announcementEnabled) return;
 
-    // Doctor presence is authoritative from the API root, not the queue payload.
+    // Doctor presence/break is authoritative from the API root,
+    // with queue doctor payload as fallback for older backend responses.
     const doctorOnline = data.doctorOnline === true;
     const doctorId = data.doctorId ?? "display-doctor";
     const doctorName = data.doctorName ?? "Doctor";
+    const doctorBreak = getDoctorBreakInfo(data);
+    const doctorOnBreak = doctorBreak.isOnBreak;
 
     if (lastDoctorId.current !== doctorId) {
       // New doctor session — establish a baseline without announcing.
       lastDoctorId.current = doctorId;
       lastDoctorOnline.current = doctorOnline;
+      lastDoctorBreak.current = doctorOnBreak;
     } else {
       if (lastDoctorOnline.current === true && doctorOnline === false) {
         announcer.speak(DOCTOR_OFFLINE_TEXT[display.displayLanguage](doctorName), display.displayLanguage, 2);
@@ -487,14 +712,21 @@ function useAnnouncements(
       if (lastDoctorOnline.current === false && doctorOnline === true) {
         announcer.speak(DOCTOR_ONLINE_TEXT[display.displayLanguage](doctorName), display.displayLanguage, 1);
       }
+      if (lastDoctorBreak.current === false && doctorOnBreak === true) {
+        announcer.speak(DOCTOR_BREAK_TEXT[display.displayLanguage](doctorName), display.displayLanguage, 2);
+      }
+      if (lastDoctorBreak.current === true && doctorOnBreak === false) {
+        announcer.speak(DOCTOR_RESUME_TEXT[display.displayLanguage](doctorName), display.displayLanguage, 1);
+      }
     }
     lastDoctorOnline.current = doctorOnline;
+    lastDoctorBreak.current = doctorOnBreak;
 
     if (current.length === 0) {
       lastAnnouncedToken.current = null;
       return;
     }
-    if (!doctorOnline) return;
+    if (!doctorOnline || doctorOnBreak) return;
 
     const token = current[0]?.tokenLabel;
     if (!token) return;
@@ -555,8 +787,22 @@ const DisplayBoard = () => {
     return <div className="tv-board tv-start"><TVStyles /><h1>{loading ? "Connecting to hospital display…" : "Display unavailable"}</h1><p role="status">{error || "Loading the latest queue information."}</p>{!loading && <p>Check the display link and connection. This screen retries automatically.</p>}</div>;
   }
 
-  const { display, current = [], next = [], waiting = [], emergency = [] } = data;
+  const { display, current = [], next = [], waiting = [], emergency = [] } = data as BreakAwareDisplayResponse;
   const doctorOnline = data.doctorOnline === true;
+  const doctorBreak = getDoctorBreakInfo(data);
+  const doctorOnBreak = doctorBreak.isOnBreak;
+  const doctorStatusLabel = !doctorOnline
+    ? "Offline"
+    : doctorOnBreak
+      ? "On break"
+      : "Online";
+  const doctorStatusMessage = error
+    ? "Connection interrupted · showing last update"
+    : !doctorOnline
+      ? "Doctor is currently offline"
+      : doctorOnBreak
+        ? "Queue is paused until doctor resumes duty"
+        : "Queue updates automatically";
   const currentPage = getPage(current, page, 2);
   const nextPage = getPage(next, page, 4);
   const waitingPage = getPage(waiting, page, 8);
@@ -597,26 +843,41 @@ const DisplayBoard = () => {
     </header>
 
     {/* A stale snapshot must never be labelled as a live queue. */}
-    <div className="tv-info" data-warning={!!error || !doctorOnline}>
-      <strong>{doctorLabel(data.doctorName)} · {doctorOnline ? "Online" : "Offline"}</strong>
-      <span role="status">{error ? "Connection interrupted · showing last update" : "Queue updates automatically"}</span>
+    <div className="tv-info" data-warning={!!error || !doctorOnline || doctorOnBreak} data-break={doctorOnBreak}>
+      <strong>{doctorLabel(data.doctorName)} · {doctorStatusLabel}</strong>
+      <span role="status">{doctorStatusMessage}</span>
+      {doctorOnBreak && doctorBreak.breakReason && <em>{doctorBreak.breakReason}</em>}
       {display.voiceEnabled && !announcer.enabled && <button type="button" onClick={announcer.activate}>Enable sound</button>}
     </div>
 
     {/* One or two columns depending on the hospital's display settings. */}
     {hasMain ? <main className="tv-main" data-split={display.showCurrent && display.showNext}>
-      {display.showCurrent && <section className="tv-current">
-        <div className="tv-panel-heading"><h2>Now serving</h2><PageLabel total={current.length} size={2} page={page} /></div>
-        {current.length ? <div className="tv-current-grid" data-multiple={currentPage.length > 1}>
+      {display.showCurrent && <section className="tv-current" data-break={doctorOnBreak}>
+        <div className="tv-panel-heading"><h2>{doctorOnBreak ? "Queue paused" : "Now serving"}</h2><PageLabel total={current.length} size={2} page={page} /></div>
+        {doctorOnBreak ? (
+          <DoctorBreakPanel
+            doctorName={data.doctorName}
+            breakStartedAt={doctorBreak.breakStartedAt}
+            breakReason={doctorBreak.breakReason}
+            current={currentPage}
+          />
+        ) : current.length ? <div className="tv-current-grid" data-multiple={currentPage.length > 1}>
           {currentPage.map(queue => {
             const emergency = isEmergencyQueue(queue);
+            const typeLabel = tokenTypeLabel(queue);
+            const typeClass = tokenTypeClass(queue);
 
             return (
               <article
                 className="tv-current-token"
                 data-emergency={emergency}
+                data-source={typeClass}
                 key={queue._id}
               >
+                <span className="tv-token-type">
+                  {typeLabel}
+                </span>
+
                 {emergency && (
                   <span className="tv-emergency-badge">
                     Emergency patient
@@ -627,6 +888,12 @@ const DisplayBoard = () => {
                 <h3>{queue.departmentId?.name || "OPD"}</h3>
                 {queue.doctorId?.name && <p>{doctorLabel(queue.doctorId.name)}</p>}
 
+                {getQueueSource(queue) === "APPOINTMENT" && (queue as EmergencyAwareDisplayQueue).scheduledStartTime && (
+                  <small className="tv-appointment-time">
+                    Appointment {(queue as EmergencyAwareDisplayQueue).scheduledStartTime}
+                  </small>
+                )}
+
                 {emergency && (
                   <em>Please attend immediately</em>
                 )}
@@ -634,7 +901,7 @@ const DisplayBoard = () => {
             );
           })}
         </div> : <div className="tv-empty"><strong>{doctorOnline ? "Please wait for your token" : "Doctor is currently offline"}</strong><p>{doctorOnline ? "The next token will appear here." : "Please contact reception for an update."}</p></div>}
-        <p className="tv-instruction">{error ? "Please confirm the current token with reception." : doctorOnline ? "When your token appears, proceed to the department shown." : "Please wait for the doctor to become available."}</p>
+        <p className="tv-instruction">{error ? "Please confirm the current token with reception." : !doctorOnline ? "Please wait for the doctor to become available." : doctorOnBreak ? "Doctor is on break. Queue will resume after doctor returns." : "When your token appears, proceed to the department shown."}</p>
       </section>}
 
       {display.showNext && <section className="tv-next">
@@ -642,11 +909,13 @@ const DisplayBoard = () => {
         {next.length ? <ol className="tv-next-list">
           {nextPage.map(queue => {
             const emergency = isEmergencyQueue(queue);
+            const typeLabel = tokenTypeLabel(queue);
+            const typeClass = tokenTypeClass(queue);
 
             return (
-              <li data-emergency={emergency} key={queue._id}>
+              <li data-emergency={emergency} data-source={typeClass} key={queue._id}>
                 <strong>{queue.tokenLabel}</strong>
-                <span>{emergency ? "Emergency · " : ""}{queue.departmentId?.name || "OPD"}</span>
+                <span>{typeLabel} · {queue.departmentId?.name || "OPD"}</span>
               </li>
             );
           })}
@@ -659,10 +928,10 @@ const DisplayBoard = () => {
       <div className="tv-waiting-title"><h2>Waiting <span>{waiting.length}</span></h2><PageLabel total={waiting.length} size={8} page={page} /></div>
       <div className="tv-waiting-tokens">
         {waitingPage.length ? waitingPage.map(queue => (
-          <strong data-emergency={isEmergencyQueue(queue)} key={queue._id}>
+          <strong data-emergency={isEmergencyQueue(queue)} data-source={tokenTypeClass(queue)} key={queue._id} title={tokenTypeLabel(queue)}>
             {queue.tokenLabel}
           </strong>
-        )) : <p>No patients waiting</p>}
+        )) : <p>{doctorOnBreak ? "Queue paused during doctor break" : "No patients waiting"}</p>}
       </div>
     </section>}
     {display.showEmergency && emergency.length > 0 && <section className="tv-emergency">
@@ -672,7 +941,7 @@ const DisplayBoard = () => {
     </section>}
 
     {/* Static guidance is easier to read from a distance than a moving ticker. */}
-    <footer className="tv-footer"><p>Please keep your token ready. Emergency cases may be prioritised.</p><span>NextSynq Health</span></footer>
+    <footer className="tv-footer"><p>{doctorOnBreak ? "Doctor is on break. Please wait for the next announcement." : "Please keep your token ready. Emergency cases may be prioritised."}</p><span>NextSynq Health</span></footer>
   </div>;
 };
 
@@ -754,6 +1023,23 @@ function TVStyles() {
     .tv-waiting-tokens p { font-size: clamp(18px, 1.3vw, 26px); }
     .tv-emergency { display: flex; align-items: center; justify-content: space-between; gap: 18px; border: 1px solid #e6bbaf; background: #f9e6df; color: #8b3426; padding: 12px 22px; border-radius: 12px; font-size: clamp(18px, 1.5vw, 30px); line-height: 1.5; }
     .tv-emergency > span { overflow-wrap: anywhere; }
+    .tv-info em { font-style: normal; font-weight: 700; }
+    .tv-info[data-break="true"] { background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; }
+    .tv-current[data-break="true"] { background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; }
+    .tv-break-panel { flex: 1; display: grid; place-items: center; align-content: center; text-align: center; gap: 18px; padding: clamp(28px, 4vw, 70px); }
+    .tv-break-pill { display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #ea580c; color: #fff; padding: 12px 22px; font-size: clamp(17px, 1.4vw, 28px); font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+    .tv-break-panel h2 { font-size: clamp(40px, 5vw, 104px); line-height: 1.12; font-weight: 800; }
+    .tv-break-panel p { max-width: 900px; font-size: clamp(22px, 2vw, 42px); line-height: 1.45; }
+    .tv-paused-token { display: grid; gap: 8px; border-radius: 18px; background: #fff; border: 2px dashed #fdba74; padding: 18px 28px; }
+    .tv-paused-token span { font-size: clamp(16px, 1.25vw, 24px); font-weight: 700; color: #9a3412; }
+    .tv-paused-token strong { font-size: clamp(54px, 6vw, 120px); line-height: 1; color: #173d39; }
+    .tv-break-meta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; font-size: clamp(16px, 1.25vw, 24px); }
+    .tv-break-meta span { border-radius: 999px; background: #ffedd5; color: #9a3412; padding: 8px 14px; }
+    .tv-token-type { display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px; border-radius: 999px; background: #d1e2d7; color: #173d39; padding: 8px 16px; font-size: clamp(14px, 1vw, 20px); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+    .tv-current-token[data-source="appointment"] .tv-token-type, .tv-next-list li[data-source="appointment"] { background: #eff6ff; color: #1d4ed8; }
+    .tv-current-token[data-source="emergency"] .tv-token-type { background: #dc2626; color: #fff; }
+    .tv-appointment-time { display: inline-block; margin-top: 12px; border-radius: 10px; background: #dbeafe; color: #1d4ed8; padding: 8px 12px; font-size: clamp(15px, 1.05vw, 22px); font-weight: 800; }
+    .tv-waiting-tokens strong[data-source="appointment"] { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
     @keyframes emergency-pulse {
       0%, 100% { transform: scale(1); box-shadow: 0 0 0 8px #fecaca55; }
       50% { transform: scale(1.015); box-shadow: 0 0 0 14px #fecaca88; }
