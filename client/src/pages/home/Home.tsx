@@ -27,6 +27,9 @@ import {
 // Image stored in your public folder.
 const HERO_IMAGE = "/hero1.png";
 
+// File location: public/NextSynq-Health-Logo.png
+const LOGO_IMAGE = "/NextSynq-Health-Logo.png";
+
 // Instagram is active. Add your LinkedIn URL later to enable its button.
 const SOCIAL_LINKS = {
     instagram: "https://www.instagram.com/nextsynqhealth/",
@@ -329,14 +332,8 @@ export default function Home() {
                         onClick={() => scrollToSection("home")}
                         aria-label="NextSynq Health home"
                     >
-                        <span className="nx-brand-icon">
-                            <Activity size={24} />
-                        </span>
-
-                        <span>
-                            <strong>NextSynq</strong>
-                            <small>HEALTH</small>
-                        </span>
+                        <img className="nx-brand-image" src={LOGO_IMAGE}
+                                    alt="NextSynq Health" width={2048} height={768} />
                     </button>
 
                     <nav
@@ -748,13 +745,8 @@ export default function Home() {
                     <div className="nx-footer-grid">
                         <div>
                             <a href="#home" className="nx-brand">
-                                <span className="nx-brand-icon">
-                                    <Activity size={24} />
-                                </span>
-                                <span>
-                                    <strong>NextSynq</strong>
-                                    <small>HEALTH</small>
-                                </span>
+                                <img className="nx-brand-image" src={LOGO_IMAGE}
+                                    alt="NextSynq Health" width={2048} height={768} />
                             </a>
 
                             <p>
@@ -905,8 +897,7 @@ function SectionHeading({
 function SmallLogo() {
     return (
         <span className="nx-small-logo">
-            <Activity size={15} />
-            NextSynq
+            <img src={LOGO_IMAGE} alt="NextSynq Health" width={2048} height={768} />
         </span>
     );
 }
@@ -3413,6 +3404,31 @@ function HomeStyles() {
                 .nx-faq-list .nx-faq-item button { padding:16px; gap:12px; }
                 .nx-faq-panel { padding:0 16px 16px; font-size:13px; }
                 .nx-footer-bottom { align-items:flex-start; gap:16px; }
+            }
+
+
+            /* Preserve the full logo proportions. The white background also
+               keeps the original dark wordmark readable in night mode. */
+            .nx-brand .nx-brand-image {
+                display: block;
+                width: clamp(140px, 13vw, 200px);
+                height: auto;
+                object-fit: contain;
+                background: #fff;
+                border-radius: 8px;
+            }
+            .nx-small-logo img {
+                display: block;
+                width: 94px;
+                height: auto;
+                object-fit: contain;
+                background: #fff;
+                border-radius: 4px;
+            }
+            @media (max-width: 600px) {
+                .nx-header-row .nx-brand .nx-brand-image { width: 128px; }
+                .nx-footer .nx-brand .nx-brand-image { width: 170px; }
+                .nx-small-logo img { width: 80px; }
             }
 
             @media (prefers-reduced-motion: reduce) {
