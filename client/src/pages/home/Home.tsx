@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 
 // Image stored in your public folder.
-const HERO_IMAGE = "/hero1.png";
+const HERO_IMAGE = "/nexturn.png";
 
 // File location: public/NextSynq-Health-Logo.png
 const LOGO_IMAGE = "/NextSynq-Health-Logo.png";
