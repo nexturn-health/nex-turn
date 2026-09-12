@@ -27,8 +27,8 @@ import {
 // Image stored in your public folder.
 const HERO_IMAGE = "/hero1.png";
 
-// File location: public/NextSynq-Health-Logo.png
-const LOGO_IMAGE = "/Nexturn.png";
+// File location: public/nexturn.png
+const LOGO_IMAGE = "/nexturn.png";
 
 // Instagram is active. Add your LinkedIn URL later to enable its button.
 const SOCIAL_LINKS = {
