@@ -109,6 +109,7 @@ export interface IUser extends Document {
     breakStartedAt?: Date | null;
     breakReason?: string | null;
     lastResumedAt?: Date | null;
+    shiftEndTime?: string | null;
 }
 
 // ============================================================
@@ -352,6 +353,12 @@ const UserSchema = new Schema<IUser>(
 
         lastResumedAt: {
             type: Date,
+            default: null,
+        },
+
+        shiftEndTime: {
+            type: String,
+            trim: true,
             default: null,
         },
     },

@@ -40,6 +40,7 @@ const defaultAllowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "https://nexturn-silk.vercel.app",
+  "https://nextsynq.health"
 ];
 
 /*

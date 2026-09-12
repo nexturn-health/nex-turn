@@ -7,6 +7,8 @@ import { Patient } from "../models/Patient.model";
 import { Department } from "../models/Department.model";
 import { User } from "../models/User.model";
 import { Hospital } from "../models/Hospital.model";
+import { Appointment } from "../models/Appointment.model";
+import { DoctorSchedule } from "../models/DoctorSchedule.model";
 
 import { getIO } from "../config/socket";
 
@@ -20,7 +22,6 @@ import {
 } from "../services/notification.service";
 
 
-
 const getIndiaQueueDate = () => {
   return new Intl.DateTimeFormat(
     "en-CA",
@@ -29,6 +30,80 @@ const getIndiaQueueDate = () => {
     },
   ).format(new Date());
 };
+
+
+const normalizeTimeText =
+  (
+    value?: string | null,
+  ): string | null => {
+    if (!value) {
+      return null;
+    }
+
+    const raw =
+      String(value)
+        .trim()
+        .toUpperCase();
+
+    const match =
+      raw.match(
+        /^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/,
+      );
+
+    if (!match) {
+      return null;
+    }
+
+    let hours =
+      Number(match[1]);
+
+    const minutes =
+      Number(match[2]);
+
+    const meridiem =
+      match[3];
+
+    if (
+      !Number.isFinite(hours) ||
+      !Number.isFinite(minutes) ||
+      minutes < 0 ||
+      minutes > 59
+    ) {
+      return null;
+    }
+
+    if (meridiem) {
+      if (
+        hours < 1 ||
+        hours > 12
+      ) {
+        return null;
+      }
+
+      if (
+        meridiem === "PM" &&
+        hours !== 12
+      ) {
+        hours += 12;
+      }
+
+      if (
+        meridiem === "AM" &&
+        hours === 12
+      ) {
+        hours = 0;
+      }
+    }
+
+    if (
+      hours < 0 ||
+      hours > 23
+    ) {
+      return null;
+    }
+
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  };
 
 const getIndiaCurrentTime = () => {
   const parts =
@@ -102,8 +177,8 @@ const minutesToTime = (
 };
 
 const addMinutesToTime = (
-  value: string,
-  minutesToAdd: number,
+  value?: string | null,
+  minutesToAdd = 0,
 ): string | null => {
   const minutes =
     timeToMinutes(value);
@@ -189,7 +264,7 @@ const markMissedAppointments = async ({
   queueDate: string;
   currentTime: string;
 }) => {
-  const appointments =
+  const appointmentQueues =
     await Queue.find({
       hospitalId,
       departmentId,
@@ -208,42 +283,62 @@ const markMissedAppointments = async ({
           },
         },
       ],
-    })
-      .select("_id scheduledStartTime scheduledEndTime appointmentCallStatus")
-      .lean();
+    }).select(
+      "_id scheduledStartTime scheduledEndTime appointmentCallStatus appointmentMissedAt",
+    );
 
-  const missedIds =
-    appointments
-      .filter((queue: any) => {
-        return getAppointmentCallStatus({
+  let missedCount = 0;
+
+  await Promise.all(
+    appointmentQueues.map(async (queue: any) => {
+      const scheduledEndTime =
+        getAppointmentWindowEndTime(
+          queue.scheduledStartTime || null,
+          queue.scheduledEndTime || null,
+        );
+
+      const nextStatus =
+        getAppointmentCallStatus({
           currentTime,
           scheduledStartTime:
             queue.scheduledStartTime || null,
-          scheduledEndTime:
-            queue.scheduledEndTime || null,
-        }) === "MISSED";
-      })
-      .map((queue: any) => queue._id);
+          scheduledEndTime,
+        });
 
-  if (!missedIds.length) {
-    return 0;
-  }
+      let changed = false;
 
-  await Queue.updateMany(
-    {
-      _id: {
-        $in: missedIds,
-      },
-    },
-    {
-      $set: {
-        appointmentCallStatus: "MISSED",
-        appointmentMissedAt: new Date(),
-      },
-    },
+      if (
+        scheduledEndTime &&
+        queue.scheduledEndTime !== scheduledEndTime
+      ) {
+        queue.scheduledEndTime = scheduledEndTime;
+        changed = true;
+      }
+
+      if (
+        nextStatus !== "UPCOMING" &&
+        queue.appointmentCallStatus !== nextStatus
+      ) {
+        queue.appointmentCallStatus = nextStatus;
+        changed = true;
+      }
+
+      if (nextStatus === "MISSED") {
+        missedCount++;
+
+        if (!queue.appointmentMissedAt) {
+          queue.appointmentMissedAt = new Date();
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        await queue.save();
+      }
+    }),
   );
 
-  return missedIds.length;
+  return missedCount;
 };
 
 const emitDoctorBreakStatus = async ({
@@ -455,6 +550,877 @@ const getTodayOpdStartTime = (shiftStartTime?: string | null): Date | null => {
 };
 
 
+const getIndiaDateRange = (
+  queueDate: string,
+) => {
+  const start = new Date(
+    `${queueDate}T00:00:00.000+05:30`,
+  );
+
+  const end = new Date(
+    `${queueDate}T23:59:59.999+05:30`,
+  );
+
+  return {
+    start,
+    end,
+  };
+};
+
+type AppointmentAwareEstimateItem = {
+  _id?: unknown;
+  tokenNumber: number;
+  tokenLabel?: string;
+  priority: "NORMAL" | "EMERGENCY";
+  source: "WALK_IN" | "APPOINTMENT" | "EMERGENCY";
+  scheduledStartTime?: string | null;
+  scheduledEndTime?: string | null;
+  appointmentCallStatus?: AppointmentCallStatus;
+  isVirtualNewToken?: boolean;
+};
+
+type DoctorDutyValidationResult = {
+  allowed: boolean;
+  code:
+    | "DOCTOR_AVAILABLE"
+    | "DOCTOR_SHIFT_END_MISSING"
+    | "INVALID_DOCTOR_SHIFT_END"
+    | "DOCTOR_DUTY_ENDED";
+  message: string;
+  currentTime: string;
+  shiftStartTime: string | null;
+  shiftEndTime: string | null;
+};
+
+type RawDoctorSession = {
+  startTime?: string | null;
+  endTime?: string | null;
+  from?: string | null;
+  to?: string | null;
+  start?: string | null;
+  end?: string | null;
+  fromTime?: string | null;
+  toTime?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  slotStartTime?: string | null;
+  slotEndTime?: string | null;
+  slotType?: string | null;
+};
+
+type RawDoctorDaySchedule = {
+  day?: string | number | null;
+  dayOfWeek?: string | number | null;
+  isAvailable?: boolean;
+  available?: boolean;
+  sessions?: RawDoctorSession[] | null;
+  slots?: RawDoctorSession[] | null;
+  timeSlots?: RawDoctorSession[] | null;
+};
+
+type NormalizedDoctorSession = {
+  startTime: string;
+  endTime: string;
+};
+
+const getIndiaTodayDayName = () => {
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      weekday: "long",
+      timeZone: "Asia/Kolkata",
+    },
+  )
+    .format(new Date())
+    .toUpperCase();
+};
+
+const normalizeDayNameForSchedule = (
+  value?: string | number | null,
+): string => {
+  const dayMap: Record<string, string> = {
+    "0": "SUNDAY",
+    "1": "MONDAY",
+    "2": "TUESDAY",
+    "3": "WEDNESDAY",
+    "4": "THURSDAY",
+    "5": "FRIDAY",
+    "6": "SATURDAY",
+    SUN: "SUNDAY",
+    SUNDAY: "SUNDAY",
+    MON: "MONDAY",
+    MONDAY: "MONDAY",
+    TUE: "TUESDAY",
+    TUESDAY: "TUESDAY",
+    WED: "WEDNESDAY",
+    WEDNESDAY: "WEDNESDAY",
+    THU: "THURSDAY",
+    THURSDAY: "THURSDAY",
+    FRI: "FRIDAY",
+    FRIDAY: "FRIDAY",
+    SAT: "SATURDAY",
+    SATURDAY: "SATURDAY",
+  };
+
+  const key =
+    String(value ?? "")
+      .trim()
+      .toUpperCase();
+
+  return dayMap[key] || key;
+};
+
+const getDoctorWeeklyAvailability = (
+  doctor: any,
+): RawDoctorDaySchedule[] => {
+  const possibleSources = [
+    doctor?.schedule?.weeklyAvailability,
+    doctor?.weeklyAvailability,
+    doctor?.availability?.weeklyAvailability,
+    doctor?.doctorAvailability?.weeklyAvailability,
+    doctor?.doctorSchedule?.weeklyAvailability,
+  ];
+
+  const arraySource =
+    possibleSources.find(
+      (
+        item,
+      ): item is RawDoctorDaySchedule[] =>
+        Array.isArray(item),
+    );
+
+  if (
+    arraySource
+  ) {
+    return arraySource;
+  }
+
+  return [];
+};
+
+const getTodayScheduleShift = (
+  doctor: any,
+): {
+  shiftStartTime: string | null;
+  shiftEndTime: string | null;
+} => {
+  const today =
+    getIndiaTodayDayName();
+
+  const weeklyAvailability =
+    getDoctorWeeklyAvailability(
+      doctor,
+    );
+
+  if (
+    !Array.isArray(weeklyAvailability) ||
+    weeklyAvailability.length === 0
+  ) {
+    return {
+      shiftStartTime: null,
+      shiftEndTime: null,
+    };
+  }
+
+  const todaySchedule =
+    weeklyAvailability.find(
+      (
+        item: RawDoctorDaySchedule,
+      ) => {
+        const day =
+          normalizeDayNameForSchedule(
+            item.day ??
+              item.dayOfWeek ??
+              null,
+          );
+
+        return (
+          day === today &&
+          item?.isAvailable !== false &&
+          item?.available !== false
+        );
+      },
+    );
+
+  const sessions: RawDoctorSession[] =
+    Array.isArray(
+      todaySchedule?.sessions,
+    )
+      ? todaySchedule.sessions
+      : Array.isArray(
+          todaySchedule?.slots,
+        )
+        ? todaySchedule.slots
+        : Array.isArray(
+            todaySchedule?.timeSlots,
+          )
+          ? todaySchedule.timeSlots
+          : [];
+
+  const validSessions: NormalizedDoctorSession[] =
+    sessions
+      .map(
+        (
+          session: RawDoctorSession,
+        ): {
+          startTime: string | null;
+          endTime: string | null;
+        } => {
+          return {
+            startTime:
+              normalizeTimeText(
+                session.startTime ||
+                  session.from ||
+                  session.start ||
+                  session.fromTime ||
+                  session.start_time ||
+                  session.slotStartTime ||
+                  null,
+              ),
+
+            endTime:
+              normalizeTimeText(
+                session.endTime ||
+                  session.to ||
+                  session.end ||
+                  session.toTime ||
+                  session.end_time ||
+                  session.slotEndTime ||
+                  null,
+              ),
+          };
+        },
+      )
+      .filter(
+        (
+          session,
+        ): session is NormalizedDoctorSession => {
+          return Boolean(
+            session.startTime &&
+              session.endTime,
+          );
+        },
+      )
+      .sort(
+        (
+          first: NormalizedDoctorSession,
+          second: NormalizedDoctorSession,
+        ) => {
+          const firstStart =
+            timeToMinutes(
+              first.startTime,
+            ) ??
+            Number.MAX_SAFE_INTEGER;
+
+          const secondStart =
+            timeToMinutes(
+              second.startTime,
+            ) ??
+            Number.MAX_SAFE_INTEGER;
+
+          return (
+            firstStart -
+            secondStart
+          );
+        },
+      );
+
+  if (
+    !validSessions.length
+  ) {
+    return {
+      shiftStartTime: null,
+      shiftEndTime: null,
+    };
+  }
+
+  return {
+    shiftStartTime:
+      validSessions[0].startTime,
+
+    shiftEndTime:
+      validSessions[
+        validSessions.length - 1
+      ].endTime,
+  };
+};
+
+const validateDoctorDutyTime =
+  ({
+    doctor,
+  }: {
+    doctor: any;
+  }): DoctorDutyValidationResult => {
+    const scheduleShift =
+      getTodayScheduleShift(
+        doctor,
+      );
+
+    const shiftStartTime =
+      normalizeTimeText(
+        doctor?.shiftStartTime,
+      ) ||
+      scheduleShift.shiftStartTime;
+
+    const shiftEndTime =
+      normalizeTimeText(
+        doctor?.shiftEndTime,
+      ) ||
+      scheduleShift.shiftEndTime;
+
+    const currentTime =
+      getIndiaCurrentTime();
+
+    const currentMinutes =
+      timeToMinutes(
+        currentTime,
+      );
+
+    const endMinutes =
+      timeToMinutes(
+        shiftEndTime,
+      );
+
+    if (
+      !shiftEndTime
+    ) {
+      return {
+        allowed: false,
+
+        code:
+          "DOCTOR_SHIFT_END_MISSING",
+
+        message:
+          "Doctor timing is not configured for today. Please reset doctor availability with start time and end time.",
+
+        currentTime,
+
+        shiftStartTime,
+
+        shiftEndTime: null,
+      };
+    }
+
+    if (
+      currentMinutes === null ||
+      endMinutes === null
+    ) {
+      return {
+        allowed: false,
+
+        code:
+          "INVALID_DOCTOR_SHIFT_END",
+
+        message:
+          "Doctor shift end time format is invalid. Use HH:mm format, for example 17:00.",
+
+        currentTime,
+
+        shiftStartTime,
+
+        shiftEndTime,
+      };
+    }
+
+    if (
+      currentMinutes >= endMinutes
+    ) {
+      return {
+        allowed: false,
+
+        code:
+          "DOCTOR_DUTY_ENDED",
+
+        message:
+          `Doctor duty ended at ${shiftEndTime}. Token generation is closed for this doctor.`,
+
+        currentTime,
+
+        shiftStartTime,
+
+        shiftEndTime,
+      };
+    }
+
+    return {
+      allowed: true,
+
+      code:
+        "DOCTOR_AVAILABLE",
+
+      message:
+        "Doctor is available.",
+
+      currentTime,
+
+      shiftStartTime,
+
+      shiftEndTime,
+    };
+  };
+
+const getTokenLabel = ({
+  tokenPrefix,
+  tokenNumber,
+  source,
+}: {
+  tokenPrefix?: string | null;
+  tokenNumber: number;
+  source: "WALK_IN" | "APPOINTMENT" | "EMERGENCY";
+}) => {
+  const prefix =
+    tokenPrefix ||
+    "OPD";
+
+  const sourceCode =
+    source === "APPOINTMENT"
+      ? "A"
+      : source === "EMERGENCY"
+        ? "E"
+        : "W";
+
+  return `${prefix}-${sourceCode}${String(tokenNumber).padStart(3, "0")}`;
+};
+
+const buildAppointmentAwareEstimate = async ({
+  hospitalId,
+  departmentId,
+  doctorId,
+  queueDate,
+  tokenNumber,
+  priority,
+  averageConsultationMinutes,
+  doctorShiftStartTime,
+}: {
+  hospitalId: string | mongoose.Types.ObjectId;
+  departmentId: string | mongoose.Types.ObjectId;
+  doctorId?: string | mongoose.Types.ObjectId | null;
+  queueDate: string;
+  tokenNumber: number;
+  priority: "NORMAL" | "EMERGENCY";
+  averageConsultationMinutes: number;
+  doctorShiftStartTime?: string | null;
+}) => {
+  const now =
+    new Date();
+
+  const currentTime =
+    getIndiaCurrentTime();
+
+  const nowMinutes =
+    timeToMinutes(
+      currentTime,
+    ) || 0;
+
+  const shiftStartMinutes =
+    timeToMinutes(
+      doctorShiftStartTime || null,
+    );
+
+  let pointer =
+    shiftStartMinutes !== null &&
+      nowMinutes < shiftStartMinutes
+      ? shiftStartMinutes
+      : nowMinutes;
+
+  const doctorFilter = doctorId
+    ? {
+      $or: [
+        {
+          doctorId,
+        },
+        {
+          doctorId: null,
+        },
+        {
+          doctorId: {
+            $exists: false,
+          },
+        },
+      ],
+    }
+    : {};
+
+  const activeQueues =
+    await Queue.find({
+      hospitalId,
+      departmentId,
+      queueDate,
+      status: {
+        $in: [
+          "WAITING",
+          "CALLED",
+          "SERVING",
+        ],
+      },
+      ...doctorFilter,
+    })
+      .select(
+        "_id tokenNumber tokenLabel priority source scheduledStartTime scheduledEndTime appointmentCallStatus",
+      )
+      .lean();
+
+  const {
+    start,
+    end,
+  } = getIndiaDateRange(
+    queueDate,
+  );
+
+  const appointmentQuery: any = {
+    hospitalId,
+    departmentId,
+    appointmentDate: {
+      $gte: start,
+      $lte: end,
+    },
+    status: {
+      $in: [
+        "BOOKED",
+        "CONFIRMED",
+        "ARRIVED",
+        "CHECKED_IN",
+      ],
+    },
+  };
+
+  if (doctorId) {
+    appointmentQuery.doctorId = doctorId;
+  }
+
+  const bookedAppointments =
+    await Appointment.find(
+      appointmentQuery,
+    )
+      .select(
+        "_id appointmentCode requestedStartTime confirmedStartTime endTime queueId",
+      )
+      .lean();
+
+  const queueItems: AppointmentAwareEstimateItem[] =
+    activeQueues
+      .filter((queue: any) => {
+        return !(
+          queue.source === "APPOINTMENT" &&
+          queue.appointmentCallStatus === "MISSED"
+        );
+      })
+      .map((queue: any) => {
+        const source =
+          queue.priority === "EMERGENCY"
+            ? "EMERGENCY"
+            : queue.source || "WALK_IN";
+
+        const scheduledStartTime =
+          queue.scheduledStartTime || null;
+
+        const scheduledEndTime =
+          source === "APPOINTMENT"
+            ? getAppointmentWindowEndTime(
+              scheduledStartTime,
+              queue.scheduledEndTime || null,
+            )
+            : null;
+
+        return {
+          _id: queue._id,
+          tokenNumber:
+            Number(queue.tokenNumber || 0),
+          tokenLabel:
+            queue.tokenLabel,
+          priority:
+            queue.priority === "EMERGENCY"
+              ? "EMERGENCY"
+              : "NORMAL",
+          source,
+          scheduledStartTime,
+          scheduledEndTime,
+          appointmentCallStatus:
+            source === "APPOINTMENT"
+              ? getAppointmentCallStatus({
+                currentTime,
+                scheduledStartTime,
+                scheduledEndTime,
+              })
+              : undefined,
+        };
+      });
+
+  const bookedAppointmentItems: AppointmentAwareEstimateItem[] =
+    bookedAppointments
+      .filter(
+        (
+          appointment: any,
+        ) =>
+          !appointment.queueId,
+      )
+      .map(
+        (
+          appointment: any,
+          index: number,
+        ): AppointmentAwareEstimateItem => {
+          const scheduledStartTime =
+            appointment.confirmedStartTime ||
+            appointment.requestedStartTime ||
+            null;
+
+          const scheduledEndTime =
+            appointment.endTime ||
+            getAppointmentWindowEndTime(
+              scheduledStartTime,
+              null,
+            );
+
+          return {
+            _id:
+              appointment._id,
+
+            tokenNumber:
+              100000 + index,
+
+            tokenLabel:
+              appointment.appointmentCode,
+
+            priority:
+              "NORMAL" as const,
+
+            source:
+              "APPOINTMENT" as const,
+
+            scheduledStartTime,
+
+            scheduledEndTime,
+
+            appointmentCallStatus:
+              getAppointmentCallStatus({
+                currentTime,
+
+                scheduledStartTime,
+
+                scheduledEndTime,
+              }),
+          };
+        },
+      ).filter((item) => item.appointmentCallStatus !== "MISSED");
+
+  const virtualNewToken: AppointmentAwareEstimateItem = {
+    tokenNumber,
+    tokenLabel: "NEW",
+    priority,
+    source:
+      priority === "EMERGENCY"
+        ? "EMERGENCY"
+        : "WALK_IN",
+    isVirtualNewToken: true,
+  };
+
+  const pendingItems = [
+    ...queueItems,
+    ...bookedAppointmentItems,
+    virtualNewToken,
+  ];
+
+  const removeAt = (
+    index: number,
+  ) => {
+    pendingItems.splice(
+      index,
+      1,
+    );
+  };
+
+  let safety =
+    0;
+
+  while (
+    pendingItems.length &&
+    safety < 1000
+  ) {
+    safety++;
+
+    for (let index = pendingItems.length - 1; index >= 0; index--) {
+      const item = pendingItems[index];
+
+      if (item.source !== "APPOINTMENT") {
+        continue;
+      }
+
+      const status =
+        getAppointmentCallStatus({
+          currentTime:
+            minutesToTime(pointer),
+          scheduledStartTime:
+            item.scheduledStartTime || null,
+          scheduledEndTime:
+            item.scheduledEndTime || null,
+        });
+
+      item.appointmentCallStatus = status;
+
+      if (status === "MISSED") {
+        removeAt(index);
+      }
+    }
+
+    const emergencyIndex =
+      pendingItems.findIndex(
+        (item) =>
+          item.priority === "EMERGENCY" ||
+          item.source === "EMERGENCY",
+      );
+
+    if (emergencyIndex >= 0) {
+      const selected = pendingItems[emergencyIndex];
+
+      if (selected.isVirtualNewToken) {
+        break;
+      }
+
+      removeAt(emergencyIndex);
+      pointer += averageConsultationMinutes;
+      continue;
+    }
+
+    const activeAppointments =
+      pendingItems
+        .map((item, index) => ({
+          item,
+          index,
+        }))
+        .filter(({ item }) => {
+          if (item.source !== "APPOINTMENT") {
+            return false;
+          }
+
+          const startMinutes =
+            timeToMinutes(
+              item.scheduledStartTime || null,
+            );
+
+          const endMinutes =
+            timeToMinutes(
+              item.scheduledEndTime || null,
+            );
+
+          return (
+            startMinutes !== null &&
+            pointer >= startMinutes &&
+            (
+              endMinutes === null ||
+              pointer < endMinutes
+            )
+          );
+        })
+        .sort((first, second) => {
+          const firstStart =
+            timeToMinutes(
+              first.item.scheduledStartTime || null,
+            ) ?? Number.MAX_SAFE_INTEGER;
+
+          const secondStart =
+            timeToMinutes(
+              second.item.scheduledStartTime || null,
+            ) ?? Number.MAX_SAFE_INTEGER;
+
+          return (
+            firstStart - secondStart ||
+            first.item.tokenNumber - second.item.tokenNumber
+          );
+        });
+
+    if (activeAppointments.length) {
+      const selected = activeAppointments[0];
+
+      removeAt(selected.index);
+      pointer += averageConsultationMinutes;
+      continue;
+    }
+
+    const walkIns =
+      pendingItems
+        .map((item, index) => ({
+          item,
+          index,
+        }))
+        .filter(({ item }) => item.source !== "APPOINTMENT")
+        .sort(
+          (first, second) =>
+            first.item.tokenNumber - second.item.tokenNumber,
+        );
+
+    const nextUpcomingAppointment =
+      pendingItems
+        .filter((item) => item.source === "APPOINTMENT")
+        .map((item) => ({
+          item,
+          start:
+            timeToMinutes(
+              item.scheduledStartTime || null,
+            ),
+        }))
+        .filter(
+          (entry) =>
+            entry.start !== null &&
+            entry.start > pointer,
+        )
+        .sort(
+          (first, second) =>
+            Number(first.start) - Number(second.start),
+        )[0];
+
+    if (walkIns.length) {
+      const selected = walkIns[0];
+
+      if (
+        nextUpcomingAppointment &&
+        typeof nextUpcomingAppointment.start === "number" &&
+        nextUpcomingAppointment.start < pointer + averageConsultationMinutes
+      ) {
+        pointer = nextUpcomingAppointment.start;
+        continue;
+      }
+
+      if (selected.item.isVirtualNewToken) {
+        break;
+      }
+
+      removeAt(selected.index);
+      pointer += averageConsultationMinutes;
+      continue;
+    }
+
+    if (
+      nextUpcomingAppointment &&
+      typeof nextUpcomingAppointment.start === "number"
+    ) {
+      pointer = nextUpcomingAppointment.start;
+      continue;
+    }
+
+    break;
+  }
+
+  const waitMinutes =
+    Math.max(
+      0,
+      pointer - nowMinutes,
+    );
+
+  return {
+    estimatedWaitTime:
+      waitMinutes,
+
+    estimatedTurnTime:
+      new Date(
+        now.getTime() +
+        waitMinutes *
+        60 *
+        1000,
+      ),
+  };
+};
+
+
 // ======================================================
 // HELPER TYPES
 // ======================================================
@@ -504,9 +1470,7 @@ export const getQueues = async (
       });
     }
 
-    const queueDate = new Date()
-      .toISOString()
-      .split("T")[0];
+    const queueDate = getIndiaQueueDate();
 
     const departmentId =
       typeof req.query.departmentId === "string"
@@ -623,7 +1587,11 @@ export const getDoctorQueue = async (
       hospitalId,
       role: "DOCTOR",
       isActive: true,
-    }).lean();
+    })
+      .select(
+        "_id name email departmentId isOnline isOnBreak breakStartedAt breakReason lastResumedAt shiftStartTime shiftEndTime",
+      )
+      .lean();
 
     if (!doctor) {
       return res.status(404).json({
@@ -679,7 +1647,7 @@ export const getDoctorQueue = async (
       )
       .populate(
         "doctorId",
-        "name email isOnBreak breakStartedAt breakReason lastResumedAt",
+        "name email isOnline isOnBreak breakStartedAt breakReason lastResumedAt shiftStartTime shiftEndTime",
       )
       .populate(
         "appointmentId",
@@ -693,7 +1661,7 @@ export const getDoctorQueue = async (
     const data = queues.map((queue: any) => {
       const appointment =
         queue.appointmentId &&
-        typeof queue.appointmentId === "object"
+          typeof queue.appointmentId === "object"
           ? queue.appointmentId
           : null;
 
@@ -704,26 +1672,25 @@ export const getDoctorQueue = async (
         null;
 
       const scheduledEndTime =
-        queue.scheduledEndTime ||
-        appointment?.endTime ||
         getAppointmentWindowEndTime(
           scheduledStartTime,
+          queue.scheduledEndTime ||
+          appointment?.endTime ||
           null,
         );
 
       const isAppointment =
         queue.source === "APPOINTMENT" ||
         Boolean(queue.appointmentId) ||
-        Boolean(scheduledStartTime) ||
         String(queue.tokenLabel || "").includes("-A");
 
       const appointmentCallStatus =
         isAppointment && queue.status === "WAITING"
           ? getAppointmentCallStatus({
-              currentTime,
-              scheduledStartTime,
-              scheduledEndTime,
-            })
+            currentTime,
+            scheduledStartTime,
+            scheduledEndTime,
+          })
           : queue.appointmentCallStatus || null;
 
       return {
@@ -731,7 +1698,7 @@ export const getDoctorQueue = async (
         tokenNumber: queue.tokenNumber,
         tokenLabel: queue.tokenLabel,
         priority: queue.priority,
-        source: queue.source,
+        source: queue.source || "WALK_IN",
         status: queue.status,
         patient: queue.patientId,
         patientId: queue.patientId,
@@ -740,12 +1707,15 @@ export const getDoctorQueue = async (
           _id: doctor._id,
           name: doctor.name,
           email: doctor.email,
+          isOnline: Boolean((doctor as any).isOnline),
           isOnBreak: Boolean((doctor as any).isOnBreak),
           breakStartedAt: (doctor as any).breakStartedAt || null,
           breakReason: (doctor as any).breakReason || null,
           lastResumedAt: (doctor as any).lastResumedAt || null,
+          shiftStartTime: (doctor as any).shiftStartTime || null,
+          shiftEndTime: (doctor as any).shiftEndTime || null,
         },
-        appointmentId: queue.appointmentId || null,
+        appointmentId: appointment,
         appointmentCode: appointment?.appointmentCode || null,
         scheduledStartTime,
         scheduledEndTime,
@@ -770,6 +1740,19 @@ export const getDoctorQueue = async (
     return res.status(200).json({
       success: true,
       count: data.length,
+      doctorStatus: {
+        doctorId: String(doctor._id),
+        departmentId: doctor.departmentId
+          ? String(doctor.departmentId)
+          : null,
+        isOnline: Boolean((doctor as any).isOnline),
+        isOnBreak: Boolean((doctor as any).isOnBreak),
+        breakStartedAt: (doctor as any).breakStartedAt || null,
+        breakReason: (doctor as any).breakReason || null,
+        lastResumedAt: (doctor as any).lastResumedAt || null,
+        shiftStartTime: (doctor as any).shiftStartTime || null,
+        shiftEndTime: (doctor as any).shiftEndTime || null,
+      },
       data,
     });
   } catch (error) {
@@ -796,18 +1779,32 @@ export const createQueue = async (
     const {
       patientId,
       departmentId,
+      doctorId: requestedDoctorId,
       priority = "NORMAL",
     } = req.body;
 
-    // ==================================================
-    // VALIDATION
-    // ==================================================
+    const normalizedPriority =
+      String(
+        priority || "NORMAL",
+      ).toUpperCase();
 
-    if (!patientId || !departmentId) {
+    if (
+      !patientId ||
+      !departmentId
+    ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Patient ID and department ID are required",
+        message: "Patient ID and department ID are required",
+      });
+    }
+
+    if (
+      !requestedDoctorId
+    ) {
+      return res.status(400).json({
+        success: false,
+        code: "DOCTOR_REQUIRED",
+        message: "Select doctor before generating token.",
       });
     }
 
@@ -833,49 +1830,49 @@ export const createQueue = async (
       });
     }
 
-    // ==================================================
-    // HOSPITAL
-    // ==================================================
-
-    const hospitalId =
-      req.user?.hospitalId;
-
-    if (!hospitalId) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Hospital information not found",
-      });
-    }
-
-    // ==================================================
-    // QUEUE DATE
-    // ==================================================
-
-    const queueDate =
-      new Date()
-        .toISOString()
-        .split("T")[0];
-
-    // ==================================================
-    // VALIDATE PRIORITY
-    // ==================================================
-
     if (
-      !["NORMAL", "EMERGENCY"].includes(
-        priority,
+      !mongoose.Types.ObjectId.isValid(
+        requestedDoctorId,
       )
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Priority must be NORMAL or EMERGENCY",
+        message: "Invalid doctor ID",
       });
     }
 
-    // ==================================================
-    // FIND PATIENT
-    // ==================================================
+    const hospitalId =
+      req.user?.hospitalId;
+
+    if (
+      !hospitalId
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Hospital information not found",
+      });
+    }
+
+    const queueDate =
+      getIndiaQueueDate();
+
+    const clientUrl =
+      process.env.CLIENT_URL ||
+      "http://localhost:5173";
+
+    if (
+      ![
+        "NORMAL",
+        "EMERGENCY",
+      ].includes(
+        normalizedPriority,
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Priority must be NORMAL or EMERGENCY",
+      });
+    }
 
     const patient =
       await Patient.findOne({
@@ -883,17 +1880,14 @@ export const createQueue = async (
         hospitalId,
       }).lean();
 
-    if (!patient) {
+    if (
+      !patient
+    ) {
       return res.status(404).json({
         success: false,
-        message:
-          "Patient not found in your hospital",
+        message: "Patient not found in your hospital",
       });
     }
-
-    // ==================================================
-    // FIND DEPARTMENT
-    // ==================================================
 
     const department =
       await Department.findOne({
@@ -902,212 +1896,466 @@ export const createQueue = async (
         isActive: true,
       }).lean();
 
-    if (!department) {
+    if (
+      !department
+    ) {
       return res.status(404).json({
         success: false,
-        message:
-          "Department not found or inactive",
+        message: "Department not found or inactive",
       });
     }
 
-    // ==================================================
-    // CHECK EXISTING ACTIVE TOKEN
-    // ==================================================
-
-    const existingQueue =
+    /*
+     * Important:
+     * If queue was already created but frontend/API failed before showing success,
+     * return existing token instead of throwing error and confusing reception.
+     */
+    const existingSameDepartmentVisit =
       await Queue.findOne({
         hospitalId,
         patientId,
+        departmentId,
         queueDate,
         status: {
-          $in: [
-            "WAITING",
-            "CALLED",
-            "SERVING",
+          $nin: [
+            "CANCELLED",
+            "COMPLETED",
+            "SKIPPED",
           ],
         },
-      });
+      })
+        .select(
+          "_id tokenLabel trackingToken estimatedWaitTime estimatedTurnTime",
+        )
+        .lean();
 
-    if (existingQueue) {
-      return res.status(409).json({
-        success: false,
+    if (
+      existingSameDepartmentVisit
+    ) {
+      const existingPopulatedQueue =
+        await Queue.findById(
+          existingSameDepartmentVisit._id,
+        )
+          .populate(
+            "patientId",
+            "name phone email patientCode age gender address",
+          )
+          .populate(
+            "departmentId",
+            "name description tokenPrefix",
+          )
+          .populate(
+            "doctorId",
+            "name email isOnline isOnBreak breakStartedAt breakReason shiftStartTime shiftEndTime",
+          )
+          .populate(
+            "appointmentId",
+            "appointmentCode requestedStartTime confirmedStartTime endTime status paymentStatus",
+          );
+
+      const existingTrackingUrl =
+        existingSameDepartmentVisit.trackingToken
+          ? `${clientUrl}/track/${existingSameDepartmentVisit.trackingToken}`
+          : null;
+
+      return res.status(200).json({
+        success: true,
+        code: "TOKEN_ALREADY_EXISTS",
         message:
-          `Token already generated today (${existingQueue.tokenLabel})`,
+          `This patient already has token ${existingSameDepartmentVisit.tokenLabel} today in this department.`,
+        data: {
+          queue:
+            existingPopulatedQueue ||
+            existingSameDepartmentVisit,
+          trackingUrl:
+            existingTrackingUrl,
+          estimatedWaitTime:
+            existingSameDepartmentVisit.estimatedWaitTime || 0,
+          estimatedTurnTime:
+            existingSameDepartmentVisit.estimatedTurnTime || null,
+        },
       });
     }
 
-    // ==================================================
-    // GENERATE NEXT TOKEN
-    // ==================================================
-
-    const lastQueue =
-      await Queue.findOne({
+    const departmentDoctor =
+      await User.findOne({
+        _id: requestedDoctorId,
         hospitalId,
         departmentId,
-        queueDate,
+        role: "DOCTOR",
+        isActive: true,
       })
-        .sort({
-          tokenNumber: -1,
-        })
-        .select("tokenNumber");
+        .select(
+          "name email isOnline shiftStartTime shiftEndTime averageConsultationMinutes isOnBreak breakStartedAt breakReason",
+        )
+        .lean();
 
-    const nextTokenNumber =
-      lastQueue
-        ? lastQueue.tokenNumber + 1
-        : 1;
+    if (
+      !departmentDoctor
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Selected doctor is not available for this department.",
+      });
+    }
 
-    const tokenLabel =
-      `${department.tokenPrefix}-${String(
-        nextTokenNumber,
-      ).padStart(3, "0")}`;
+    /*
+     * Main fix:
+     * Reset availability is saved in DoctorSchedule collection,
+     * not directly inside User document.
+     * So fetch DoctorSchedule here before validating doctor timing.
+     */
+    const doctorSchedule =
+      await DoctorSchedule.findOne({
+        hospitalId,
+        doctorId:
+          new mongoose.Types.ObjectId(
+            String(requestedDoctorId),
+          ),
+      }).lean();
 
-    // ==================================================
-    // FIND DEPARTMENT DOCTOR
-    // ==================================================
+    const doctor = {
+      ...(departmentDoctor as any),
+      schedule:
+        doctorSchedule ||
+        (departmentDoctor as any).schedule ||
+        null,
+    };
 
-    const departmentDoctor = await User.findOne({
-      hospitalId,
-      departmentId,
-      role: "DOCTOR",
-      isActive: true,
-    })
-      .select("name email isOnline shiftStartTime")
-      .lean();
+    console.log(
+      "🩺 CREATE TOKEN DOCTOR TIMING DEBUG",
+      {
+        doctorId:
+          String(
+            doctor._id,
+          ),
+        doctorName:
+          doctor.name,
+        hasDirectShiftEndTime:
+          Boolean(
+            doctor.shiftEndTime,
+          ),
+        hasDoctorSchedule:
+          Boolean(
+            doctorSchedule,
+          ),
+        today:
+          getIndiaTodayDayName(),
+        weeklyAvailabilityDays:
+          Array.isArray(
+            doctorSchedule?.weeklyAvailability,
+          )
+            ? doctorSchedule.weeklyAvailability.map(
+                (
+                  item: any,
+                ) => ({
+                  day:
+                    item.day,
+                  isAvailable:
+                    item.isAvailable,
+                  sessions:
+                    item.sessions,
+                }),
+              )
+            : [],
+      },
+    );
 
-    // ==================================================
-    // COUNT ACTIVE PATIENTS
-    // ==================================================
+    const dutyValidation =
+      validateDoctorDutyTime({
+        doctor,
+      });
 
-    const waitingPatients = await Queue.countDocuments({
+    if (
+      !dutyValidation.allowed
+    ) {
+      console.log(
+        "🚫 TOKEN BLOCKED BY DOCTOR DUTY TIME",
+        {
+          doctorId:
+            String(
+              doctor._id,
+            ),
+
+          doctorName:
+            doctor.name,
+
+          currentTime:
+            dutyValidation.currentTime,
+
+          shiftStartTime:
+            dutyValidation.shiftStartTime,
+
+          shiftEndTime:
+            dutyValidation.shiftEndTime,
+
+          code:
+            dutyValidation.code,
+        },
+      );
+
+      return res.status(409).json({
+        success: false,
+        code:
+          dutyValidation.code,
+        message:
+          dutyValidation.message,
+        data: {
+          doctorId:
+            String(
+              doctor._id,
+            ),
+          doctorName:
+            doctor.name,
+          currentTime:
+            dutyValidation.currentTime,
+          shiftStartTime:
+            dutyValidation.shiftStartTime,
+          shiftEndTime:
+            dutyValidation.shiftEndTime,
+          hasDoctorSchedule:
+            Boolean(
+              doctorSchedule,
+            ),
+        },
+      });
+    }
+
+    await markMissedAppointments({
       hospitalId,
       departmentId,
       queueDate,
-      status: { $in: ["WAITING", "CALLED", "SERVING"] },
+      currentTime:
+        getIndiaCurrentTime(),
     });
 
-    // ==================================================
-    // REAL CONSULTATION AVERAGE
-    // ==================================================
-
-    const doctorAverage = departmentDoctor?._id
-      ? await getDoctorAverageConsultationMinutes(departmentDoctor._id)
-      : null;
-
-    const departmentAverage = doctorAverage === null
-      ? await getDepartmentAverageConsultationMinutes(hospitalId, departmentId)
-      : null;
-
-    const averageConsultationMinutes =
-      doctorAverage ?? departmentAverage ?? DEFAULT_CONSULTATION_MINUTES;
-
-    // ==================================================
-    // OPD START + ESTIMATED TURN
-    // ==================================================
-
-    const now = new Date();
-    const shiftStartTime =
-      typeof departmentDoctor?.shiftStartTime === "string"
-        ? departmentDoctor.shiftStartTime
+    const doctorAverage =
+      doctor._id
+        ? await getDoctorAverageConsultationMinutes(
+            doctor._id,
+          )
         : null;
 
-    const opdStartDate = getTodayOpdStartTime(shiftStartTime);
-    const doctorOnline = departmentDoctor?.isOnline === true;
+    const departmentAverage =
+      doctorAverage === null
+        ? await getDepartmentAverageConsultationMinutes(
+            hospitalId,
+            departmentId,
+          )
+        : null;
 
-    const processingStart =
-      !doctorOnline && opdStartDate && opdStartDate.getTime() > now.getTime()
-        ? opdStartDate
-        : now;
+    const configuredAverage =
+      Number(
+        doctor.averageConsultationMinutes ||
+          DEFAULT_CONSULTATION_MINUTES,
+      );
 
-    const estimatedTurnTime = new Date(
-      processingStart.getTime() +
-      waitingPatients * averageConsultationMinutes * 60 * 1000,
-    );
+    const averageConsultationMinutes =
+      doctorAverage ??
+      departmentAverage ??
+      (
+        Number.isFinite(
+          configuredAverage,
+        ) &&
+        configuredAverage > 0
+          ? configuredAverage
+          : DEFAULT_CONSULTATION_MINUTES
+      );
 
-    const estimatedWaitTime = Math.max(
-      0,
-      Math.ceil(
-        (estimatedTurnTime.getTime() - now.getTime()) / (60 * 1000),
-      ),
-    );
-
-    console.log("=================================");
-    console.log("🎫 QUEUE ESTIMATION");
-    console.log("Token:", tokenLabel);
-    console.log("Doctor:", departmentDoctor?.name || "Not assigned");
-    console.log("Doctor Online:", doctorOnline);
-    console.log("OPD Start:", shiftStartTime || "Not configured");
-    console.log("Patients Ahead:", waitingPatients);
-    console.log("Average Consultation:", `${averageConsultationMinutes} min`);
-    console.log("Estimated Wait:", estimatedWaitTime);
-    console.log("Estimated Turn:", estimatedTurnTime);
-    console.log("=================================");
-
-    // ==================================================
-    // SECURE TRACKING TOKEN
-    // ==================================================
+    const queueSource:
+      | "WALK_IN"
+      | "EMERGENCY" =
+      normalizedPriority === "EMERGENCY"
+        ? "EMERGENCY"
+        : "WALK_IN";
 
     const trackingToken =
       crypto
-        .randomBytes(32)
-        .toString("hex");
+        .randomBytes(
+          32,
+        )
+        .toString(
+          "hex",
+        );
 
     const trackingExpiresAt =
       new Date(
         Date.now() +
-        24 *
-        60 *
-        60 *
-        1000,
+          24 *
+            60 *
+            60 *
+            1000,
       );
 
-    // ==================================================
-    // CREATE QUEUE
-    // ==================================================
+    let queue: any = null;
+    let tokenLabel = "";
+    let estimate: {
+      estimatedWaitTime: number;
+      estimatedTurnTime: Date;
+    } | null = null;
 
-    const queue =
-      await Queue.create({
-        hospitalId,
+    /*
+     * Token number fix:
+     * Never reserve token before validation.
+     * Retry if two clicks happen at same time and duplicate key occurs.
+     */
+    for (
+      let attempt = 1;
+      attempt <= 5;
+      attempt++
+    ) {
+      const lastQueue =
+        await Queue.findOne({
+          hospitalId,
+          departmentId,
+          queueDate,
+        })
+          .sort({
+            tokenNumber:
+              -1,
+          })
+          .select(
+            "tokenNumber",
+          )
+          .lean();
 
-        patientId,
+      const nextTokenNumber =
+        lastQueue
+          ? Number(
+              lastQueue.tokenNumber,
+            ) + 1
+          : 1;
 
-        departmentId,
+      tokenLabel =
+        getTokenLabel({
+          tokenPrefix:
+            department.tokenPrefix,
+          tokenNumber:
+            nextTokenNumber,
+          source:
+            queueSource,
+        });
 
-        tokenNumber:
-          nextTokenNumber,
+      estimate =
+        await buildAppointmentAwareEstimate({
+          hospitalId,
+          departmentId,
+          doctorId:
+            doctor._id,
+          queueDate,
+          tokenNumber:
+            nextTokenNumber,
+          priority:
+            normalizedPriority as
+              | "NORMAL"
+              | "EMERGENCY",
+          averageConsultationMinutes,
+          doctorShiftStartTime:
+            dutyValidation.shiftStartTime,
+        });
 
-        tokenLabel,
+      const now =
+        new Date();
 
-        priority,
+      try {
+        queue =
+          await Queue.create({
+            hospitalId,
+            patientId,
+            departmentId,
+            doctorId:
+              doctor._id,
+            appointmentId:
+              null,
+            source:
+              queueSource,
+            scheduledStartTime:
+              null,
+            scheduledEndTime:
+              null,
+            appointmentCallStatus:
+              undefined,
+            appointmentMissedAt:
+              null,
+            manuallyCalledAfterMissedAt:
+              null,
+            sortTime:
+              now,
+            tokenNumber:
+              nextTokenNumber,
+            tokenLabel,
+            priority:
+              normalizedPriority as
+                | "NORMAL"
+                | "EMERGENCY",
+            status:
+              "WAITING",
+            queueDate,
+            paymentStatus:
+              "PAID",
+            arrivedAt:
+              now,
+            checkedInAt:
+              now,
+            estimatedWaitTime:
+              estimate.estimatedWaitTime,
+            estimatedTurnTime:
+              estimate.estimatedTurnTime,
+            serviceDurationMinutes:
+              null,
+            trackingToken,
+            trackingLinkActive:
+              true,
+            trackingExpiresAt,
+            nearTurnNotificationSent:
+              false,
+            calledNotificationSent:
+              false,
+            tokenNotificationSent:
+              false,
+            calledAt:
+              null,
+            servingAt:
+              null,
+            completedAt:
+              null,
+          });
 
-        status:
-          "WAITING",
+        break;
+      } catch (
+        error: any
+      ) {
+        const duplicateKey =
+          error?.code === 11000;
 
-        queueDate,
+        if (
+          duplicateKey &&
+          attempt < 5
+        ) {
+          console.warn(
+            "⚠️ Duplicate token number detected. Retrying token generation...",
+            {
+              attempt,
+              tokenLabel,
+            },
+          );
 
-        estimatedWaitTime,
+          continue;
+        }
 
-        estimatedTurnTime,
+        throw error;
+      }
+    }
 
-        trackingToken,
-
-        trackingLinkActive:
-          true,
-
-        trackingExpiresAt,
-
-        nearTurnNotificationSent:
-          false,
-
-        calledNotificationSent:
-          false,
-
-        tokenNotificationSent:
-          false,
-      });
-
-    // ==================================================
-    // POPULATE QUEUE
-    // ==================================================
+    if (
+      !queue ||
+      !estimate
+    ) {
+      throw new Error(
+        "Unable to create queue token after retry.",
+      );
+    }
 
     const populatedQueue =
       await Queue.findById(
@@ -1123,77 +2371,45 @@ export const createQueue = async (
         )
         .populate(
           "doctorId",
-          "name email",
+          "name email isOnline isOnBreak breakStartedAt breakReason shiftStartTime shiftEndTime",
+        )
+        .populate(
+          "appointmentId",
+          "appointmentCode requestedStartTime confirmedStartTime endTime status paymentStatus",
         );
-
-    // ==================================================
-    // TRACKING URL
-    // ==================================================
-
-    const clientUrl =
-      process.env.CLIENT_URL ||
-      "http://localhost:5173";
 
     const trackingUrl =
       `${clientUrl}/track/${trackingToken}`;
 
-    // ==================================================
-    // PATIENT DATA
-    // ==================================================
-
     const patientData =
       populatedQueue?.patientId &&
-        typeof populatedQueue.patientId ===
-        "object"
+      typeof populatedQueue.patientId === "object"
         ? populatedQueue.patientId as unknown as PopulatedPatient
         : null;
 
-    // ==================================================
-    // DEPARTMENT DATA
-    // ==================================================
-
     const departmentData =
       populatedQueue?.departmentId &&
-        typeof populatedQueue.departmentId ===
-        "object"
+      typeof populatedQueue.departmentId === "object"
         ? populatedQueue.departmentId as unknown as PopulatedDepartment
         : null;
 
-    // ==================================================
-    // DOCTOR DATA
-    //
-    // IMPORTANT:
-    // At token creation doctorId is normally NULL.
-    //
-    // Therefore we find an active doctor belonging
-    // to this department for the email.
-    // ==================================================
-
-    let doctorData:
-      PopulatedDoctor | null = null;
-
-    if (departmentDoctor) {
-      doctorData = {
-        _id: departmentDoctor._id,
-        name: departmentDoctor.name,
-        email: departmentDoctor.email,
-      };
-    }
-
-    // ==================================================
-    // HOSPITAL DATA
-    // ==================================================
+    const doctorData: PopulatedDoctor = {
+      _id:
+        doctor._id,
+      name:
+        doctor.name,
+      email:
+        doctor.email,
+    };
 
     const hospitalData =
       await Hospital.findById(
         hospitalId,
       )
-        .select("name")
+        .select(
+          "name",
+        )
         .lean();
-
-    // ==================================================
-    // FINAL VALUES
-    // ==================================================
 
     const finalPatientName =
       patientData?.name ||
@@ -1211,80 +2427,7 @@ export const createQueue = async (
 
     const finalDoctorName =
       doctorData?.name ||
-      "Doctor not assigned";
-
-    // ==================================================
-    // DEBUG
-    // ==================================================
-
-    console.log(
-      "=================================",
-    );
-
-    console.log(
-      "📧 PATIENT TOKEN EMAIL DATA",
-    );
-
-    console.log(
-      "Patient Name:",
-      finalPatientName,
-    );
-
-    console.log(
-      "Patient Phone:",
-      patientData?.phone ||
-      patient.phone ||
-      "N/A",
-    );
-
-    console.log(
-      "Patient Email:",
-      patientData?.email ||
-      "N/A",
-    );
-
-    console.log(
-      "Hospital:",
-      finalHospitalName,
-    );
-
-    console.log(
-      "Department:",
-      finalDepartmentName,
-    );
-
-    console.log(
-      "Doctor:",
-      finalDoctorName,
-    );
-
-    console.log(
-      "Token:",
-      tokenLabel,
-    );
-
-    console.log(
-      "Estimated Wait:",
-      estimatedWaitTime,
-    );
-
-    console.log(
-      "Tracking URL:",
-      trackingUrl,
-    );
-
-    console.log(
-      "=================================",
-    );
-
-    // ==================================================
-    // SEND TOKEN NOTIFICATION
-    //
-    // TEST MODE:
-    // All patients receive email at TEST_PATIENT_EMAIL.
-    //
-    // WhatsApp/SMS will still be attempted first.
-    // ==================================================
+      "Doctor";
 
     const notificationEmail =
       patientData?.email ||
@@ -1296,9 +2439,15 @@ export const createQueue = async (
       patient.phone;
 
     const notificationPayload = {
-      phone: notificationPhone,
+      phone:
+        notificationPhone,
 
-      email: notificationEmail,
+      email:
+        String(
+          notificationEmail || "",
+        )
+          .trim()
+          .toLowerCase(),
 
       patientName:
         finalPatientName,
@@ -1316,93 +2465,91 @@ export const createQueue = async (
 
       trackingUrl,
 
-      estimatedWaitTime,
+      estimatedWaitTime:
+        estimate.estimatedWaitTime,
 
-      doctorShiftStartTime: shiftStartTime,
+      doctorShiftStartTime:
+        dutyValidation.shiftStartTime,
 
       averageConsultationMinutes,
     };
 
-    console.log("=================================");
     console.log(
-      "📨 STARTING BACKGROUND TOKEN NOTIFICATION",
+      "=================================",
     );
     console.log(
-      "EMAIL:",
-      notificationEmail,
+      "🎫 QUEUE TOKEN CREATED",
     );
     console.log(
-      "PHONE:",
-      notificationPhone || "N/A",
-    );
-    console.log(
-      "TOKEN:",
+      "Token:",
       tokenLabel,
     );
-    console.log("=================================");
-
-    const testPatientEmail =
-      String(process.env.TEST_PATIENT_EMAIL || "")
-        .trim()
-        .toLowerCase();
-
-    notificationPayload.email =
-      String(notificationPayload.email || testPatientEmail || "")
-        .trim()
-        .toLowerCase();
-
-    // ======================================================
-    // DO NOT AWAIT
-    // ======================================================
+    console.log(
+      "Source:",
+      queueSource,
+    );
+    console.log(
+      "Doctor:",
+      finalDoctorName,
+    );
+    console.log(
+      "Doctor duty start:",
+      dutyValidation.shiftStartTime ||
+        "Not configured",
+    );
+    console.log(
+      "Doctor duty end:",
+      dutyValidation.shiftEndTime ||
+        "Not configured",
+    );
+    console.log(
+      "Current India time:",
+      getIndiaCurrentTime(),
+    );
+    console.log(
+      "Estimated Wait:",
+      estimate.estimatedWaitTime,
+    );
+    console.log(
+      "Estimated Turn:",
+      estimate.estimatedTurnTime,
+    );
+    console.log(
+      "=================================",
+    );
 
     void sendTokenCreatedNotification(
       notificationPayload,
     )
-      .then(async (notificationResult) => {
-        console.log("=================================");
-        console.log(
-          "📨 BACKGROUND NOTIFICATION RESULT",
-        );
-        console.log(
-          "TOKEN:",
-          tokenLabel,
-        );
-        console.log(
-          "RESULT:",
+      .then(
+        async (
           notificationResult,
-        );
-        console.log("=================================");
-
-        if (notificationResult.success) {
-          await Queue.findByIdAndUpdate(
-            queue._id,
-            {
-              $set: {
-                tokenNotificationSent: true,
+        ) => {
+          if (
+            notificationResult.success
+          ) {
+            await Queue.findByIdAndUpdate(
+              queue._id,
+              {
+                $set: {
+                  tokenNotificationSent:
+                    true,
+                },
               },
-            },
-          );
-
-          console.log(
-            `✅ Token notification marked as sent via ${notificationResult.channel}`,
-          );
-        } else {
-          console.error(
-            "⚠️ Token notification failed:",
-            notificationResult,
-          );
-        }
-      })
-      .catch((error) => {
-        console.error(
-          "❌ Background token notification crashed:",
+            );
+          }
+        },
+      )
+      .catch(
+        (
           error,
-        );
-      });
-
-    // ==================================================
-    // SOCKET UPDATE
-    // ==================================================
+        ) => {
+          console.error(
+            "❌ Background token notification crashed:",
+            error,
+          );
+        },
+      );
 
     getIO()
       .to(
@@ -1412,10 +2559,6 @@ export const createQueue = async (
         "queue:created",
         populatedQueue,
       );
-
-    // ==================================================
-    // RESPONSE
-    // ==================================================
 
     return res.status(201).json({
       success: true,
@@ -1429,32 +2572,54 @@ export const createQueue = async (
 
         trackingUrl,
 
-        estimatedWaitTime,
+        estimatedWaitTime:
+          estimate.estimatedWaitTime,
 
-        estimatedTurnTime,
-
-        patientsAhead: waitingPatients,
+        estimatedTurnTime:
+          estimate.estimatedTurnTime,
 
         averageConsultationMinutes,
 
-        doctorOnline,
+        doctorOnline:
+          doctor.isOnline === true,
 
-        doctorShiftStartTime: shiftStartTime,
+        doctorOnBreak:
+          doctor.isOnBreak === true,
+
+        doctorShiftStartTime:
+          dutyValidation.shiftStartTime,
+
+        doctorShiftEndTime:
+          dutyValidation.shiftEndTime,
       },
     });
-  } catch (error) {
+  } catch (
+    error: any
+  ) {
     console.error(
       "❌ Create queue error:",
       error,
     );
 
+    if (
+      error?.code === 11000
+    ) {
+      return res.status(409).json({
+        success: false,
+        code: "DUPLICATE_TOKEN_RETRY_FAILED",
+        message:
+          "Token number conflict happened. Please try again.",
+      });
+    }
+
     return res.status(500).json({
       success: false,
-      message:
-        "Internal server error",
+      message: "Internal server error",
     });
   }
 };
+
+
 
 
 // ======================================================
@@ -1746,12 +2911,12 @@ export const callNextPatient = async (
     if (!nextPatient.calledNotificationSent) {
       const patient =
         nextPatient.patientId &&
-        typeof nextPatient.patientId === "object"
+          typeof nextPatient.patientId === "object"
           ? nextPatient.patientId as unknown as {
-              name: string;
-              phone?: string;
-              email?: string;
-            }
+            name: string;
+            phone?: string;
+            email?: string;
+          }
           : null;
 
       if (patient?.phone) {
@@ -1943,7 +3108,11 @@ export const startServingPatient =
           )
           .populate(
             "doctorId",
-            "name email",
+            "name email isOnline isOnBreak breakStartedAt breakReason shiftStartTime shiftEndTime",
+          )
+          .populate(
+            "appointmentId",
+            "appointmentCode requestedStartTime confirmedStartTime endTime status paymentStatus",
           );
 
       // ==================================================
@@ -2143,7 +3312,11 @@ export const completePatient =
           )
           .populate(
             "doctorId",
-            "name email",
+            "name email isOnline isOnBreak breakStartedAt breakReason shiftStartTime shiftEndTime",
+          )
+          .populate(
+            "appointmentId",
+            "appointmentCode requestedStartTime confirmedStartTime endTime status paymentStatus",
           );
 
       // ==================================================
@@ -2318,7 +3491,11 @@ export const skipPatient =
           )
           .populate(
             "doctorId",
-            "name email",
+            "name email isOnline isOnBreak breakStartedAt breakReason shiftStartTime shiftEndTime",
+          )
+          .populate(
+            "appointmentId",
+            "appointmentCode requestedStartTime confirmedStartTime endTime status paymentStatus",
           );
 
       // ==================================================

@@ -148,6 +148,13 @@ router.patch(
   callSelectedPatient,
 );
 
+
+router.patch(
+    "/:id/call-selected",
+    protect,
+    authorize("DOCTOR"),
+    callSelectedPatient,
+);
 /* =========================================================
    START SERVING
 
