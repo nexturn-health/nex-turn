@@ -25,10 +25,10 @@ import {
 } from "lucide-react";
 
 // Image stored in your public folder.
-const HERO_IMAGE = "/nexturn.png";
+const HERO_IMAGE = "/hero1.png";
 
 // File location: public/NextSynq-Health-Logo.png
-const LOGO_IMAGE = "/NextSynq-Health-Logo.png";
+const LOGO_IMAGE = "/Nexturn.png";
 
 // Instagram is active. Add your LinkedIn URL later to enable its button.
 const SOCIAL_LINKS = {
