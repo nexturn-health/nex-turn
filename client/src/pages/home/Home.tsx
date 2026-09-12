@@ -27,6 +27,12 @@ import {
 // Image stored in your public folder.
 const HERO_IMAGE = "/hero1.png";
 
+// Instagram is active. Add your LinkedIn URL later to enable its button.
+const SOCIAL_LINKS = {
+    instagram: "https://www.instagram.com/nextsynqhealth/",
+    linkedin: "",
+};
+
 /* ------------------------------------------------------------------
    PAGE CONTENT
 ------------------------------------------------------------------ */
@@ -732,27 +738,8 @@ export default function Home() {
                     </div>
                 </section>
 
-                {/* FAQ */}
-                <section
-                    id="faq"
-                    className="nx-section nx-container nx-faq-section"
-                >
-                    <SectionHeading
-                        eyebrow="FREQUENTLY ASKED QUESTIONS"
-                        title="Questions hospitals and doctors ask before starting."
-                        description="Simple answers about plans, appointment booking, doctor workflow, patient tracking and display board."
-                    />
-
-                    <div className="nx-faq-grid">
-                        {faqItems.map((item) => (
-                            <FAQItem
-                                key={item.question}
-                                question={item.question}
-                                answer={item.answer}
-                            />
-                        ))}
-                    </div>
-                </section>
+                {/* Compact categories and a single open answer keep FAQs easy to scan. */}
+                <FAQSection />
             </main>
 
             {/* FOOTER */}
@@ -862,7 +849,26 @@ export default function Home() {
                             © {new Date().getFullYear()} NextSynq Health.
                             All rights reserved.
                         </small>
-                        <span>Better healthcare, together. ♡</span>
+                        <div className="nx-social-links" aria-label="Social media">
+                            {[
+                                { label: "Instagram", url: SOCIAL_LINKS.instagram, Icon: Instagram },
+                                { label: "LinkedIn", url: SOCIAL_LINKS.linkedin, Icon: Linkedin },
+                            ].map(({ label, url, Icon }) => (
+                                url ? (
+                                    <a key={label} href={url} target="_blank"
+                                        rel="noopener noreferrer" aria-label={`${label} (opens in a new tab)`}>
+                                        <Icon size={18} aria-hidden="true" />
+                                        {label}
+                                    </a>
+                                ) : (
+                                    <button key={label} type="button" disabled
+                                        title={`${label} profile coming soon`}>
+                                        <Icon size={18} aria-hidden="true" />
+                                        {label}
+                                    </button>
+                                )
+                            ))}
+                        </div>
                     </div>
                 </div>
             </footer>
@@ -1238,44 +1244,106 @@ function PricingCard({
 }
 
 
-function FAQItem({
-    question,
-    answer,
-}: {
-    question: string;
-    answer: string;
-}) {
-    const [open, setOpen] =
-        useState(false);
+// Inline social icons keep this file compatible with Lucide versions without brand icons.
+function Instagram({ size = 18 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="5" />
+            <circle cx="12" cy="12" r="4" />
+            <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+        </svg>
+    );
+}
+
+function Linkedin({ size = 18 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM3.5 9h3v12h-3V9ZM9 9h3v1.6c.8-1.2 2-1.9 3.6-1.9 3.5 0 4.9 2.1 4.9 5.4V21h-3v-6.2c0-2-.5-3.2-2.4-3.2-2 0-3.1 1.3-3.1 3.5V21H9V9Z" />
+        </svg>
+    );
+}
+
+// These categories use the original FAQ order; answers remain unchanged.
+const faqCategories = ["All questions", "Getting started", "Plans & pricing", "Daily workflow"];
+const faqCategoryByIndex = [1, 1, 2, 2, 2, 2, 3, 3, 3, 3];
+
+function FAQSection() {
+    const [category, setCategory] = useState(0);
+    const [openIndex, setOpenIndex] = useState<number | null>(0);
+
+    function selectCategory(index: number) {
+        setCategory(index);
+        // Open the first answer in the chosen category.
+        setOpenIndex(index === 0 ? 0 : faqCategoryByIndex.indexOf(index));
+    }
 
     return (
-        <article
-            className="nx-faq-item"
-            data-open={open}
-        >
-            <button
-                type="button"
-                aria-expanded={open}
-                onClick={() =>
-                    setOpen(
-                        (previous) =>
-                            !previous,
-                    )
-                }
-            >
-                <span>
-                    {question}
-                </span>
+        <section id="faq" className="nx-section nx-container nx-faq-section"
+            aria-labelledby="nx-faq-title">
+            <div className="nx-faq-layout">
+                <div className="nx-faq-intro">
+                    <span className="nx-faq-eyebrow">GOOD TO KNOW</span>
+                    <h2 id="nx-faq-title">A clearer start for your hospital.</h2>
+                    <p>Plans, appointments and daily workflows. Find the answers you need.</p>
+                    <a className="nx-faq-plan-link" href="#pricing">
+                        Compare plans <ArrowRight size={17} aria-hidden="true" />
+                    </a>
+                    <div className="nx-faq-trial">
+                        <ShieldCheck size={22} aria-hidden="true" />
+                        <div><strong>14-day free trial</strong><span>Explore with your hospital team.</span></div>
+                    </div>
+                </div>
 
-                <ChevronDown
-                    size={19}
-                />
-            </button>
+                <div className="nx-faq-content">
+                    <div className="nx-faq-filters" role="group" aria-label="Filter questions">
+                        {faqCategories.map((label, index) => (
+                            <button key={label} type="button" aria-pressed={category === index}
+                                onClick={() => selectCategory(index)}>
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="nx-faq-list">
+                        {faqItems.map((item, index) => (
+                            (category === 0 || faqCategoryByIndex[index] === category) && (
+                                <FAQItem key={item.question} question={item.question}
+                                    answer={item.answer} index={index} open={openIndex === index}
+                                    onToggle={() => setOpenIndex(openIndex === index ? null : index)} />
+                            )
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </section>
+    );
+}
 
-            <div className="nx-faq-answer">
-                <p>
-                    {answer}
-                </p>
+interface FAQItemProps {
+    question: string;
+    answer: string;
+    index: number;
+    open: boolean;
+    onToggle: () => void;
+}
+
+function FAQItem({ question, answer, index, open, onToggle }: FAQItemProps) {
+    const questionId = `nx-faq-question-${index}`;
+    const answerId = `nx-faq-answer-${index}`;
+
+    return (
+        <article className="nx-faq-item" data-open={open}>
+            <h3>
+                <button id={questionId} type="button" aria-expanded={open}
+                    aria-controls={answerId} onClick={onToggle}>
+                    <span>{question}</span>
+                    <ChevronDown size={19} aria-hidden="true" />
+                </button>
+            </h3>
+            {/* Hidden answers are also removed from keyboard/screen-reader navigation. */}
+            <div id={answerId} className="nx-faq-panel" role="region"
+                aria-labelledby={questionId} hidden={!open}>
+                <p>{answer}</p>
             </div>
         </article>
     );
@@ -3306,6 +3374,45 @@ function HomeStyles() {
                 .nx-mobile-nav {
                     display: none !important;
                 }
+            }
+
+
+            /* FAQ: spacious desktop columns, compact stacked layout on phones. */
+            .nx-faq-layout { display:grid; grid-template-columns:minmax(240px, .8fr) minmax(0, 1.5fr); gap:clamp(28px, 5vw, 90px); align-items:start; }
+            .nx-faq-intro { max-width:440px; }
+            .nx-faq-eyebrow { color:var(--green); font-size:11px; font-weight:800; letter-spacing:.15em; }
+            .nx-faq-intro h2 { margin:14px 0; font-size:clamp(27px, 3vw, 42px); line-height:1.15; letter-spacing:-.035em; }
+            .nx-faq-intro p { color:var(--muted); font-size:15px; line-height:1.7; }
+            .nx-faq-plan-link { display:inline-flex; align-items:center; gap:10px; min-height:44px; margin-top:14px; color:var(--green); font-weight:700; text-decoration:none; }
+            .nx-faq-trial { display:flex; align-items:center; gap:12px; padding:18px; margin-top:24px; border:1px solid var(--line); background:var(--soft); border-radius:16px; }
+            .nx-faq-trial svg { flex-shrink:0; }
+            .nx-faq-trial strong,.nx-faq-trial span { display:block; font-size:13px; }
+            .nx-faq-trial span { color:var(--muted); margin-top:3px; }
+            .nx-faq-content { min-width:0; }
+            .nx-faq-filters { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; }
+            .nx-faq-filters button { min-height:44px; padding:10px 14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); color:var(--muted); font-size:12px; font-weight:700; cursor:pointer; }
+            .nx-faq-filters button[aria-pressed="true"] { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+            .nx-faq-list { display:grid; gap:10px; }
+            .nx-faq-list .nx-faq-item { box-shadow:none; transition:border-color .2s; }
+            .nx-faq-list .nx-faq-item[data-open="true"] { border-color:var(--green); }
+            .nx-faq-list .nx-faq-item button { min-height:64px; text-align:left; }
+            .nx-faq-list .nx-faq-item button svg { flex-shrink:0; }
+            .nx-faq-panel { padding:0 18px 20px; color:var(--muted); font-size:14px; line-height:1.75; }
+            .nx-faq-panel[hidden] { display:none; }
+            .nx-faq-section button:focus-visible,.nx-faq-section a:focus-visible,.nx-social-links a:focus-visible { outline:3px solid var(--green); outline-offset:4px; }
+            .nx-footer .nx-social-links { display:flex; flex-wrap:wrap; gap:10px; }
+            .nx-footer .nx-social-links a,.nx-footer .nx-social-links button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:10px 14px; margin:0; border:1px solid rgba(220,229,212,.35); border-radius:10px; background:rgba(255,255,255,.06); color:#edf3e4; text-decoration:none; font-size:13px; }
+            .nx-footer .nx-social-links a:hover { background:rgba(255,255,255,.14); }
+            .nx-footer .nx-social-links button:disabled { opacity:.65; cursor:not-allowed; }
+            @media (max-width: 800px) {
+                .nx-faq-layout { grid-template-columns:1fr; gap:24px; }
+                .nx-faq-intro { max-width:600px; }
+                .nx-faq-trial { margin-top:12px; padding:12px 14px; }
+                .nx-faq-filters { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+                .nx-faq-filters button { padding:10px 8px; }
+                .nx-faq-list .nx-faq-item button { padding:16px; gap:12px; }
+                .nx-faq-panel { padding:0 16px 16px; font-size:13px; }
+                .nx-footer-bottom { align-items:flex-start; gap:16px; }
             }
 
             @media (prefers-reduced-motion: reduce) {
