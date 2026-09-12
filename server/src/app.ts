@@ -31,98 +31,93 @@ import doctorAvailabilityRoutes from "./routes/doctorAvailability.routes";
 import { protect } from "./middleware/auth.middleware";
 
 const app = express();
-
 // ============================================================
 // CORS CONFIG
 // ============================================================
 
 const defaultAllowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "https://nexturn-silk.vercel.app",
-  "https://nextsynq.health"
+    "http://localhost:5173",
+    "http://localhost:5174",
+
+    // Vercel frontend
+    "https://nexturn-silk.vercel.app",
+
+    // Custom domain
+    "https://nextsynq.health",
+    "https://www.nextsynq.health",
 ];
 
 /*
- * Backend deployment environment:
- *
- * CLIENT_URLS=https://nexturn-silk.vercel.app,https://yourdomain.com
- *
- * Local environment:
- *
- * CLIENT_URLS=http://localhost:5173
- */
+Backend deployment environment example:
+
+CLIENT_URLS=http://localhost:5173,http://localhost:5174,https://nexturn-silk.vercel.app,https://nextsynq.health,https://www.nextsynq.health
+*/
+
 const envAllowedOrigins =
-  process.env.CLIENT_URLS
-    ?.split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean) || [];
+    process.env.CLIENT_URLS
+        ?.split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean) || [];
 
 const allowedOrigins = [
-  ...defaultAllowedOrigins,
-  ...envAllowedOrigins,
+    ...defaultAllowedOrigins,
+    ...envAllowedOrigins,
 ];
 
 const normalizeOrigin = (origin: string) => {
-  return origin.replace(/\/$/, "");
+    return origin.replace(/\/$/, "");
 };
 
 const corsOptions: CorsOptions = {
-  origin: (origin, callback) => {
-    /*
-     * Allow requests without an origin:
-     * - Postman
-     * - Server-to-server requests
-     * - Health checks
-     */
-    if (!origin) {
-      return callback(null, true);
-    }
+    origin: (origin, callback) => {
+        // Allow Postman, server-to-server, health checks
+        if (!origin) {
+            return callback(null, true);
+        }
 
-    const cleanOrigin = normalizeOrigin(origin);
+        const cleanOrigin = normalizeOrigin(origin);
 
-    const isAllowed = allowedOrigins
-      .map(normalizeOrigin)
-      .includes(cleanOrigin);
+        const normalizedAllowedOrigins =
+            allowedOrigins.map(normalizeOrigin);
 
-    // Preserve the existing Vercel preview matching rule.
-    const isYourVercelPreview =
-      /^https:\/\/nexturn.*\.vercel\.app$/.test(cleanOrigin);
+        const isAllowed =
+            normalizedAllowedOrigins.includes(cleanOrigin);
 
-    if (isAllowed || isYourVercelPreview) {
-      console.log("✅ CORS allowed:", cleanOrigin);
+        const isYourVercelPreview =
+            /^https:\/\/nexturn.*\.vercel\.app$/.test(cleanOrigin);
 
-      return callback(null, true);
-    }
+        if (isAllowed || isYourVercelPreview) {
+            console.log("✅ CORS allowed:", cleanOrigin);
+            return callback(null, true);
+        }
 
-    console.log("❌ CORS rejected:", cleanOrigin);
+        console.log("❌ CORS rejected:", cleanOrigin);
 
-    return callback(
-      new Error(`CORS blocked origin: ${cleanOrigin}`),
-    );
-  },
+        // Do not throw Error here.
+        // Throwing error can cause 500 Internal Server Error.
+        return callback(null, false);
+    },
 
-  credentials: true,
+    credentials: true,
 
-  methods: [
-    "GET",
-    "POST",
-    "PUT",
-    "PATCH",
-    "DELETE",
-    "OPTIONS",
-  ],
+    methods: [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+    ],
 
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-  ],
+    allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+    ],
 
-  optionsSuccessStatus: 204,
+    optionsSuccessStatus: 204,
 };
 
 app.use(cors(corsOptions));
-
 // ============================================================
 // BODY PARSER
 // ============================================================
