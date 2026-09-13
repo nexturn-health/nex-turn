@@ -24,12 +24,17 @@ import {
     connectSocket,
 } from "../../socket/socket";
 
-const Login = () => {
+import {
+    analyticsEvents,
+    useAnalytics,
+} from "../../analytics/events";
 
+const Login = () => {
     const navigate = useNavigate();
+    const analytics = useAnalytics();
 
     const setAuth = useAuthStore(
-        (state) => state.setAuth
+        (state) => state.setAuth,
     );
 
     const [email, setEmail] = useState("");
@@ -51,22 +56,19 @@ const Login = () => {
     const handleSubmit = async (
         event: React.FormEvent<HTMLFormElement>,
     ) => {
-
         event.preventDefault();
 
         setError("");
 
         if (!email || !password) {
-
             setError(
-                "Please enter email and password"
+                "Please enter email and password",
             );
 
             return;
         }
 
         try {
-
             setLoading(true);
 
             const response =
@@ -76,9 +78,8 @@ const Login = () => {
                 });
 
             if (!response.success) {
-
                 setError(
-                    response.message
+                    response.message,
                 );
 
                 return;
@@ -98,6 +99,22 @@ const Login = () => {
                 ).subscription ??
                 null;
 
+            const subscriptionForAnalytics =
+                subscription as
+                    | (SubscriptionInfo & {
+                          plan?: string | null;
+                          status?: string | null;
+                          subscriptionStatus?: string | null;
+                      })
+                    | null;
+
+            const hospitalIdForAnalytics =
+                typeof user.hospitalId === "string"
+                    ? user.hospitalId
+                    : user.hospitalId
+                      ? String(user.hospitalId)
+                      : null;
+
             // =================================================
             // SAVE AUTH
             // =================================================
@@ -107,20 +124,51 @@ const Login = () => {
                 user,
                 subscription ?? null,
             );
+
             console.log("LOGIN USER:", user);
             console.log("LOGIN ROLE:", user.role);
             console.log(
                 "LOGIN SUBSCRIPTION:",
                 subscription,
             );
+
+            // =================================================
+            // POSTHOG EVENT: LOGIN SUCCESS
+            // =================================================
+            // Safe analytics only.
+            // Do not send email, password, name, phone,
+            // patient data, prescription, diagnosis, reports,
+            // tracking token, or patient code.
+
+            analytics.capture(
+                analyticsEvents.LOGIN_SUCCESS,
+                {
+                    role:
+                        user.role ||
+                        "UNKNOWN",
+
+                    hospitalId:
+                        hospitalIdForAnalytics,
+
+                    loginMethod:
+                        "email_password",
+
+                    plan:
+                        subscriptionForAnalytics?.plan ||
+                        null,
+
+                    subscriptionStatus:
+                        subscriptionForAnalytics?.subscriptionStatus ||
+                        subscriptionForAnalytics?.status ||
+                        null,
+                },
+            );
+
             // =================================================
             // DOCTOR SOCKET
             // =================================================
 
-            if (
-                user.role === "DOCTOR"
-            ) {
-
+            if (user.role === "DOCTOR") {
                 if (
                     user?.id &&
                     user?.hospitalId
@@ -132,85 +180,76 @@ const Login = () => {
                 }
             }
 
-
             // =================================================
             // ROLE NAVIGATION
             // =================================================
 
             switch (user.role) {
-
                 case "SUPER_ADMIN":
-
                     navigate(
                         "/super-admin/dashboard",
                         {
                             replace: true,
-                        }
+                        },
                     );
-
                     break;
 
                 case "HOSPITAL_ADMIN":
-
                     navigate(
                         "/admin/dashboard",
                         {
                             replace: true,
-                        }
+                        },
                     );
-
                     break;
 
                 case "RECEPTIONIST":
-
                     navigate(
                         "/reception/dashboard",
                         {
                             replace: true,
-                        }
+                        },
                     );
-
                     break;
 
                 case "DOCTOR":
-
                     navigate(
                         "/doctor/dashboard",
                         {
                             replace: true,
-                        }
+                        },
                     );
-
                     break;
 
                 case "PATIENT":
-                    navigate("/patient/queue", {
-                        replace: true,
-                    });
+                    navigate(
+                        "/patient/queue",
+                        {
+                            replace: true,
+                        },
+                    );
                     break;
 
                 case "LAB_TECHNICIAN":
-                    console.log("🚀 Navigating Lab Technician...");
+                    console.log(
+                        "🚀 Navigating Lab Technician...",
+                    );
 
-                    window.location.replace("/lab/dashboard");
-
+                    window.location.replace(
+                        "/lab/dashboard",
+                    );
                     break;
-                    console.log("✅ AFTER NAVIGATE");
 
-                    break;
                 default:
-
                     console.error(
                         "Unknown role:",
-                        user.role
+                        user.role,
                     );
             }
-
         } catch (error: any) {
-
             console.error(
                 "Login error:",
-                error
+                error,
             );
 
             const message =
@@ -218,11 +257,8 @@ const Login = () => {
                 "Unable to login. Please try again.";
 
             setError(message);
-
         } finally {
-
             setLoading(false);
-
         }
     };
 
@@ -233,214 +269,291 @@ const Login = () => {
     return (
         <main className="nt-login">
             <LoginDesignStyles />
-            <section className="nt-login-story" aria-label="NexTurn hospital workspace">
-                <div className="nt-login-story-brand"><img src="/nexturn.png" alt="NexTurn" /><span>HOSPITAL WORKSPACE</span></div>
+
+            <section
+                className="nt-login-story"
+                aria-label="NexTurn hospital workspace"
+            >
+                <div className="nt-login-story-brand">
+                    <img
+                        src="/nexturn.png"
+                        alt="NexTurn"
+                    />
+                    <span>HOSPITAL WORKSPACE</span>
+                </div>
+
                 <div className="nt-login-story-content">
-                    <span className="nt-login-eyebrow">MORE TIME FOR CARE</span>
-                    <h1>A calmer day.<br /><span>A connected hospital.</span></h1>
-                    <p>Bring your team, patient queues and daily operations together in one workspace.</p>
+                    <span className="nt-login-eyebrow">
+                        MORE TIME FOR CARE
+                    </span>
+
+                    <h1>
+                        A calmer day.
+                        <br />
+                        <span>A connected hospital.</span>
+                    </h1>
+
+                    <p>
+                        Bring your team, patient queues and daily operations
+                        together in one workspace.
+                    </p>
+
                     <div className="nt-login-care-card">
-                        <div className="nt-login-care-icon"><HeartPulse size={26} strokeWidth={1.5} /></div>
-                        <div><h2>Every visit, better connected.</h2><p>From the reception desk to the consultation room.</p></div>
+                        <div className="nt-login-care-icon">
+                            <HeartPulse
+                                size={26}
+                                strokeWidth={1.5}
+                            />
+                        </div>
+
+                        <div>
+                            <h2>Every visit, better connected.</h2>
+                            <p>
+                                From the reception desk to the consultation
+                                room.
+                            </p>
+                        </div>
                     </div>
+
                     <div className="nt-login-benefits">
-                        <div><Users size={18} /><span>One workspace for your team</span></div>
-                        <div><Clock3 size={18} /><span>Clearer patient queues</span></div>
-                        <div><ShieldCheck size={18} /><span>Access for every hospital role</span></div>
+                        <div>
+                            <Users size={18} />
+                            <span>One workspace for your team</span>
+                        </div>
+
+                        <div>
+                            <Clock3 size={18} />
+                            <span>Clearer patient queues</span>
+                        </div>
+
+                        <div>
+                            <ShieldCheck size={18} />
+                            <span>Access for every hospital role</span>
+                        </div>
                     </div>
                 </div>
-                <p className="nt-login-story-footer">NexTurn <span>Built around better patient flow.</span></p>
+
+                <p className="nt-login-story-footer">
+                    NexTurn{" "}
+                    <span>
+                        Built around better patient flow.
+                    </span>
+                </p>
             </section>
-            <section className="nt-login-main" aria-labelledby="login-title">
+
+            <section
+                className="nt-login-main"
+                aria-labelledby="login-title"
+            >
                 <div className="nt-login-container">
-                    <div className="nt-login-mobile-brand"><img src="/nexturn.png" alt="NexTurn" /><span>Hospital workspace</span></div>
+                    <div className="nt-login-mobile-brand">
+                        <img
+                            src="/nexturn.png"
+                            alt="NexTurn"
+                        />
+                        <span>Hospital workspace</span>
+                    </div>
+
                     <div className="nt-login-card">
-                        <div className="nt-login-welcome-icon"><Lock size={23} strokeWidth={1.6} /></div>
-                        <p className="nt-login-kicker">WELCOME BACK</p>
-                        <h2 id="login-title">Your workspace awaits.</h2>
-                        <p className="nt-login-description">Sign in with your hospital account to continue.</p>
+                        <div className="nt-login-welcome-icon">
+                            <Lock
+                                size={23}
+                                strokeWidth={1.6}
+                            />
+                        </div>
+
+                        <p className="nt-login-kicker">
+                            WELCOME BACK
+                        </p>
+
+                        <h2 id="login-title">
+                            Your workspace awaits.
+                        </h2>
+
+                        <p className="nt-login-description">
+                            Sign in with your hospital account to continue.
+                        </p>
+
                         {error && (
-                            <div id="login-error" className="nt-login-error" role="alert">
-                                <span aria-hidden="true">!</span><p>{error}</p>
+                            <div
+                                id="login-error"
+                                className="nt-login-error"
+                                role="alert"
+                            >
+                                <span aria-hidden="true">!</span>
+                                <p>{error}</p>
                             </div>
                         )}
-<form
-                                onSubmit={handleSubmit}
-                                className="nt-login-form space-y-5" aria-busy={loading}
-                            >
 
-                                {/* EMAIL */}
+                        <form
+                            onSubmit={handleSubmit}
+                            className="nt-login-form space-y-5"
+                            aria-busy={loading}
+                        >
+                            {/* EMAIL */}
 
-                                <div>
+                            <div>
+                                <label
+                                    htmlFor="email"
+                                    className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-600"
+                                >
+                                    Email Address
+                                </label>
 
+                                <div className="group relative">
+                                    <Mail
+                                        size={18}
+                                        className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 transition group-focus-within:text-teal-600"
+                                    />
+
+                                    <input
+                                        id="email"
+                                        type="email"
+                                        value={email}
+                                        onChange={(event) =>
+                                            setEmail(
+                                                event.target.value,
+                                            )
+                                        }
+                                        placeholder="you@hospital.com"
+                                        autoComplete="email"
+                                        inputMode="email"
+                                        autoCapitalize="none"
+                                        spellCheck={false}
+                                        aria-describedby={
+                                            error
+                                                ? "login-error"
+                                                : undefined
+                                        }
+                                        className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 py-3.5 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* PASSWORD */}
+
+                            <div>
+                                <div className="mb-2 flex items-center justify-between">
                                     <label
-                                        htmlFor="email"
-                                        className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-600"
+                                        htmlFor="password"
+                                        className="block text-xs font-bold uppercase tracking-wide text-slate-600"
                                     >
-                                        Email Address
+                                        Password
                                     </label>
 
-                                    <div className="group relative">
-
-                                        <Mail
-                                            size={18}
-                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 transition group-focus-within:text-teal-600"
-                                        />
-
-                                        <input
-                                            id="email"
-                                            type="email"
-                                            value={email}
-                                            onChange={(event) =>
-                                                setEmail(
-                                                    event.target.value
-                                                )
-                                            }
-                                            placeholder="you@hospital.com"
-                                            autoComplete="email"
-                                            inputMode="email"
-                                            autoCapitalize="none"
-                                            spellCheck={false}
-                                            aria-describedby={error ? "login-error" : undefined}
-                                            className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 py-3.5 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
-                                        />
-
-                                    </div>
-
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            navigate(
+                                                "/forgot-password",
+                                            )
+                                        }
+                                        className="text-xs font-semibold text-teal-600 transition hover:text-teal-700"
+                                    >
+                                        Forgot password?
+                                    </button>
                                 </div>
 
+                                <div className="group relative">
+                                    <Lock
+                                        size={18}
+                                        className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 transition group-focus-within:text-teal-600"
+                                    />
 
-                                {/* PASSWORD */}
+                                    <input
+                                        id="password"
+                                        type={
+                                            showPassword
+                                                ? "text"
+                                                : "password"
+                                        }
+                                        value={password}
+                                        onChange={(event) =>
+                                            setPassword(
+                                                event.target.value,
+                                            )
+                                        }
+                                        placeholder="Enter your password"
+                                        autoComplete="current-password"
+                                        aria-describedby={
+                                            error
+                                                ? "login-error"
+                                                : undefined
+                                        }
+                                        className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 py-3.5 pl-11 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+                                    />
 
-                                <div>
-
-                                    <div className="mb-2 flex items-center justify-between">
-
-                                        <label
-                                            htmlFor="password"
-                                            className="block text-xs font-bold uppercase tracking-wide text-slate-600"
-                                        >
-                                            Password
-                                        </label>
-
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                navigate(
-                                                    "/forgot-password"
-                                                )
-                                            }
-                                            className="text-xs font-semibold text-teal-600 transition hover:text-teal-700"
-                                        >
-                                            Forgot password?
-                                        </button>
-
-                                    </div>
-
-
-                                    <div className="group relative">
-
-                                        <Lock
-                                            size={18}
-                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 transition group-focus-within:text-teal-600"
-                                        />
-
-                                        <input
-                                            id="password"
-                                            type={
-                                                showPassword
-                                                    ? "text"
-                                                    : "password"
-                                            }
-                                            value={password}
-                                            onChange={(event) =>
-                                                setPassword(
-                                                    event.target.value
-                                                )
-                                            }
-                                            placeholder="Enter your password"
-                                            autoComplete="current-password"
-                                            aria-describedby={error ? "login-error" : undefined}
-                                            className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 py-3.5 pl-11 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
-                                        />
-
-
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                setShowPassword(
-                                                    (value) =>
-                                                        !value
-                                                )
-                                            }
-                                            className="nt-password-toggle absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
-                                            aria-pressed={showPassword}
-                                            aria-label={
-                                                showPassword
-                                                    ? "Hide password"
-                                                    : "Show password"
-                                            }
-                                        >
-
-                                            {showPassword ? (
-                                                <EyeOff size={18} />
-                                            ) : (
-                                                <Eye size={18} />
-                                            )}
-
-                                        </button>
-
-                                    </div>
-
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setShowPassword(
+                                                (value) =>
+                                                    !value,
+                                            )
+                                        }
+                                        className="nt-password-toggle absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
+                                        aria-pressed={
+                                            showPassword
+                                        }
+                                        aria-label={
+                                            showPassword
+                                                ? "Hide password"
+                                                : "Show password"
+                                        }
+                                    >
+                                        {showPassword ? (
+                                            <EyeOff size={18} />
+                                        ) : (
+                                            <Eye size={18} />
+                                        )}
+                                    </button>
                                 </div>
+                            </div>
 
+                            {/* LOGIN BUTTON */}
 
-                                {/* LOGIN BUTTON */}
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-teal-600 to-teal-700 py-4 text-sm font-bold text-white shadow-lg shadow-teal-600/20 transition duration-200 hover:-translate-y-0.5 hover:from-teal-700 hover:to-teal-800 hover:shadow-xl hover:shadow-teal-600/25 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
+                            >
+                                {/* shine */}
 
-                                <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-teal-600 to-teal-700 py-4 text-sm font-bold text-white shadow-lg shadow-teal-600/20 transition duration-200 hover:-translate-y-0.5 hover:from-teal-700 hover:to-teal-800 hover:shadow-xl hover:shadow-teal-600/25 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
-                                >
+                                <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
 
-                                    {/* shine */}
+                                {loading ? (
+                                    <>
+                                        <Loader2
+                                            size={18}
+                                            className="animate-spin"
+                                        />
 
-                                    <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+                                        Signing in...
+                                    </>
+                                ) : (
+                                    <>
+                                        Sign in
 
-                                    {loading ? (
+                                        <ArrowUpRight
+                                            size={17}
+                                            className="transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                                        />
+                                    </>
+                                )}
+                            </button>
+                        </form>
 
-                                        <>
-
-                                            <Loader2
-                                                size={18}
-                                                className="animate-spin"
-                                            />
-
-                                            Signing in...
-
-                                        </>
-
-                                    ) : (
-
-                                        <>
-
-                                            Sign in
-
-                                            <ArrowUpRight
-                                                size={17}
-                                                className="transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
-                                            />
-
-                                        </>
-
-                                    )}
-
-                                </button>
-
-                            </form>
-                        <div className="nt-login-card-footer"><ShieldCheck size={15} /><span>Your hospital. Your dedicated workspace.</span></div>
+                        <div className="nt-login-card-footer">
+                            <ShieldCheck size={15} />
+                            <span>
+                                Your hospital. Your dedicated workspace.
+                            </span>
+                        </div>
                     </div>
-                    <p className="nt-login-help">Use the account provided by your hospital administrator.</p>
+
+                    <p className="nt-login-help">
+                        Use the account provided by your hospital administrator.
+                    </p>
                 </div>
             </section>
         </main>

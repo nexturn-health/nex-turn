@@ -13,6 +13,7 @@ import {
 import { Toaster } from "react-hot-toast";
 
 import ProtectedRoute from "./routes/ProtectedRoute";
+import PostHogIdentify from "./analytics/PostHogIdentify";
 
 // ============================================================
 // LAZY LOADED PAGES
@@ -86,6 +87,7 @@ function App() {
             {/* TOASTER */}
             {/* ================================================= */}
 
+            <PostHogIdentify />
             <Toaster
                 position="top-right"
                 reverseOrder={false}
