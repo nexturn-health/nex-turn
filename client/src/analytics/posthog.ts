@@ -36,35 +36,34 @@ export const initPostHog = () => {
         console.log("PostHog disabled or token missing");
         return;
     }
+posthog.init(
+    POSTHOG_TOKEN,
+    {
+        api_host: POSTHOG_HOST,
 
-    posthog.init(
-        POSTHOG_TOKEN,
-        {
-            api_host: POSTHOG_HOST,
+        autocapture: false,
+        capture_pageview: false,
+        capture_pageleave: false,
+        capture_performance: false,
+        capture_dead_clicks: false,
+        capture_exceptions: false,
 
-            /*
-             * Privacy-safe setup for hospital software.
-             * We will capture only manual safe events.
-             */
-            autocapture: false,
-            capture_pageview: false,
-            capture_pageleave: false,
-            disable_session_recording: true,
+        disable_session_recording: true,
 
-            mask_all_text: true,
-            mask_all_element_attributes: true,
+        mask_all_text: true,
+        mask_all_element_attributes: true,
 
-            property_denylist: blockedPropertyKeys,
+        property_denylist: blockedPropertyKeys,
 
-            person_profiles: "identified_only",
+        person_profiles: "identified_only",
 
-            loaded: (client) => {
-                if (import.meta.env.DEV) {
-                    client.debug();
-                }
-            },
+        loaded: (client) => {
+            if (import.meta.env.DEV) {
+                client.debug();
+            }
         },
-    );
+    },
+);
 };
 
 export default posthog;
