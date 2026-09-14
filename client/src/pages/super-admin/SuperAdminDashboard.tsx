@@ -27,6 +27,7 @@ import { useAuthStore } from "../../store/authStore";
 import SuperAdminHospitals from "./SuperAdminHospitals";
 import SuperHospitalAdmin from "./SuperHospitalAdmin";
 import SuperDoctors from "./SuperDoctors";
+import SuperAdminNotifications from "./SuperAdminNotifications";
 
 // =============================================================================
 // Types
@@ -391,10 +392,7 @@ function DashboardHeader({
           <RefreshCw size={19} className={loading ? "animate-spin" : ""} />
         </button>
 
-        <button type="button" className="relative rounded-xl p-2.5 text-slate-500 hover:bg-slate-100">
-          <Bell size={20} />
-          <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" />
-        </button>
+        <SuperAdminNotifications />
 
         <details className="sa-account" onKeyDown={(event) => {
           if (event.key === "Escape") {

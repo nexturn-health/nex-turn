@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
     Activity,
     ArrowRight,
+    Building2,
     CalendarDays,
     Check,
     ChevronDown,
@@ -11,7 +12,10 @@ import {
     FlaskConical,
     Heart,
     LayoutDashboard,
+    Mail,
+    MapPin,
     Menu,
+    MessageSquare,
     Moon,
     Phone,
     ShieldCheck,
@@ -19,6 +23,7 @@ import {
     Stethoscope,
     Sun,
     Ticket,
+    User,
     Users,
     X,
     Zap,
@@ -36,6 +41,13 @@ const SOCIAL_LINKS = {
     linkedin: "",
 };
 
+
+const API_URL =
+    (
+        import.meta.env.VITE_API_URL ||
+        "http://localhost:5000/api"
+    ).replace(/\/$/, "");
+
 /* ------------------------------------------------------------------
    PAGE CONTENT
 ------------------------------------------------------------------ */
@@ -47,6 +59,7 @@ const navigation = [
     { label: "Pricing", id: "pricing" },
     { label: "For Doctors", id: "doctor-choice" },
     { label: "Workflow", id: "workflow" },
+    { label: "Contact", id: "contact" },
     { label: "FAQ", id: "faq" },
 ];
 
@@ -735,6 +748,9 @@ export default function Home() {
                     </div>
                 </section>
 
+                {/* CONTACT FORM */}
+                <ContactSection />
+
                 {/* Compact categories and a single open answer keep FAQs easy to scan. */}
                 <FAQSection />
             </main>
@@ -775,6 +791,12 @@ export default function Home() {
                                 onClick={() => scrollToSection("display")}
                             >
                                 Live previews
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => scrollToSection("contact")}
+                            >
+                                Contact
                             </button>
                             <button
                                 type="button"
@@ -1235,6 +1257,358 @@ function PricingCard({
 }
 
 
+
+interface ContactFormState {
+    name: string;
+    phone: string;
+    email: string;
+    organization: string;
+    city: string;
+    interest: string;
+    message: string;
+}
+
+interface ContactApiResponse {
+    success: boolean;
+    message?: string;
+    data?: {
+        leadId?: string;
+        notificationId?: string;
+    };
+}
+
+const createInitialContactForm = (): ContactFormState => ({
+    name: "",
+    phone: "",
+    email: "",
+    organization: "",
+    city: "",
+    interest: "Free demo",
+    message: "",
+});
+
+function ContactSection() {
+    const [form, setForm] =
+        useState<ContactFormState>(
+            createInitialContactForm,
+        );
+
+    const [loading, setLoading] =
+        useState(false);
+
+    const [successMessage, setSuccessMessage] =
+        useState("");
+
+    const [errorMessage, setErrorMessage] =
+        useState("");
+
+    function updateField(
+        field: keyof ContactFormState,
+        value: string,
+    ) {
+        if (field === "phone") {
+            const phone =
+                value.replace(/\D/g, "").slice(0, 10);
+
+            setForm((previous) => ({
+                ...previous,
+                phone,
+            }));
+
+            return;
+        }
+
+        setForm((previous) => ({
+            ...previous,
+            [field]: value,
+        }));
+    }
+
+    async function submitContactForm(
+        event: FormEvent<HTMLFormElement>,
+    ) {
+        event.preventDefault();
+
+        setSuccessMessage("");
+        setErrorMessage("");
+
+        const payload = {
+            name: form.name.trim(),
+            phone: form.phone.trim(),
+            email: form.email.trim(),
+            organization: form.organization.trim(),
+            city: form.city.trim(),
+            interest: form.interest.trim(),
+            message: form.message.trim(),
+            source: "WEBSITE_HOME_CONTACT_FORM",
+        };
+
+        if (!payload.name) {
+            setErrorMessage("Please enter your name.");
+            return;
+        }
+
+        if (!/^\d{10}$/.test(payload.phone)) {
+            setErrorMessage("Please enter a valid 10 digit phone number.");
+            return;
+        }
+
+        if (
+            payload.email &&
+            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)
+        ) {
+            setErrorMessage("Please enter a valid email address.");
+            return;
+        }
+
+        if (!payload.message) {
+            setErrorMessage("Please enter your message.");
+            return;
+        }
+
+        try {
+            setLoading(true);
+
+            const response =
+                await fetch(`${API_URL}/contact`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(payload),
+                });
+
+            const data =
+                (await response
+                    .json()
+                    .catch(() => null)) as ContactApiResponse | null;
+
+            if (!response.ok || !data?.success) {
+                throw new Error(
+                    data?.message ||
+                        "Unable to submit contact form.",
+                );
+            }
+
+            setSuccessMessage(
+                data.message ||
+                    "Thank you. We received your request. Our team will contact you soon.",
+            );
+
+            setForm(createInitialContactForm());
+        } catch (error) {
+            setErrorMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Unable to submit contact form.",
+            );
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    return (
+        <section
+            id="contact"
+            className="nx-section nx-container nx-contact-section"
+        >
+            <div className="nx-contact-shell">
+                <div className="nx-contact-copy">
+                    <span className="nx-contact-eyebrow">
+                        CONTACT / FREE DEMO
+                    </span>
+
+                    <h2>
+                        Book a free NextSynq Health demo.
+                    </h2>
+
+                    <p>
+                        Share your hospital or clinic details. Your request
+                        will be saved in the system and shown to the Super
+                        Admin as a new notification.
+                    </p>
+
+                    <div className="nx-contact-highlights">
+                        <span>
+                            <Check size={15} />
+                            14-day free trial
+                        </span>
+                        <span>
+                            <Check size={15} />
+                            OPD token + appointment demo
+                        </span>
+                        <span>
+                            <Check size={15} />
+                            Patient tracking + TV display demo
+                        </span>
+                    </div>
+
+                    <div className="nx-contact-info-card">
+                        <strong>NextSynq Health</strong>
+                        <small>
+                            Smart OPD management for hospitals and clinics.
+                        </small>
+                    </div>
+                </div>
+
+                <form
+                    className="nx-contact-form"
+                    onSubmit={submitContactForm}
+                >
+                    <div className="nx-contact-form-head">
+                        <h3>Request a demo</h3>
+                        <p>
+                            Fill the form to next step.
+                        </p>
+                    </div>
+
+                    {successMessage && (
+                        <div className="nx-contact-alert success">
+                            {successMessage}
+                        </div>
+                    )}
+
+                    {errorMessage && (
+                        <div className="nx-contact-alert error">
+                            {errorMessage}
+                        </div>
+                    )}
+
+                    <label>
+                        <span>
+                            <User size={16} />
+                            Name *
+                        </span>
+                        <input
+                            type="text"
+                            value={form.name}
+                            onChange={(event) =>
+                                updateField("name", event.target.value)
+                            }
+                            placeholder="Enter your name"
+                            maxLength={80}
+                            required
+                        />
+                    </label>
+
+                    <label>
+                        <span>
+                            <Phone size={16} />
+                            Phone *
+                        </span>
+                        <input
+                            type="tel"
+                            value={form.phone}
+                            onChange={(event) =>
+                                updateField("phone", event.target.value)
+                            }
+                            placeholder="10 digit mobile number"
+                            inputMode="numeric"
+                            pattern="[0-9]{10}"
+                            maxLength={10}
+                            required
+                        />
+                    </label>
+
+                    <label>
+                        <span>
+                            <Mail size={16} />
+                            Email
+                        </span>
+                        <input
+                            type="email"
+                            value={form.email}
+                            onChange={(event) =>
+                                updateField("email", event.target.value)
+                            }
+                            placeholder="doctor@example.com"
+                            maxLength={120}
+                        />
+                    </label>
+
+                    <label>
+                        <span>
+                            <Building2 size={16} />
+                            Hospital / Clinic
+                        </span>
+                        <input
+                            type="text"
+                            value={form.organization}
+                            onChange={(event) =>
+                                updateField("organization", event.target.value)
+                            }
+                            placeholder="Hospital or clinic name"
+                            maxLength={120}
+                        />
+                    </label>
+
+                    <label>
+                        <span>
+                            <MapPin size={16} />
+                            City
+                        </span>
+                        <input
+                            type="text"
+                            value={form.city}
+                            onChange={(event) =>
+                                updateField("city", event.target.value)
+                            }
+                            placeholder="Enter city"
+                            maxLength={80}
+                        />
+                    </label>
+
+                    <label>
+                        <span>
+                            <MessageSquare size={16} />
+                            Interested in
+                        </span>
+                        <select
+                            value={form.interest}
+                            onChange={(event) =>
+                                updateField("interest", event.target.value)
+                            }
+                        >
+                            <option value="Free demo">Free demo</option>
+                            <option value="Basic Plan">Basic Plan</option>
+                            <option value="Premium Plan">Premium Plan</option>
+                            <option value="Clinic setup">Clinic setup</option>
+                            <option value="Hospital setup">Hospital setup</option>
+                        </select>
+                    </label>
+
+                    <label className="nx-contact-full">
+                        <span>
+                            <MessageSquare size={16} />
+                            Message *
+                        </span>
+                        <textarea
+                            value={form.message}
+                            onChange={(event) =>
+                                updateField("message", event.target.value)
+                            }
+                            placeholder="Tell us what you want to manage in your hospital or clinic"
+                            rows={4}
+                            maxLength={1000}
+                            required
+                        />
+                    </label>
+
+                    <button
+                        type="submit"
+                        className="nx-button nx-contact-submit"
+                        disabled={loading}
+                    >
+                        {loading ? "Submitting..." : "Submit request"}
+                        {!loading && <ArrowRight size={17} />}
+                    </button>
+                </form>
+            </div>
+        </section>
+    );
+}
+
+
 // Inline social icons keep this file compatible with Lucide versions without brand icons.
 function Instagram({ size = 18 }: { size?: number }) {
     return (
@@ -1462,9 +1836,6 @@ function HomeStyles() {
                 color: var(--green);
             }
 
-.nx-theme-button:hover {
-                background: var(--soft);
-            }
 
             .nx-header {
                 position: sticky;
@@ -3364,6 +3735,242 @@ function HomeStyles() {
 
                 .nx-mobile-nav {
                     display: none !important;
+                }
+            }
+
+
+
+            /* Contact form */
+            .nx-contact-section {
+                background:
+                    radial-gradient(circle at 8% 12%, #dfeedd 0, transparent 27%),
+                    radial-gradient(circle at 92% 82%, #e7f0df 0, transparent 25%),
+                    var(--paper);
+            }
+
+            .nx-contact-shell {
+                display: grid;
+                grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+                gap: 28px;
+                align-items: center;
+            }
+
+            .nx-contact-copy,
+            .nx-contact-form {
+                border: 1px solid var(--line);
+                border-radius: 22px;
+                background: var(--surface);
+                box-shadow: 0 18px 45px #173d3910;
+            }
+
+            .nx-contact-copy {
+                padding: 34px;
+            }
+
+            .nx-contact-eyebrow {
+                display: inline-flex;
+                margin-bottom: 12px;
+                padding: 6px 12px;
+                border-radius: 999px;
+                background: var(--soft);
+                color: var(--green);
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 0.12em;
+            }
+
+            .nx-contact-copy h2 {
+                max-width: 590px;
+                font-size: clamp(28px, 3vw, 44px);
+                line-height: 1.12;
+                letter-spacing: -1px;
+            }
+
+            .nx-contact-copy p {
+                margin-top: 15px;
+                max-width: 650px;
+                color: var(--muted);
+                font-size: 15px;
+                line-height: 1.75;
+            }
+
+            .nx-contact-highlights {
+                display: grid;
+                gap: 12px;
+                margin-top: 24px;
+            }
+
+            .nx-contact-highlights span {
+                display: flex;
+                align-items: center;
+                gap: 9px;
+                color: var(--green);
+                font-size: 14px;
+                font-weight: 750;
+            }
+
+            .nx-contact-highlights svg {
+                border-radius: 50%;
+                background: var(--soft);
+            }
+
+            .nx-contact-info-card {
+                display: grid;
+                gap: 5px;
+                margin-top: 28px;
+                padding: 18px;
+                border-radius: 16px;
+                background: #173d39;
+                color: #ffffff;
+            }
+
+            .nx-contact-info-card strong {
+                font-size: 21px;
+                line-height: 1.2;
+            }
+
+            .nx-contact-info-card small {
+                color: #d9ead7;
+                font-size: 12px;
+                line-height: 1.6;
+            }
+
+            .nx-contact-form {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 14px;
+                padding: 24px;
+            }
+
+            .nx-contact-form-head,
+            .nx-contact-alert,
+            .nx-contact-full,
+            .nx-contact-submit {
+                grid-column: 1 / -1;
+            }
+
+            .nx-contact-form-head h3 {
+                font-size: 25px;
+                line-height: 1.2;
+            }
+
+            .nx-contact-form-head p {
+                margin-top: 5px;
+                color: var(--muted);
+                font-size: 13px;
+                line-height: 1.6;
+            }
+
+            .nx-contact-alert {
+                padding: 12px 14px;
+                border-radius: 12px;
+                font-size: 13px;
+                font-weight: 700;
+                line-height: 1.45;
+            }
+
+            .nx-contact-alert.success {
+                border: 1px solid #9ec9a5;
+                background: #edf8ed;
+                color: #176957;
+            }
+
+            .nx-contact-alert.error {
+                border: 1px solid #efb4b4;
+                background: #fff0f0;
+                color: #a33131;
+            }
+
+            .nx-contact-form label {
+                display: grid;
+                gap: 7px;
+            }
+
+            .nx-contact-form label > span {
+                display: flex;
+                align-items: center;
+                gap: 7px;
+                color: var(--ink);
+                font-size: 12px;
+                font-weight: 800;
+            }
+
+            .nx-contact-form label svg {
+                color: var(--green);
+                flex-shrink: 0;
+            }
+
+            .nx-contact-form input,
+            .nx-contact-form select,
+            .nx-contact-form textarea {
+                width: 100%;
+                border: 1px solid var(--line);
+                border-radius: 11px;
+                background: var(--paper);
+                color: var(--ink);
+                font: inherit;
+                font-size: 13px;
+                outline: none;
+            }
+
+            .nx-contact-form input,
+            .nx-contact-form select {
+                height: 45px;
+                padding: 0 13px;
+            }
+
+            .nx-contact-form textarea {
+                min-height: 115px;
+                padding: 12px 13px;
+                resize: vertical;
+            }
+
+            .nx-contact-form input:focus,
+            .nx-contact-form select:focus,
+            .nx-contact-form textarea:focus {
+                border-color: var(--green);
+                box-shadow: 0 0 0 3px #17695718;
+            }
+
+            .nx-contact-submit {
+                width: fit-content;
+                min-width: 190px;
+                margin-top: 4px;
+            }
+
+            .nx-contact-submit:disabled {
+                cursor: not-allowed;
+                opacity: 0.7;
+            }
+
+            .nx-home[data-theme="dark"] .nx-contact-info-card {
+                background: #0d1713;
+            }
+
+            @media (max-width: 900px) {
+                .nx-contact-shell {
+                    grid-template-columns: 1fr;
+                }
+
+                .nx-contact-copy,
+                .nx-contact-form {
+                    border-radius: 18px;
+                }
+            }
+
+            @media (max-width: 620px) {
+                .nx-contact-copy,
+                .nx-contact-form {
+                    padding: 18px;
+                }
+
+                .nx-contact-form {
+                    grid-template-columns: 1fr;
+                    gap: 12px;
+                }
+
+                .nx-contact-submit {
+                    width: 100%;
                 }
             }
 

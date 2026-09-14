@@ -1,4 +1,5 @@
 import "dotenv/config";
+
 import express from "express";
 import cors, { type CorsOptions } from "cors";
 import path from "path";
@@ -27,10 +28,14 @@ import subscriptionRoutes from "./routes/subscription.routes";
 import appointmentRoutes from "./routes/appointment.routes";
 import publicAppointmentRoutes from "./routes/publicAppointment.routes";
 import doctorAvailabilityRoutes from "./routes/doctorAvailability.routes";
+import contactRoutes from "./routes/contact.routes";
+import superAdminNotificationRoutes from "./routes/superAdminNotification.routes";
 
+import { shutdownPostHog } from "./services/posthog.service";
 import { protect } from "./middleware/auth.middleware";
 
 const app = express();
+
 // ============================================================
 // CORS CONFIG
 // ============================================================
@@ -46,12 +51,6 @@ const defaultAllowedOrigins = [
     "https://nextsynq.health",
     "https://www.nextsynq.health",
 ];
-
-/*
-Backend deployment environment example:
-
-CLIENT_URLS=http://localhost:5173,http://localhost:5174,https://nexturn-silk.vercel.app,https://nextsynq.health,https://www.nextsynq.health
-*/
 
 const envAllowedOrigins =
     process.env.CLIENT_URLS
@@ -70,12 +69,13 @@ const normalizeOrigin = (origin: string) => {
 
 const corsOptions: CorsOptions = {
     origin: (origin, callback) => {
-        // Allow Postman, server-to-server, health checks
+        // Allow Postman, server-to-server requests and health checks
         if (!origin) {
             return callback(null, true);
         }
 
-        const cleanOrigin = normalizeOrigin(origin);
+        const cleanOrigin =
+            normalizeOrigin(origin);
 
         const normalizedAllowedOrigins =
             allowedOrigins.map(normalizeOrigin);
@@ -118,21 +118,22 @@ const corsOptions: CorsOptions = {
 };
 
 app.use(cors(corsOptions));
+
 // ============================================================
 // BODY PARSER
 // ============================================================
 
 app.use(
-  express.json({
-    limit: "10mb",
-  }),
+    express.json({
+        limit: "10mb",
+    }),
 );
 
 app.use(
-  express.urlencoded({
-    extended: true,
-    limit: "10mb",
-  }),
+    express.urlencoded({
+        extended: true,
+        limit: "10mb",
+    }),
 );
 
 // ============================================================
@@ -140,10 +141,10 @@ app.use(
 // ============================================================
 
 app.get("/api/health", (_req, res) => {
-  res.json({
-    success: true,
-    message: "Hospital Queue API is running",
-  });
+    res.json({
+        success: true,
+        message: "Hospital Queue API is running",
+    });
 });
 
 // ============================================================
@@ -151,8 +152,13 @@ app.get("/api/health", (_req, res) => {
 // ============================================================
 
 app.use(
-  "/uploads",
-  express.static(path.join(process.cwd(), "uploads")),
+    "/uploads",
+    express.static(
+        path.join(
+            process.cwd(),
+            "uploads",
+        ),
+    ),
 );
 
 // ============================================================
@@ -168,7 +174,21 @@ app.use("/api/queues", queueRoutes);
 app.use("/api/test", testRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+
+// Contact form route
+app.use(
+    "/api/contact",
+    contactRoutes,
+);
+
+// Super Admin notification route must be before /api/super-admin
+app.use(
+    "/api/super-admin/notifications",
+    superAdminNotificationRoutes,
+);
+
 app.use("/api/super-admin", superAdminRoutes);
+
 app.use("/api/hospitals", hospitalRoutes);
 app.use("/api/hospital-admins", hospitalAdminRoutes);
 app.use("/api/display", displayRoutes);
@@ -184,20 +204,41 @@ app.use("/api/appointments", appointmentRoutes);
 app.use("/api/public", publicAppointmentRoutes);
 
 app.use(
-  "/api/doctor-availability",
-  protect,
-  doctorAvailabilityRoutes,
+    "/api/doctor-availability",
+    protect,
+    doctorAvailabilityRoutes,
 );
 
 // ============================================================
 // 404 HANDLER
+// Always keep this after all API routes
 // ============================================================
 
 app.use("/api", (_req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "API route not found",
-  });
+    res.status(404).json({
+        success: false,
+        message: "API route not found",
+    });
 });
+
+// ============================================================
+// GRACEFUL SHUTDOWN
+// ============================================================
+
+const gracefulShutdown = async () => {
+    await shutdownPostHog();
+
+    process.exit(0);
+};
+
+process.on(
+    "SIGINT",
+    gracefulShutdown,
+);
+
+process.on(
+    "SIGTERM",
+    gracefulShutdown,
+);
 
 export default app;
