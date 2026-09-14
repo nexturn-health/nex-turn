@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState, type ComponentType } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Activity,
-  Bell,
   Building2,
   CheckCircle2,
   ChevronDown,
