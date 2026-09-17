@@ -126,6 +126,16 @@ const getIndiaCurrentTime = () => {
   return `${hour}:${minute}`;
 };
 
+
+const cleanQueueActionText = (
+  value: unknown,
+  maxLength = 300,
+) => {
+  return String(value || "")
+    .trim()
+    .slice(0, maxLength);
+};
+
 const APPOINTMENT_PRIORITY_WINDOW_MINUTES = 15;
 
 type AppointmentCallStatus =
@@ -1722,6 +1732,20 @@ export const getDoctorQueue = async (
         appointmentCallStatus,
         appointmentMissedAt: queue.appointmentMissedAt || null,
         manuallyCalledAfterMissedAt: queue.manuallyCalledAfterMissedAt || null,
+
+        skipReason: queue.skipReason || "",
+        skippedAt: queue.skippedAt || null,
+        skippedBy: queue.skippedBy || null,
+        skipCount: Number(queue.skipCount || 0),
+        recallStatus: queue.recallStatus || "NONE",
+        recallMode: queue.recallMode || "NONE",
+        recalledAt: queue.recalledAt || null,
+        recalledBy: queue.recalledBy || null,
+        manualOverride: Boolean(queue.manualOverride),
+        manualOverrideReason: queue.manualOverrideReason || "",
+        manualOverrideAt: queue.manualOverrideAt || null,
+        manualOverrideBy: queue.manualOverrideBy || null,
+
         isAppointment,
         isEmergency:
           queue.priority === "EMERGENCY" ||
@@ -2760,11 +2784,13 @@ export const callNextPatient = async (
     /*
      * AUTO CALL PRIORITY:
      * 1. Emergency
-     * 2. Appointment only inside active window
+     * 2. Skipped patient with manual override / recall
+     * 3. Appointment only inside active window
      *    scheduledStartTime <= now < scheduledEndTime
-     * 3. Walk-in
+     * 4. Walk-in
+     * 5. Skipped patient rejoined at end of queue
      *
-     * Missed appointment is not auto-called.
+     * Missed appointment is not auto-called unless doctor manually selects it.
      */
 
     let nextPatient: any = await claimQueue(
@@ -2788,6 +2814,33 @@ export const callNextPatient = async (
         createdAt: 1,
       },
     );
+
+    if (!nextPatient) {
+      nextPatient = await claimQueue(
+        {
+          hospitalId,
+          departmentId,
+          queueDate,
+          status: "WAITING",
+          manualOverride: true,
+          recallStatus: {
+            $in: [
+              "WAITING_RECALL",
+              "RECALLED",
+            ],
+          },
+          $and: [
+            doctorOwnershipFilter,
+          ],
+        },
+        {
+          manualOverrideAt: -1,
+          recalledAt: 1,
+          tokenNumber: 1,
+          createdAt: 1,
+        },
+      );
+    }
 
     if (!nextPatient) {
       nextPatient = await claimQueue(
@@ -2826,6 +2879,9 @@ export const callNextPatient = async (
           priority: {
             $ne: "EMERGENCY",
           },
+          recallMode: {
+            $ne: "END_OF_QUEUE",
+          },
           $and: [
             doctorOwnershipFilter,
             {
@@ -2838,6 +2894,32 @@ export const callNextPatient = async (
           ],
         },
         {
+          tokenNumber: 1,
+          createdAt: 1,
+        },
+      );
+    }
+
+    if (!nextPatient) {
+      nextPatient = await claimQueue(
+        {
+          hospitalId,
+          departmentId,
+          queueDate,
+          status: "WAITING",
+          recallMode: "END_OF_QUEUE",
+          recallStatus: {
+            $in: [
+              "WAITING_RECALL",
+              "RECALLED",
+            ],
+          },
+          $and: [
+            doctorOwnershipFilter,
+          ],
+        },
+        {
+          recalledAt: 1,
           tokenNumber: 1,
           createdAt: 1,
         },
@@ -3397,6 +3479,12 @@ export const skipPatient =
           ? req.params.id[0]
           : req.params.id;
 
+      const skipReason =
+        cleanQueueActionText(
+          req.body?.reason,
+          300,
+        ) || "Patient was not available when called";
+
       // ==================================================
       // AUTH
       // ==================================================
@@ -3433,7 +3521,7 @@ export const skipPatient =
       // FIND ACTIVE PATIENT
       // ==================================================
 
-      const queue =
+      const queue: any =
         await Queue.findOne({
           _id: queueId,
           hospitalId,
@@ -3455,21 +3543,55 @@ export const skipPatient =
       }
 
       // ==================================================
-      // SKIP
+      // SKIP BUT KEEP TRACKING ACTIVE
+      // Patient can still see skipped/recalled updates.
       // ==================================================
 
       queue.status =
         "SKIPPED";
 
-      // ==================================================
-      // DISABLE TRACKING
-      // ==================================================
+      queue.skipReason =
+        skipReason;
 
-      queue.trackingLinkActive =
+      queue.skippedAt =
+        new Date();
+
+      queue.skippedBy =
+        doctorId;
+
+      queue.skipCount =
+        Number(queue.skipCount || 0) + 1;
+
+      queue.recallStatus =
+        "WAITING_RECALL";
+
+      queue.recallMode =
+        "NONE";
+
+      queue.manualOverride =
         false;
 
+      queue.manualOverrideReason =
+        "";
+
+      queue.manualOverrideAt =
+        null;
+
+      queue.manualOverrideBy =
+        null;
+
+      // Do not disable tracking for skipped patient.
+      queue.trackingLinkActive =
+        true;
+
       queue.trackingExpiresAt =
-        new Date();
+        new Date(
+          Date.now() +
+            24 *
+              60 *
+              60 *
+              1000,
+        );
 
       await queue.save();
 
@@ -3508,7 +3630,18 @@ export const skipPatient =
         )
         .emit(
           "queue:skipped",
-          updatedQueue,
+          {
+            queue:
+              updatedQueue,
+            queueId:
+              queue._id,
+            tokenLabel:
+              queue.tokenLabel,
+            doctorId,
+            status:
+              "SKIPPED",
+            skipReason,
+          },
         );
 
       // ==================================================
@@ -3518,6 +3651,25 @@ export const skipPatient =
       if (
         queue.trackingToken
       ) {
+        getIO()
+          .to(
+            `queue:${queue.trackingToken}`,
+          )
+          .emit(
+            "queue:skipped",
+            {
+              queueId:
+                queue._id,
+              status:
+                "SKIPPED",
+              tokenLabel:
+                queue.tokenLabel,
+              skipReason,
+              message:
+                "Your token was skipped because you were not available when called. Please contact reception or wait for recall.",
+            },
+          );
+
         getIO()
           .to(
             `queue:${queue.trackingToken}`,
@@ -3540,6 +3692,559 @@ export const skipPatient =
     } catch (error) {
       console.error(
         "❌ Skip patient error:",
+        error,
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Internal server error",
+      });
+    }
+  };
+
+// ======================================================
+// RECALL SKIPPED PATIENT
+// PATCH /api/queues/:id/recall-skipped
+// body: { mode: "RECALL_NOW" | "AFTER_CURRENT" | "END_OF_QUEUE", reason?: string }
+// ======================================================
+
+export const recallSkippedPatient =
+  async (
+    req: Request,
+    res: Response,
+  ) => {
+    try {
+      const hospitalId =
+        req.user?.hospitalId;
+
+      const userId =
+        req.user?.userId;
+
+      const queueId =
+        Array.isArray(
+          req.params.id,
+        )
+          ? req.params.id[0]
+          : req.params.id;
+
+      const requestedMode =
+        cleanQueueActionText(
+          req.body?.mode,
+          30,
+        );
+
+      const recallMode =
+        [
+          "RECALL_NOW",
+          "AFTER_CURRENT",
+          "END_OF_QUEUE",
+        ].includes(requestedMode)
+          ? requestedMode
+          : "AFTER_CURRENT";
+
+      const reason =
+        cleanQueueActionText(
+          req.body?.reason,
+          300,
+        ) || "Skipped patient recalled";
+
+      if (
+        !hospitalId ||
+        !userId
+      ) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Authentication information missing",
+        });
+      }
+
+      if (
+        !queueId ||
+        !mongoose.Types.ObjectId.isValid(
+          queueId,
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid queue ID",
+        });
+      }
+
+      const actor: any =
+        await User.findOne({
+          _id:
+            userId,
+          hospitalId,
+          isActive:
+            true,
+        });
+
+      if (!actor) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "User not found",
+        });
+      }
+
+      const queue: any =
+        await Queue.findOne({
+          _id:
+            queueId,
+          hospitalId,
+          status:
+            "SKIPPED",
+        });
+
+      if (!queue) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Skipped patient not found",
+        });
+      }
+
+      const queueDoctorId =
+        queue.doctorId ||
+        (actor.role === "DOCTOR"
+          ? actor._id
+          : null);
+
+      if (!queueDoctorId) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Doctor information not found for this skipped patient.",
+        });
+      }
+
+      const doctor: any =
+        await User.findOne({
+          _id:
+            queueDoctorId,
+          hospitalId,
+          role:
+            "DOCTOR",
+          isActive:
+            true,
+        });
+
+      if (!doctor) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Doctor not found for this skipped patient.",
+        });
+      }
+
+      const departmentId =
+        queue.departmentId ||
+        doctor.departmentId;
+
+      if (
+        actor.role === "DOCTOR" &&
+        String(actor._id) !== String(queueDoctorId)
+      ) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "You can recall only your own skipped patients.",
+        });
+      }
+
+      if (doctor.isOnBreak) {
+        return res.status(409).json({
+          success: false,
+          code:
+            "DOCTOR_ON_BREAK",
+          message:
+            "Doctor is on break. Resume duty before recalling a patient.",
+        });
+      }
+
+      const now =
+        new Date();
+
+      if (recallMode === "RECALL_NOW") {
+        const activePatient =
+          await Queue.findOne({
+            hospitalId,
+            doctorId:
+              queueDoctorId,
+            departmentId,
+            queueDate:
+              queue.queueDate,
+            status: {
+              $in: [
+                "CALLED",
+                "SERVING",
+              ],
+            },
+          }).lean();
+
+        if (activePatient) {
+          return res.status(409).json({
+            success: false,
+            code:
+              "DOCTOR_HAS_ACTIVE_PATIENT",
+            message:
+              "Doctor already has a patient in progress. Use Rejoin after current instead.",
+          });
+        }
+
+        queue.status =
+          "CALLED";
+
+        queue.calledAt =
+          now;
+
+        queue.estimatedWaitTime =
+          0;
+
+        queue.estimatedTurnTime =
+          now;
+      } else {
+        queue.status =
+          "WAITING";
+      }
+
+      queue.doctorId =
+        queueDoctorId;
+
+      queue.departmentId =
+        departmentId;
+
+      queue.recallStatus =
+        recallMode === "END_OF_QUEUE"
+          ? "RECALLED"
+          : "WAITING_RECALL";
+
+      queue.recallMode =
+        recallMode;
+
+      queue.recalledAt =
+        now;
+
+      queue.recalledBy =
+        userId;
+
+      queue.manualOverride =
+        recallMode !== "END_OF_QUEUE";
+
+      queue.manualOverrideReason =
+        reason;
+
+      queue.manualOverrideAt =
+        now;
+
+      queue.manualOverrideBy =
+        userId;
+
+      queue.trackingLinkActive =
+        true;
+
+      queue.trackingExpiresAt =
+        new Date(
+          Date.now() +
+            24 *
+              60 *
+              60 *
+              1000,
+        );
+
+      await queue.save();
+
+      const updatedQueue =
+        await Queue.findById(
+          queue._id,
+        )
+          .populate(
+            "patientId",
+            "name phone email patientCode age gender address",
+          )
+          .populate(
+            "departmentId",
+            "name description tokenPrefix",
+          )
+          .populate(
+            "doctorId",
+            "name email isOnline isOnBreak breakStartedAt breakReason shiftStartTime shiftEndTime",
+          )
+          .populate(
+            "appointmentId",
+            "appointmentCode requestedStartTime confirmedStartTime endTime status paymentStatus",
+          );
+
+      getIO()
+        .to(
+          `hospital:${hospitalId}`,
+        )
+        .emit(
+          "queue:recalled",
+          {
+            queue:
+              updatedQueue,
+            queueId:
+              queue._id,
+            tokenLabel:
+              queue.tokenLabel,
+            doctorId:
+              queueDoctorId,
+            status:
+              queue.status,
+            recallMode,
+          },
+        );
+
+      if (queue.trackingToken) {
+        getIO()
+          .to(
+            `queue:${queue.trackingToken}`,
+          )
+          .emit(
+            "queue:recalled",
+            {
+              queueId:
+                queue._id,
+              status:
+                queue.status,
+              tokenLabel:
+                queue.tokenLabel,
+              recallMode,
+              message:
+                recallMode === "RECALL_NOW"
+                  ? "Your token has been recalled now. Please proceed to the doctor's room."
+                  : "You have been added back to the queue. Please stay near the OPD room.",
+            },
+          );
+
+        getIO()
+          .to(
+            `queue:${queue.trackingToken}`,
+          )
+          .emit(
+            "queue:status",
+            updatedQueue,
+          );
+      }
+
+      return res.status(200).json({
+        success: true,
+        message:
+          recallMode === "RECALL_NOW"
+            ? "Skipped patient recalled now"
+            : recallMode === "END_OF_QUEUE"
+              ? "Skipped patient moved to end of queue"
+              : "Skipped patient will be called after current patient",
+        data:
+          updatedQueue,
+      });
+    } catch (error) {
+      console.error(
+        "❌ Recall skipped patient error:",
+        error,
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Internal server error",
+      });
+    }
+  };
+
+// ======================================================
+// MARK SKIPPED PATIENT NO-SHOW / CANCELLED
+// PATCH /api/queues/:id/skipped-no-show
+// ======================================================
+
+export const markSkippedPatientNoShow =
+  async (
+    req: Request,
+    res: Response,
+  ) => {
+    try {
+      const hospitalId =
+        req.user?.hospitalId;
+
+      const userId =
+        req.user?.userId;
+
+      const queueId =
+        Array.isArray(
+          req.params.id,
+        )
+          ? req.params.id[0]
+          : req.params.id;
+
+      const reason =
+        cleanQueueActionText(
+          req.body?.reason,
+          300,
+        ) || "Skipped patient marked as no-show";
+
+      if (
+        !hospitalId ||
+        !userId
+      ) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Authentication information missing",
+        });
+      }
+
+      if (
+        !queueId ||
+        !mongoose.Types.ObjectId.isValid(
+          queueId,
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid queue ID",
+        });
+      }
+
+      const actor: any =
+        await User.findOne({
+          _id:
+            userId,
+          hospitalId,
+          isActive:
+            true,
+        });
+
+      if (!actor) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "User not found",
+        });
+      }
+
+      const queue: any =
+        await Queue.findOne({
+          _id:
+            queueId,
+          hospitalId,
+          status:
+            "SKIPPED",
+        });
+
+      if (!queue) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Skipped patient not found",
+        });
+      }
+
+      if (
+        actor.role === "DOCTOR" &&
+        String(queue.doctorId) !== String(actor._id)
+      ) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "You can update only your own skipped patients.",
+        });
+      }
+
+      queue.status =
+        "CANCELLED";
+
+      queue.recallStatus =
+        "NO_SHOW";
+
+      queue.recallMode =
+        "NONE";
+
+      queue.manualOverride =
+        false;
+
+      queue.manualOverrideReason =
+        reason;
+
+      queue.manualOverrideAt =
+        new Date();
+
+      queue.manualOverrideBy =
+        userId;
+
+      queue.trackingLinkActive =
+        false;
+
+      queue.trackingExpiresAt =
+        new Date();
+
+      await queue.save();
+
+      const updatedQueue =
+        await Queue.findById(
+          queue._id,
+        )
+          .populate(
+            "patientId",
+            "name phone email patientCode age gender address",
+          )
+          .populate(
+            "departmentId",
+            "name description tokenPrefix",
+          )
+          .populate(
+            "doctorId",
+            "name email isOnline isOnBreak breakStartedAt breakReason shiftStartTime shiftEndTime",
+          )
+          .populate(
+            "appointmentId",
+            "appointmentCode requestedStartTime confirmedStartTime endTime status paymentStatus",
+          );
+
+      getIO()
+        .to(
+          `hospital:${hospitalId}`,
+        )
+        .emit(
+          "queue:no-show",
+          {
+            queue:
+              updatedQueue,
+            queueId:
+              queue._id,
+            tokenLabel:
+              queue.tokenLabel,
+            status:
+              "CANCELLED",
+            reason,
+          },
+        );
+
+      if (queue.trackingToken) {
+        getIO()
+          .to(
+            `queue:${queue.trackingToken}`,
+          )
+          .emit(
+            "queue:status",
+            updatedQueue,
+          );
+      }
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Skipped patient marked as no-show",
+        data:
+          updatedQueue,
+      });
+    } catch (error) {
+      console.error(
+        "❌ Mark skipped no-show error:",
         error,
       );
 
@@ -3940,7 +4645,7 @@ export const callSelectedPatient = async (
       Boolean(selectedQueue.scheduledStartTime) ||
       String(selectedQueue.tokenLabel || "").includes("-A");
 
-    if (isAppointment) {
+    if (isAppointment && !selectedQueue.manualOverride) {
       const appointmentStatus = getAppointmentCallStatus({
         currentTime,
         scheduledStartTime: selectedQueue.scheduledStartTime || null,
@@ -3965,6 +4670,21 @@ export const callSelectedPatient = async (
 
     if (selectedQueue.appointmentCallStatus === "MISSED") {
       selectedQueue.manuallyCalledAfterMissedAt = new Date();
+    }
+
+    if (
+      selectedQueue.manualOverride ||
+      selectedQueue.recallStatus === "WAITING_RECALL"
+    ) {
+      selectedQueue.recallStatus =
+        "RECALLED";
+
+      selectedQueue.recalledAt =
+        selectedQueue.recalledAt ||
+        new Date();
+
+      selectedQueue.manualOverride =
+        false;
     }
 
     await selectedQueue.save();

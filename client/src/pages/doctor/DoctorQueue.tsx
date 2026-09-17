@@ -25,7 +25,6 @@ import {
     callSelectedPatient,
     completePatient,
     resumeDoctorDuty,
-    skipPatient,
     startServingPatient,
     takeDoctorBreak,
 } from "../../services/queue.api";
@@ -334,6 +333,120 @@ function errorText(error: unknown, fallback: string) {
         ? message
         : fallback;
 }
+
+
+type SkippedRecallMode =
+    | "RECALL_NOW"
+    | "AFTER_CURRENT"
+    | "END_OF_QUEUE";
+
+function getQueueStringField(
+    queue: DoctorQueueItem,
+    field: string,
+) {
+    const record = asRecord(queue);
+    const value = record?.[field];
+
+    return typeof value === "string"
+        ? value
+        : "";
+}
+
+function getQueueNumberField(
+    queue: DoctorQueueItem,
+    field: string,
+) {
+    const record = asRecord(queue);
+    const value = record?.[field];
+
+    return typeof value === "number" && Number.isFinite(value)
+        ? value
+        : 0;
+}
+
+function getQueueDateTimeField(
+    queue: DoctorQueueItem,
+    field: string,
+) {
+    const value =
+        getQueueStringField(
+            queue,
+            field,
+        );
+
+    return value || null;
+}
+
+function formatDateTime(
+    value?: string | null,
+) {
+    if (!value) {
+        return "";
+    }
+
+    const date =
+        new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return "";
+    }
+
+    return date.toLocaleString(
+        undefined,
+        {
+            day: "2-digit",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+        },
+    );
+}
+
+function getSkippedMetaText(
+    queue: DoctorQueueItem,
+) {
+    const skipReason =
+        getQueueStringField(
+            queue,
+            "skipReason",
+        );
+
+    const skippedAt =
+        formatDateTime(
+            getQueueDateTimeField(
+                queue,
+                "skippedAt",
+            ),
+        );
+
+    const skipCount =
+        getQueueNumberField(
+            queue,
+            "skipCount",
+        );
+
+    const parts = [
+        skippedAt ? `Skipped ${skippedAt}` : "Skipped patient",
+        skipCount > 1 ? `${skipCount} skips` : "",
+        skipReason,
+    ].filter(Boolean);
+
+    return parts.join(" · ");
+}
+
+function getRecallModeText(
+    mode: SkippedRecallMode,
+) {
+    if (mode === "RECALL_NOW") {
+        return "Recall now";
+    }
+
+    if (mode === "AFTER_CURRENT") {
+        return "After current";
+    }
+
+    return "End queue";
+}
 /* ============================================================
    DOCTOR QUEUE
 ============================================================ */
@@ -361,6 +474,7 @@ export default function DoctorQueue() {
             | "waiting"
             | "upcoming"
             | "missed"
+            | "skipped"
             | "completed"
         >(
             "waiting",
@@ -462,6 +576,8 @@ export default function DoctorQueue() {
         socket.on("queue:serving", scheduleRefresh);
         socket.on("queue:completed", scheduleRefresh);
         socket.on("queue:skipped", scheduleRefresh);
+        socket.on("queue:recalled", scheduleRefresh);
+        socket.on("queue:no-show", scheduleRefresh);
         socket.on("queue:updated", scheduleRefresh);
         socket.on("queue:status", scheduleRefresh);
         socket.on("appointment:updated", scheduleRefresh);
@@ -489,6 +605,8 @@ export default function DoctorQueue() {
             socket.off("queue:serving", scheduleRefresh);
             socket.off("queue:completed", scheduleRefresh);
             socket.off("queue:skipped", scheduleRefresh);
+            socket.off("queue:recalled", scheduleRefresh);
+            socket.off("queue:no-show", scheduleRefresh);
             socket.off("queue:updated", scheduleRefresh);
             socket.off("queue:status", scheduleRefresh);
             socket.off("appointment:updated", scheduleRefresh);
@@ -553,6 +671,27 @@ export default function DoctorQueue() {
                 ),
         );
     const completed = queues.filter((queue) => queue.status === "COMPLETED");
+
+    const skippedPatients = queues
+        .filter((queue) => queue.status === "SKIPPED")
+        .sort((first, second) => {
+            const firstTime =
+                new Date(
+                    getQueueDateTimeField(first, "skippedAt") ||
+                    getQueueDateTimeField(first, "updatedAt") ||
+                    0,
+                ).getTime();
+
+            const secondTime =
+                new Date(
+                    getQueueDateTimeField(second, "skippedAt") ||
+                    getQueueDateTimeField(second, "updatedAt") ||
+                    0,
+                ).getTime();
+
+            return secondTime - firstTime;
+        });
+
     const walkInWaiting = waiting.filter((queue) => !isAppointmentPatient(queue) &&
         !isEmergencyPatient(queue));
     const dueAppointments = ready.filter((queue) => isAppointmentPatient(queue) &&
@@ -568,6 +707,17 @@ export default function DoctorQueue() {
         !walkInWaiting.length &&
         Boolean(nextUpcomingAppointment);
     const activeDoctorAlert = useMemo(() => {
+        if (!current && skippedPatients.length) {
+            const firstSkipped = skippedPatients[0];
+
+            return {
+                type: "skipped",
+                title: "Skipped patient waiting",
+                message: `${firstSkipped.tokenLabel} · ${getQueuePatient(firstSkipped)?.name || "Patient"} was skipped. It will not return automatically without recall.`,
+                meta: "Open Skipped tab to recall or mark no-show.",
+            };
+        }
+
         if (!current && missedAppointments.length) {
             const firstMissed = missedAppointments[0];
 
@@ -622,6 +772,7 @@ export default function DoctorQueue() {
         lateAppointments,
         dueAppointments,
         missedAppointments,
+        skippedPatients,
         walkInEmptyUpcomingAppointment,
         nextUpcomingAppointment,
         nowMinutes,
@@ -632,7 +783,9 @@ export default function DoctorQueue() {
             ? upcoming
             : tab === "missed"
                 ? missedAppointments
-                : completed;
+                : tab === "skipped"
+                    ? skippedPatients
+                    : completed;
     const filtered = list.filter((queue) => {
         const person = getQueuePatient(queue);
         const searchText = search
@@ -680,22 +833,34 @@ export default function DoctorQueue() {
     }
     // Finish the current visit before pausing. The backend persists the break
     // and broadcasts it to patient tracking pages.
-    async function handleTakeBreak() {
-        if (current) {
-            setError("Complete or skip the current patient before taking a break.");
-            return;
-        }
-        if (blocked || lock.current) return;
-        await runAction("Take break", async () => {
-            const response: unknown = await takeDoctorBreak("Doctor break");
-            const payload = asRecord(asRecord(response)?.data) ?? asRecord(response);
-            setDoctorBreak({
-                isOnBreak: true,
-                breakStartedAt: typeof payload?.breakStartedAt === "string" ? payload.breakStartedAt : null,
-                breakReason: typeof payload?.breakReason === "string" ? payload.breakReason : "Doctor break",
-            });
-        });
+async function handleTakeBreak() {
+    if (blocked || lock.current) {
+        return;
     }
+
+    await runAction("Take break", async () => {
+        const response: unknown =
+            await takeDoctorBreak({
+                reason: "Doctor break",
+            });
+
+        const payload =
+            asRecord(asRecord(response)?.data) ??
+            asRecord(response);
+
+        setDoctorBreak({
+            isOnBreak: true,
+            breakStartedAt:
+                typeof payload?.breakStartedAt === "string"
+                    ? payload.breakStartedAt
+                    : null,
+            breakReason:
+                typeof payload?.breakReason === "string"
+                    ? payload.breakReason
+                    : "Doctor break",
+        });
+    });
+}
 
     async function handleResumeDuty() {
         // Do not use `blocked`: being on break must not disable Resume.
@@ -832,12 +997,35 @@ export default function DoctorQueue() {
             blocked) {
             return;
         }
-        if (!window.confirm(`Skip ${getQueuePatient(current)?.name || "this patient"} (${current.tokenLabel})?`)) {
+
+        const patientName =
+            getQueuePatient(current)?.name ||
+            "this patient";
+
+        const reason =
+            window.prompt(
+                `Why are you skipping ${patientName} (${current.tokenLabel})?`,
+                "Patient was not available when called",
+            );
+
+        if (reason === null) {
             return;
         }
+
+        const cleanReason =
+            reason.trim() ||
+            "Patient was not available when called";
+
         const id = current._id;
+
         await runAction("Skip patient", async () => {
-            await skipPatient(id);
+            await api.patch(
+                `/queues/${id}/skip`,
+                {
+                    reason: cleanReason,
+                },
+            );
+
             setQueues((previous) => previous.map((queue) => queue._id ===
                 id
                 ? {
@@ -845,6 +1033,81 @@ export default function DoctorQueue() {
                     status: "SKIPPED",
                 }
                 : queue));
+        });
+    }
+
+    async function recallSkippedPatient(
+        queue: DoctorQueueItem,
+        mode: SkippedRecallMode,
+    ) {
+        if (doctorBreak.isOnBreak) {
+            setError("Resume duty before recalling a skipped patient.");
+            return;
+        }
+
+        if (mode === "RECALL_NOW" && current) {
+            setError("Complete or skip the current patient before recalling now.");
+            return;
+        }
+
+        if (lock.current || action || consultation || completionRetry || loading || loadError) {
+            return;
+        }
+
+        const person =
+            getQueuePatient(queue);
+
+        const confirmed =
+            window.confirm(
+                `${getRecallModeText(mode)} for ${queue.tokenLabel} ${person?.name ? `(${person.name})` : ""}?`,
+            );
+
+        if (!confirmed) {
+            return;
+        }
+
+        await runAction(getRecallModeText(mode), async () => {
+            await api.patch(
+                `/queues/${queue._id}/recall-skipped`,
+                {
+                    mode,
+                    reason:
+                        mode === "RECALL_NOW"
+                            ? "Doctor recalled skipped patient now"
+                            : mode === "AFTER_CURRENT"
+                                ? "Skipped patient returned and will be called after current patient"
+                                : "Skipped patient returned and moved to end of queue",
+                },
+            );
+        });
+    }
+
+    async function markSkippedNoShow(
+        queue: DoctorQueueItem,
+    ) {
+        if (lock.current || action || consultation || completionRetry || loading || loadError) {
+            return;
+        }
+
+        const person =
+            getQueuePatient(queue);
+
+        const confirmed =
+            window.confirm(
+                `Mark ${queue.tokenLabel} ${person?.name ? `(${person.name})` : ""} as no-show? Tracking will be closed.`,
+            );
+
+        if (!confirmed) {
+            return;
+        }
+
+        await runAction("Mark no-show", async () => {
+            await api.patch(
+                `/queues/${queue._id}/skipped-no-show`,
+                {
+                    reason: "Skipped patient did not return",
+                },
+            );
         });
     }
     async function finishPremium(queueId: string) {
@@ -879,7 +1142,8 @@ export default function DoctorQueue() {
 
             <header className="dqc-header">
                 <div>
-                    <h1>Patient queue</h1>
+                    <span className="dqc-eyebrow">DOCTOR WORKSPACE</span>
+                    <h1>Your patients, at a glance</h1>
                     <p>{updated ? `Updated ${updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${socketConnected ? "Live updates on" : "Live updates disconnected"}` : "Today’s patients"}</p>
                 </div>
                 <div className="dqc-header-actions">
@@ -926,6 +1190,22 @@ export default function DoctorQueue() {
                         onClick={() => void finishPremium(completionRetry)}>Retry completion</button>
                 </div>
             )}
+
+            {/* Quick counts double as shortcuts to the corresponding patient list. */}
+            <nav className="dqc-overview" aria-label="Queue overview">
+                <button type="button" onClick={() => setTab("waiting")} aria-pressed={tab === "waiting"}>
+                    <Ticket size={19} aria-hidden="true" /><span>Ready to call<strong>{ready.length}</strong></span>
+                </button>
+                <button type="button" onClick={() => setTab("upcoming")} aria-pressed={tab === "upcoming"}>
+                    <CalendarDays size={19} aria-hidden="true" /><span>Upcoming<strong>{upcoming.length}</strong></span>
+                </button>
+                <button type="button" onClick={() => setTab("missed")} aria-pressed={tab === "missed"}>
+                    <Clock size={19} aria-hidden="true" /><span>Missed<strong>{missedAppointments.length}</strong></span>
+                </button>
+                <button type="button" onClick={() => setTab("completed")} aria-pressed={tab === "completed"}>
+                    <CheckCircle2 size={19} aria-hidden="true" /><span>Completed<strong>{completed.length}</strong></span>
+                </button>
+            </nav>
 
             <div className="dqc-workspace">
                 <section className="dqc-current" aria-label="Current patient">
@@ -980,7 +1260,7 @@ export default function DoctorQueue() {
                                 <>
                                     <span className="dqc-caption">Missed appointment waiting</span>
                                     <h3>{missedAppointments.length} missed appointment{missedAppointments.length > 1 ? "s" : ""}</h3>
-                                    <p>These patients are not auto-called. Open the Missed tab and call manually when you decide.</p>
+                                    <p>Open Missed to choose a patient to call.</p>
                                 </>
                             ) : nextUpcomingAppointment ? (
                                 <>
@@ -1009,36 +1289,72 @@ export default function DoctorQueue() {
                     {/* Show one useful notice; empty states are already explained above. */}
                     {!loading && !loadError && activeDoctorAlert && activeDoctorAlert.type !== "empty" &&
                         (activeDoctorAlert.type !== "upcoming" || Boolean(current)) && (
-                            <div className={`dqc-notice ${activeDoctorAlert.type === "late" ? "dqc-notice-late" : activeDoctorAlert.type === "missed" ? "dqc-notice-missed" : ""}`} role="status" aria-live="polite">
+                            <div className={`dqc-notice ${activeDoctorAlert.type === "late" ? "dqc-notice-late" : activeDoctorAlert.type === "missed" ? "dqc-notice-missed" : activeDoctorAlert.type === "skipped" ? "dqc-notice-skipped" : ""}`} role="status" aria-live="polite">
                                 <Bell size={17} />
                                 <div><strong>{activeDoctorAlert.title}</strong><p>{activeDoctorAlert.message}</p><small>{activeDoctorAlert.meta}</small></div>
                             </div>
                         )}
-                    <div className="dqc-tabs" aria-label="Filter patients">
-                        {(["waiting", "upcoming", "missed", "completed"] as const).map((value) => (
+                    <div className="dqc-tabs" role="group" aria-label="Filter patients">
+                        {(["waiting", "upcoming", "missed", "skipped", "completed"] as const).map((value) => (
                             <button type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>
-                                {value === "waiting" ? "Waiting" : value === "upcoming" ? "Upcoming" : value === "missed" ? "Missed" : "Done"}
-                                <span>{value === "waiting" ? ready.length : value === "upcoming" ? upcoming.length : value === "missed" ? missedAppointments.length : completed.length}</span>
+                                {value === "waiting" ? "Waiting" : value === "upcoming" ? "Upcoming" : value === "missed" ? "Missed" : value === "skipped" ? "Skipped" : "Done"}
+                                <span>{value === "waiting" ? ready.length : value === "upcoming" ? upcoming.length : value === "missed" ? missedAppointments.length : value === "skipped" ? skippedPatients.length : completed.length}</span>
                             </button>
                         ))}
                     </div>
                     <label className="dqc-search"><Search size={17} /><input
                         aria-label="Search patient, phone or token" placeholder="Search name, phone or token"
                         value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-                    <p className="dqc-list-note">{tab === "waiting" ? "Emergency → due appointment within time window → walk-in" : tab === "upcoming" ? "Checked-in appointments waiting for scheduled time" : tab === "missed" ? "Appointment window ended. These patients are not auto-prioritized; call manually only when doctor decides." : "Completed visits today"}</p>
+                    <p className="dqc-list-note">{tab === "waiting" ? "Call order: emergency · recalled priority · due appointment · walk-in" : tab === "upcoming" ? "Checked-in appointments waiting for scheduled time" : tab === "missed" ? "Appointment window ended. Choose Call when you are ready to see the patient." : tab === "skipped" ? "Choose when to recall a patient, or mark them as a no-show." : "Completed visits today"}</p>
                     {!filtered.length ? (
-                        <div className="dqc-empty"><p>{search ? "No matching patients." : loading ? "Loading patients…" : tab === "completed" ? "No completed visits yet." : tab === "missed" ? "No missed appointments." : "No patients in this list."}</p></div>
+                        <div className="dqc-empty"><p>{search ? "No matching patients." : loading ? "Loading patients…" : tab === "completed" ? "No completed visits yet." : tab === "missed" ? "No missed appointments." : tab === "skipped" ? "No skipped patients." : "No patients in this list."}</p></div>
                     ) : (
                         <div className="dqc-list">
                             {filtered.map((queue) => {
                                 const person = getQueuePatient(queue);
                                 return (
-                                    <article className="dqc-row" key={queue._id}>
+                                    <article className="dqc-row" data-emergency={isEmergencyPatient(queue)} key={queue._id}>
                                         <strong className="dqc-row-token">{queue.tokenLabel}</strong>
                                         <div className="dqc-row-person"><h3>{person?.name || "Patient"}</h3><p>{person?.phone || "No phone"}{person?.patientCode ? ` · ${person.patientCode}` : ""}</p>
                                             {tab !== "completed" && isAppointmentPatient(queue) && <small className={isMissedAppointment(queue, nowMinutes) ? "dqc-missed-text" : isAppointmentDue(queue, nowMinutes) ? "dqc-due-text" : ""}>{getAppointmentDueText(queue, nowMinutes)}</small>}
+                                            {tab === "skipped" && <small className="dqc-skipped-text">{getSkippedMetaText(queue)}</small>}
                                         </div>
-                                        {tab === "missed" ? (
+                                        {tab === "skipped" ? (
+                                            <div className="dqc-skipped-actions">
+                                                <button
+                                                    type="button"
+                                                    className="dqc-call-small"
+                                                    disabled={blocked || Boolean(current)}
+                                                    onClick={() => void recallSkippedPatient(queue, "RECALL_NOW")}
+                                                >
+                                                    Recall now
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="dqc-call-small dqc-call-secondary"
+                                                    disabled={blocked}
+                                                    onClick={() => void recallSkippedPatient(queue, "AFTER_CURRENT")}
+                                                >
+                                                    After current
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="dqc-call-small dqc-call-secondary"
+                                                    disabled={blocked}
+                                                    onClick={() => void recallSkippedPatient(queue, "END_OF_QUEUE")}
+                                                >
+                                                    End queue
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="dqc-call-small dqc-no-show"
+                                                    disabled={Boolean(action) || Boolean(consultation) || Boolean(completionRetry) || loading || Boolean(loadError)}
+                                                    onClick={() => void markSkippedNoShow(queue)}
+                                                >
+                                                    No-show
+                                                </button>
+                                            </div>
+                                        ) : tab === "missed" ? (
                                             <button
                                                 type="button"
                                                 className="dqc-call-small"
@@ -1148,6 +1464,15 @@ const styles = `
 .dqc-row .dqc-missed-text{color:#a33b2f;font-weight:600}
 .dqc-call-small{display:inline-flex;align-items:center;justify-content:center;min-height:34px;border-radius:7px;border:1px solid #ead6c0;background:#fff8ef;color:#865025;font-size:12px!important;font-weight:650!important;padding:6px 10px}
 .dqc-call-small:hover:not(:disabled){background:#fbe9d2}
+.dqc-call-secondary{background:#fff;color:var(--green);border-color:#cddfd4}
+.dqc-call-secondary:hover:not(:disabled){background:#edf4ef}
+.dqc-no-show{background:#fff0ed;color:#9f342d;border-color:#f4c7bf}
+.dqc-no-show:hover:not(:disabled){background:#ffe2dc}
+.dqc-skipped-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;min-width:260px}
+.dqc-skipped-actions .dqc-call-small{width:100%;padding:6px 8px;white-space:nowrap}
+.dqc-skipped-text{color:#865025!important;font-weight:600}
+.dqc-notice-skipped{background:#fff8ef}
+.dqc-notice-skipped>svg,.dqc-notice-skipped small{color:#865025}
 .dqc-notice-missed{background:#fff8ef}
 .dqc-notice-missed>svg,.dqc-notice-missed small{color:#865025}
 .dqc-done{color:var(--green);margin-top:2px}
@@ -1159,6 +1484,121 @@ const styles = `
 .dqc-spin{animation:dqc-spin 1s linear infinite}
 @keyframes dqc-spin{to{transform:rotate(360deg)}}
 @media(max-width:800px){.dqc{padding:18px 14px}.dqc-header{margin-bottom:18px}.dqc-workspace{grid-template-columns:1fr;gap:16px}.dqc-current{position:static}.dqc h1{font-size:23px}.dqc-search input{font-size:16px}}
+@media(max-width:620px){.dqc-skipped-actions{grid-column:1 / -1;min-width:0;width:100%}}
 @media(max-width:420px){.dqc{padding:16px 10px}.dqc-header{gap:8px}.dqc-header p{font-size:11px}.dqc-header>.dqc-secondary{padding:10px}.dqc-patient,.dqc-next{padding:20px 16px}.dqc-section-title{padding:14px 16px}.dqc-actions{padding:0 16px 16px}.dqc-row{grid-template-columns:62px minmax(0,1fr);gap:4px 10px}.dqc-row>.dqc-badge,.dqc-row>.dqc-done{grid-column:2;justify-self:start}.dqc-tabs{gap:8px;padding:0 14px}.dqc-list{padding:0 14px 6px}.dqc-search{margin:14px 14px 0}}
 @media(prefers-reduced-motion:reduce){.dqc *{animation:none!important;transition:none!important}}
+
+/* Refined presentation. Existing queue rules, API calls and socket events are unchanged. */
+.dqc {
+    --ink: #173d39;
+    --green: #176957;
+    --muted: #65766d;
+    --line: #dfe7df;
+    padding: clamp(16px, 2.5vw, 36px);
+    background: #f7f8f4;
+}
+.dqc-header, .dqc-workspace, .dqc-overview,
+.dqc-break-alert, .dqc-error, .dqc-recovery {
+    max-width: 1440px;
+}
+.dqc-eyebrow {
+    display: block;
+    margin-bottom: 7px;
+    color: var(--green);
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: .15em;
+}
+.dqc h1 { font-size: clamp(23px, 2.2vw, 31px); line-height: 1.25; }
+.dqc-header { margin-bottom: 24px; }
+.dqc-header p { margin-top: 8px; }
+.dqc-header-actions { gap: 10px; }
+.dqc-overview {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin: 0 auto 24px;
+}
+.dqc-overview button {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 15px 18px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: #fff;
+    color: var(--muted);
+    text-align: left;
+}
+.dqc-overview button[aria-pressed="true"] { background: #edf3e7; border-color: #b9ccb5; }
+.dqc-overview svg { color: var(--green); flex-shrink: 0; }
+.dqc-overview span { font-size: 12px; }
+.dqc-overview strong { display: block; margin-top: 3px; color: var(--ink); font-size: 25px; line-height: 1.2; }
+.dqc-workspace { grid-template-columns: minmax(300px, .8fr) minmax(0, 1.65fr); gap: 24px; }
+.dqc-current, .dqc-list-panel { border-radius: 18px; box-shadow: 0 4px 18px #173d3904; }
+.dqc-current { border-color: #bfd0c4; }
+.dqc-current .dqc-section-title { background: #173d39; color: #fff; padding: 18px 22px; }
+.dqc-section-title h2 { color: inherit; font-size: 14px; }
+.dqc-state { background: #dceee4; color: #174f43; font-size: 11px; border-radius: 20px; padding: 5px 9px; }
+.dqc-patient, .dqc-next { padding: 26px 22px; }
+.dqc-token { font-size: clamp(28px, 3vw, 38px); letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+.dqc-patient-top { justify-content: space-between; margin-bottom: 20px; }
+.dqc-patient h3, .dqc-next h3 { font-size: 23px; font-weight: 650; }
+.dqc-patient-meta { display: grid; gap: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.dqc-time { background: #f1f5ed; border-radius: 9px; padding: 10px; line-height: 1.6; }
+.dqc-actions { grid-template-columns: 1fr; padding: 0 22px 20px; gap: 9px; }
+.dqc-primary { min-height: 50px; border-radius: 11px; font-size: 14px!important; }
+.dqc-secondary, .dqc-break, .dqc-resume { border-radius: 10px; }
+.dqc-actions .dqc-secondary { background: #fafbf8; }
+.dqc-notice { padding: 16px 20px; border-left: 3px solid #8bab86; }
+.dqc-notice-late, .dqc-notice-missed, .dqc-notice-skipped { border-left-color: #c69b4b; }
+.dqc-tabs { padding: 8px 12px; gap: 4px; flex-wrap: wrap; }
+.dqc-tabs button { flex: 1 0 auto; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 9px; font-size: 12px; }
+.dqc-tabs button[aria-pressed="true"] { background: #eaf2e5; color: #176957; }
+.dqc-tabs span { background: #edf1eb; border-radius: 20px; }
+.dqc-tabs button[aria-pressed="true"] span { background: #fff; }
+.dqc-search { background: #f8faf6; border-radius: 11px; margin: 18px 20px 0; }
+.dqc-search input { height: 48px; }
+.dqc-list-note { padding: 12px 20px!important; }
+.dqc-list { padding: 0 20px 10px; }
+.dqc-row { grid-template-columns: 82px minmax(0,1fr) auto; gap: 14px; align-items: center; padding: 18px 0; }
+.dqc-row-token { padding: 8px 5px; border-radius: 8px; background: #f0f4ec; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.dqc-row[data-emergency="true"] .dqc-row-token { background: #fff0ed; color: #a13d31; }
+.dqc-row h3 { font-size: 15px; }
+.dqc-row p { line-height: 1.6; }
+.dqc-call-small { min-height: 44px; border-radius: 9px; }
+/* Give skipped-patient actions a separate row, keeping names readable on laptops. */
+.dqc-skipped-actions { grid-column: 2 / -1; min-width: 0; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.dqc-break-alert { padding: 16px 20px; border-left: 4px solid #ba8c35; }
+@media(max-width:1050px) {
+    .dqc-workspace { grid-template-columns: minmax(280px,.85fr) minmax(0,1.2fr); gap: 16px; }
+    .dqc-row { grid-template-columns: 70px minmax(0,1fr); }
+    .dqc-row > .dqc-badge, .dqc-row > .dqc-call-small, .dqc-row > .dqc-done { grid-column: 2; justify-self: start; }
+}
+@media(max-width:800px) {
+    .dqc-workspace { grid-template-columns: 1fr; }
+    .dqc-current { position: static; }
+    .dqc-overview { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin-bottom: 16px; }
+    .dqc-overview button { padding: 12px 14px; }
+    .dqc-overview span { font-size: 11px; }
+    .dqc-overview strong { font-size: 22px; }
+    .dqc-actions { grid-template-columns: minmax(0,1fr) auto; }
+    .dqc-header { margin-bottom: 18px; }
+}
+@media(max-width:480px) {
+    .dqc { padding: 16px 12px; }
+    .dqc-header-actions { gap: 8px; }
+    .dqc-patient, .dqc-next { padding: 20px 16px; }
+    .dqc-current .dqc-section-title { padding: 16px; }
+    .dqc-actions { padding: 0 16px 16px; }
+    .dqc-primary { font-size: 13px!important; }
+    .dqc-tabs { gap: 4px; padding: 8px; }
+    .dqc-tabs button { padding: 8px; gap: 5px; }
+    .dqc-search { margin: 14px 14px 0; }
+    .dqc-search input { font-size: 16px; }
+    .dqc-list { padding: 0 14px 8px; }
+    .dqc-list-note { padding: 10px 14px!important; }
+    .dqc-skipped-actions { grid-column: 1 / -1; }
+    .dqc-row { gap: 8px 12px; }
+}
 `;

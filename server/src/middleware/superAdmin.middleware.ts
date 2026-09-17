@@ -70,3 +70,21 @@ export const superAdmin = (
         });
     }
 };
+
+export const requireSuperAdmin = (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+) => {
+    if (
+        !req.user ||
+        req.user.role !== "SUPER_ADMIN"
+    ) {
+        return res.status(403).json({
+            success: false,
+            message: "Super Admin access required",
+        });
+    }
+
+    next();
+};

@@ -7,11 +7,25 @@ const filters: StatusFilter[] = ["ALL", "WAITING", "CALLED", "SERVING", "COMPLET
 const summaryStatuses: QueueData["status"][] = ["WAITING", "CALLED", "SERVING", "COMPLETED"];
 const label = (value: string) => value.charAt(0) + value.slice(1).toLowerCase();
 
-function formatTime(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
+function formatTime(
+    value?: string | Date | null,
+) {
+    if (!value) {
+        return "—";
+    }
 
+    const date =
+        value instanceof Date
+            ? value
+            : new Date(value);
+
+    return Number.isNaN(date.getTime())
+        ? "—"
+        : date.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+          });
+}
 export default function Queue() {
   const [queues, setQueues] = useState<QueueData[]>([]);
   const [loading, setLoading] = useState(true);

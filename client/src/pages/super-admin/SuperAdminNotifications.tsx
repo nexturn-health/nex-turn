@@ -1,24 +1,5 @@
-import {
-    useCallback,
-    useEffect,
-    useMemo,
-    useState,
-} from "react";
-
-import {
-    Bell,
-    Building2,
-    CheckCheck,
-    Clock3,
-    Mail,
-    MapPin,
-    MessageSquare,
-    Phone,
-    RefreshCw,
-    UserRound,
-    X,
-} from "lucide-react";
-
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Bell, CheckCheck, ChevronDown, Loader2, Phone, RefreshCw, X } from "lucide-react";
 import {
     getSuperAdminNotifications,
     markAllNotificationsRead,
@@ -26,1120 +7,273 @@ import {
     type SuperAdminNotification,
 } from "../../services/super-admin/superAdminNotification.api";
 
-function getInitials(name?: string) {
-    const cleanName =
-        name?.trim() || "Lead";
+// Keep the existing API refresh interval; prevent overlapping requests below.
+const REFRESH_INTERVAL = 10_000;
 
-    const parts =
-        cleanName
-            .split(" ")
-            .filter(Boolean)
-            .slice(0, 2);
-
-    return parts
-        .map((part) => part[0]?.toUpperCase())
-        .join("") || "L";
-}
-
-function getLeadName(item: SuperAdminNotification) {
-    return item.metadata?.name || item.title || "New lead";
-}
-
-function getLeadSubtitle(item: SuperAdminNotification) {
-    const organization =
-        item.metadata?.organization;
-
-    const city =
-        item.metadata?.city;
-
-    if (organization && city) {
-        return `${organization} · ${city}`;
-    }
-
-    return organization || city || "Website demo request";
-}
-
-function formatTime(value: string) {
-    const date =
-        new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-        return "";
-    }
-
-    return date.toLocaleString(
-        undefined,
-        {
-            day: "2-digit",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-        },
-    );
-}
-
-function getWhatsAppLink(phone?: string) {
-    const digits =
-        String(phone || "").replace(/\D/g, "");
-
-    if (!digits) {
-        return "";
-    }
-
-    const phoneWithCountry =
-        digits.length === 10
-            ? `91${digits}`
-            : digits;
-
-    const message =
-        encodeURIComponent(
-            "Hello, thank you for contacting NextSynq Health. I received your demo request.",
-        );
-
-    return `https://wa.me/${phoneWithCountry}?text=${message}`;
+function relativeTime(value: string) {
+    const elapsed = Date.now() - new Date(value).getTime();
+    if (!Number.isFinite(elapsed)) return "";
+    const minutes = Math.max(0, Math.floor(elapsed / 60_000));
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
+    return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 export default function SuperAdminNotifications() {
-    const [open, setOpen] =
-        useState(false);
+    const panelId = useId();
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const closeRef = useRef<HTMLButtonElement>(null);
+    const fetchingRef = useRef(false);
+    const mountedRef = useRef(false);
+    const [open, setOpen] = useState(false);
+    const [filter, setFilter] = useState<"all" | "unread">("all");
+    const [notifications, setNotifications] = useState<SuperAdminNotification[]>([]);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [fetching, setFetching] = useState(false);
+    const [loaded, setLoaded] = useState(false);
+    const [pending, setPending] = useState<string | null>(null);
+    const actionRef = useRef(false);
+    const [error, setError] = useState("");
 
-    const [filter, setFilter] =
-        useState<"ALL" | "UNREAD">("ALL");
-
-    const [notifications, setNotifications] =
-        useState<SuperAdminNotification[]>([]);
-
-    const [unreadCount, setUnreadCount] =
-        useState(0);
-
-    const [loading, setLoading] =
-        useState(false);
-
-    const [refreshing, setRefreshing] =
-        useState(false);
-
-    const [error, setError] =
-        useState("");
-
-    const loadNotifications =
-        useCallback(async () => {
-            try {
-                setError("");
-
-                const data =
-                    await getSuperAdminNotifications();
-
-                setNotifications(data.notifications);
-                setUnreadCount(data.unreadCount);
-            } catch (loadError) {
-                setError(
-                    loadError instanceof Error
-                        ? loadError.message
-                        : "Unable to load notifications.",
-                );
+    const loadNotifications = useCallback(async () => {
+        if (fetchingRef.current) return;
+        fetchingRef.current = true;
+        setFetching(true);
+        try {
+            const data = await getSuperAdminNotifications();
+            if (!mountedRef.current) return;
+            setNotifications(data.notifications);
+            setUnreadCount(data.unreadCount);
+            setLoaded(true);
+            setError("");
+        } catch (cause) {
+            if (mountedRef.current) {
+                setError(cause instanceof Error ? cause.message : "Could not load notifications. Try again.");
             }
-        }, []);
+        } finally {
+            fetchingRef.current = false;
+            if (mountedRef.current) setFetching(false);
+        }
+    }, []);
 
     useEffect(() => {
-        loadNotifications();
-
-        const interval =
-            window.setInterval(
-                loadNotifications,
-                10000,
-            );
-
+        mountedRef.current = true;
+        void loadNotifications();
+        const interval = window.setInterval(() => {
+            if (!actionRef.current) void loadNotifications();
+        }, REFRESH_INTERVAL);
         return () => {
+            mountedRef.current = false;
             window.clearInterval(interval);
         };
     }, [loadNotifications]);
 
+    // Dismiss the panel without trapping focus or blocking the rest of the page.
     useEffect(() => {
-        if (!open) {
-            return;
+        if (!open) return;
+        closeRef.current?.focus();
+        function onPointerDown(event: PointerEvent) {
+            if (event.target instanceof Node && !wrapperRef.current?.contains(event.target)) setOpen(false);
         }
-
-        const closeOnEscape = (
-            event: KeyboardEvent,
-        ) => {
+        function onKeyDown(event: KeyboardEvent) {
             if (event.key === "Escape") {
                 setOpen(false);
+                triggerRef.current?.focus();
             }
-        };
-
-        window.addEventListener(
-            "keydown",
-            closeOnEscape,
-        );
-
+        }
+        document.addEventListener("pointerdown", onPointerDown);
+        document.addEventListener("keydown", onKeyDown);
         return () => {
-            window.removeEventListener(
-                "keydown",
-                closeOnEscape,
-            );
+            document.removeEventListener("pointerdown", onPointerDown);
+            document.removeEventListener("keydown", onKeyDown);
         };
     }, [open]);
 
-    const filteredNotifications =
-        useMemo(() => {
-            if (filter === "UNREAD") {
-                return notifications.filter(
-                    (item) => !item.isRead,
-                );
-            }
-
-            return notifications;
-        }, [
-            filter,
-            notifications,
-        ]);
-
-    const latestLead =
-        notifications[0];
-
-    const handleRefresh = async () => {
+    async function markRead(id?: string) {
+        if (actionRef.current || fetchingRef.current) return;
+        actionRef.current = true;
+        setPending(id ?? "all");
+        setError("");
         try {
-            setRefreshing(true);
-            await loadNotifications();
-        } finally {
-            setRefreshing(false);
-        }
-    };
-
-    const handleMarkRead = async (
-        id: string,
-    ) => {
-        try {
-            await markNotificationRead(id);
+            if (id) await markNotificationRead(id);
+            else await markAllNotificationsRead();
             await loadNotifications();
         } catch {
-            // The next polling cycle will retry automatically.
-        }
-    };
-
-    const handleMarkAllRead = async () => {
-        try {
-            setLoading(true);
-            await markAllNotificationsRead();
-            await loadNotifications();
+            if (mountedRef.current) setError("Could not mark notifications as read. Please try again.");
         } finally {
-            setLoading(false);
+            actionRef.current = false;
+            if (mountedRef.current) setPending(null);
         }
-    };
+    }
+
+    const visible = notifications.filter((item) => filter === "all" || !item.isRead);
+    const busy = pending !== null || fetching;
 
     return (
-        <div className="sa-pro-notification-wrap">
+        <div className="snn" ref={wrapperRef} onBlur={(event) => {
+            if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+        }}>
             <NotificationStyles />
-
-            <button
-                type="button"
-                className="sa-pro-bell-button"
-                onClick={() =>
-                    setOpen((previous) => !previous)
-                }
-                aria-label="Super admin notifications"
-                aria-expanded={open}
-            >
-                <Bell size={20} />
-
-                {unreadCount > 0 && (
-                    <span className="sa-pro-bell-badge">
-                        {unreadCount > 99
-                            ? "99+"
-                            : unreadCount}
-                    </span>
-                )}
+            <button ref={triggerRef} className="snn-trigger" type="button"
+                aria-label={`Notifications, ${unreadCount} unread`} aria-expanded={open}
+                aria-controls={panelId} onClick={() => setOpen((value) => !value)}>
+                <Bell size={21} aria-hidden="true" />
+                {unreadCount > 0 && <span className="snn-badge">{unreadCount > 99 ? "99+" : unreadCount}</span>}
             </button>
 
             {open && (
-                <>
-                    <button
-                        type="button"
-                        className="sa-pro-backdrop"
-                        aria-label="Close notifications"
-                        onClick={() => setOpen(false)}
-                    />
-
-                    <section
-                        className="sa-pro-panel"
-                        aria-label="Notifications panel"
-                    >
-                        <div className="sa-pro-panel-top">
-                            <div>
-                                <span className="sa-pro-kicker">
-                                    NextSynq leads
-                                </span>
-
-                                <h3>
-                                    Notifications
-                                </h3>
-
-                                <p>
-                                    Demo requests from your website contact form.
-                                </p>
-                            </div>
-
-                            <button
-                                type="button"
-                                className="sa-pro-close"
-                                onClick={() => setOpen(false)}
-                                aria-label="Close notifications"
-                            >
-                                <X size={18} />
+                <section id={panelId} className="snn-panel" aria-label="Notifications">
+                    <header className="snn-header">
+                        <div><h2>Notifications</h2><p>Contact enquiries & demo requests</p></div>
+                        <button ref={closeRef} type="button" className="snn-icon" aria-label="Close notifications"
+                            onClick={() => { setOpen(false); triggerRef.current?.focus(); }}><X size={20} /></button>
+                    </header>
+                    <div className="snn-toolbar">
+                        <div className="snn-filters" role="group" aria-label="Filter notifications">
+                            <button type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>All</button>
+                            <button type="button" aria-pressed={filter === "unread"} onClick={() => setFilter("unread")}>
+                                Unread {unreadCount > 0 && <span>{unreadCount}</span>}
                             </button>
                         </div>
-
-                        <div className="sa-pro-summary">
-                            <div className="sa-pro-summary-avatar">
-                                {latestLead
-                                    ? getInitials(
-                                          latestLead.metadata?.name,
-                                      )
-                                    : "NS"}
+                        <button className="snn-mark-all" type="button" disabled={busy || unreadCount === 0}
+                            onClick={() => void markRead()}>
+                            {pending === "all" ? <Loader2 className="snn-spin" size={16} /> : <CheckCheck size={16} />}
+                            Mark all read
+                        </button>
+                    </div>
+                    {error && <div className="snn-error" role="alert">{error}
+                        <button type="button" disabled={busy} onClick={() => void loadNotifications()}>
+                            <RefreshCw size={14} /> Retry
+                        </button>
+                    </div>}
+                    <div className="snn-list" aria-busy={fetching}>
+                        {!loaded && fetching ? (
+                            <div className="snn-empty" role="status"><Loader2 className="snn-spin" size={26} /><strong>Loading notifications</strong></div>
+                        ) : visible.length === 0 ? (
+                            <div className="snn-empty">
+                                <span className="snn-empty-icon"><Bell size={25} /></span>
+                                <strong>{error && !loaded ? "Notifications unavailable" : filter === "unread" ? "You're all caught up" : "Nothing here yet"}</strong>
+                                <p>{error && !loaded ? "Use Retry to load your updates." : "New enquiries and demo requests will appear here."}</p>
                             </div>
-
-                            <div>
-                                <strong>
-                                    {unreadCount > 0
-                                        ? `${unreadCount} new lead${unreadCount > 1 ? "s" : ""}`
-                                        : "No new leads"}
-                                </strong>
-
-                                <span>
-                                    {latestLead
-                                        ? `Latest: ${getLeadName(latestLead)}`
-                                        : "New contact requests will appear here."}
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="sa-pro-toolbar">
-                            <div
-                                className="sa-pro-tabs"
-                                role="tablist"
-                                aria-label="Notification filter"
-                            >
-                                <button
-                                    type="button"
-                                    data-active={filter === "ALL"}
-                                    onClick={() => setFilter("ALL")}
-                                >
-                                    All
-                                </button>
-
-                                <button
-                                    type="button"
-                                    data-active={filter === "UNREAD"}
-                                    onClick={() => setFilter("UNREAD")}
-                                >
-                                    Unread
-                                    {unreadCount > 0 && (
-                                        <span>
-                                            {unreadCount}
-                                        </span>
-                                    )}
-                                </button>
-                            </div>
-
-                            <button
-                                type="button"
-                                className="sa-pro-icon-action"
-                                onClick={handleRefresh}
-                                disabled={refreshing}
-                                aria-label="Refresh notifications"
-                            >
-                                <RefreshCw size={16} />
-                            </button>
-
-                            <button
-                                type="button"
-                                className="sa-pro-read-all"
-                                disabled={
-                                    loading ||
-                                    unreadCount === 0
-                                }
-                                onClick={handleMarkAllRead}
-                            >
-                                <CheckCheck size={16} />
-                                Mark all read
-                            </button>
-                        </div>
-
-                        {error && (
-                            <div className="sa-pro-error">
-                                {error}
-                            </div>
-                        )}
-
-                        <div className="sa-pro-list">
-                            {filteredNotifications.length === 0 ? (
-                                <div className="sa-pro-empty">
-                                    <div>
-                                        <Bell size={24} />
-                                    </div>
-
-                                    <strong>
-                                        {filter === "UNREAD"
-                                            ? "No unread notifications"
-                                            : "No notifications yet"}
-                                    </strong>
-
-                                    <p>
-                                        When someone submits your contact form,
-                                        the lead will appear here instantly.
-                                    </p>
-                                </div>
-                            ) : (
-                                filteredNotifications.map((item) => {
-                                    const name =
-                                        getLeadName(item);
-
-                                    const subtitle =
-                                        getLeadSubtitle(item);
-
-                                    const phone =
-                                        item.metadata?.phone;
-
-                                    const email =
-                                        item.metadata?.email;
-
-                                    const whatsappLink =
-                                        getWhatsAppLink(phone);
-
-                                    return (
-                                        <article
-                                            key={item._id}
-                                            className="sa-pro-card"
-                                            data-read={item.isRead}
-                                        >
-                                            <div className="sa-pro-card-main">
-                                                <div className="sa-pro-avatar">
-                                                    {getInitials(name)}
-
-                                                    {!item.isRead && (
-                                                        <span aria-label="Unread notification" />
-                                                    )}
-                                                </div>
-
-                                                <div className="sa-pro-content">
-                                                    <div className="sa-pro-card-title">
-                                                        <strong>
-                                                            {name}
-                                                        </strong>
-
-                                                        <small>
-                                                            <Clock3 size={13} />
-                                                            {formatTime(
-                                                                item.createdAt,
-                                                            )}
-                                                        </small>
-                                                    </div>
-
-                                                    <p className="sa-pro-subtitle">
-                                                        {subtitle}
-                                                    </p>
-
-                                                    {item.metadata?.interest && (
-                                                        <span className="sa-pro-interest">
-                                                            {item.metadata.interest}
-                                                        </span>
-                                                    )}
-
-                                                    <div className="sa-pro-lead-grid">
-                                                        <span>
-                                                            <UserRound size={14} />
-                                                            {item.metadata?.name || "NA"}
-                                                        </span>
-
-                                                        <span>
-                                                            <Phone size={14} />
-                                                            {phone || "NA"}
-                                                        </span>
-
-                                                        <span>
-                                                            <Building2 size={14} />
-                                                            {item.metadata?.organization || "NA"}
-                                                        </span>
-
-                                                        <span>
-                                                            <MapPin size={14} />
-                                                            {item.metadata?.city || "NA"}
-                                                        </span>
-
-                                                        {email && (
-                                                            <span>
-                                                                <Mail size={14} />
-                                                                {email}
-                                                            </span>
-                                                        )}
-                                                    </div>
-
-                                                    {item.metadata?.message && (
-                                                        <div className="sa-pro-message">
-                                                            <MessageSquare size={15} />
-
-                                                            <p>
-                                                                {item.metadata.message}
-                                                            </p>
-                                                        </div>
-                                                    )}
-
-                                                    <div className="sa-pro-card-actions">
-                                                        {phone && (
-                                                            <a href={`tel:${phone}`}>
-                                                                <Phone size={15} />
-                                                                Call
-                                                            </a>
-                                                        )}
-
-                                                        {whatsappLink && (
-                                                            <a
-                                                                href={whatsappLink}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                            >
-                                                                WhatsApp
-                                                            </a>
-                                                        )}
-
-                                                        {!item.isRead && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    handleMarkRead(
-                                                                        item._id,
-                                                                    )
-                                                                }
-                                                            >
-                                                                Mark read
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </article>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </section>
-                </>
+                        ) : visible.map((item) => (
+                            <NotificationRow key={item._id} item={item} disabled={busy}
+                                pending={pending === item._id} onMarkRead={() => void markRead(item._id)} />
+                        ))}
+                    </div>
+                    <footer className="snn-footer"><span className="snn-live-dot" />Updates refresh automatically</footer>
+                </section>
             )}
         </div>
     );
 }
 
-function NotificationStyles() {
+// Each row stays compact; contact information expands only when needed.
+function NotificationRow({ item, disabled, pending, onMarkRead }: {
+    item: SuperAdminNotification;
+    disabled: boolean;
+    pending: boolean;
+    onMarkRead: () => void;
+}) {
+    const metadata = item.metadata;
+    const name = metadata?.name || metadata?.organization || "NextSynq";
+    const phone = metadata?.phone?.replace(/[^\d+]/g, "");
+    const date = new Date(item.createdAt);
+    const validDate = Number.isFinite(date.getTime());
     return (
-        <style>{`
-            .sa-pro-notification-wrap {
-                position: relative;
-                display: inline-flex;
-                font-family: inherit;
-            }
-
-            .sa-pro-bell-button {
-                position: relative;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 44px;
-                height: 44px;
-                border: 1px solid #dce5d4;
-                border-radius: 999px;
-                background:
-                    linear-gradient(#ffffff, #ffffff) padding-box,
-                    linear-gradient(135deg, #176957, #88b86f) border-box;
-                color: #173d39;
-                box-shadow: 0 10px 30px #173d3914;
-                cursor: pointer;
-                transition:
-                    transform 0.18s ease,
-                    box-shadow 0.18s ease,
-                    background 0.18s ease;
-            }
-
-            .sa-pro-bell-button:hover {
-                transform: translateY(-1px);
-                box-shadow: 0 16px 38px #173d3920;
-                background:
-                    linear-gradient(#f3f8ef, #ffffff) padding-box,
-                    linear-gradient(135deg, #176957, #88b86f) border-box;
-            }
-
-            .sa-pro-bell-badge {
-                position: absolute;
-                top: -4px;
-                right: -4px;
-                min-width: 21px;
-                height: 21px;
-                padding: 0 6px;
-                border: 2px solid #ffffff;
-                border-radius: 999px;
-                background: #ef4444;
-                color: #ffffff;
-                font-size: 11px;
-                font-weight: 800;
-                line-height: 17px;
-                text-align: center;
-                box-shadow: 0 6px 16px #ef444440;
-            }
-
-            .sa-pro-backdrop {
-                position: fixed;
-                inset: 0;
-                z-index: 80;
-                border: 0;
-                background: transparent;
-                cursor: default;
-            }
-
-            .sa-pro-panel {
-                position: absolute;
-                top: 54px;
-                right: 0;
-                z-index: 100;
-                width: min(470px, calc(100vw - 24px));
-                max-height: min(760px, calc(100vh - 88px));
-                overflow: hidden;
-                border: 1px solid #dce5d4;
-                border-radius: 24px;
-                background: #ffffff;
-                box-shadow:
-                    0 26px 70px #0f241d2e,
-                    0 1px 0 #ffffff inset;
-                color: #173d39;
-            }
-
-            .sa-pro-panel::before {
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                height: 5px;
-                content: "";
-                background: linear-gradient(90deg, #176957, #95bd79, #176957);
-            }
-
-            .sa-pro-panel-top {
-                display: flex;
-                align-items: flex-start;
-                justify-content: space-between;
-                gap: 16px;
-                padding: 22px 22px 16px;
-                background:
-                    radial-gradient(circle at top right, #dcebd5 0, transparent 36%),
-                    linear-gradient(180deg, #f9fcf6 0%, #ffffff 100%);
-                border-bottom: 1px solid #edf2ea;
-            }
-
-            .sa-pro-kicker {
-                display: inline-flex;
-                margin-bottom: 7px;
-                padding: 5px 10px;
-                border-radius: 999px;
-                background: #edf6e9;
-                color: #176957;
-                font-size: 10px;
-                font-weight: 850;
-                letter-spacing: 0.12em;
-                text-transform: uppercase;
-            }
-
-            .sa-pro-panel-top h3 {
-                margin: 0;
-                color: #173d39;
-                font-size: 22px;
-                font-weight: 850;
-                letter-spacing: -0.4px;
-                line-height: 1.1;
-            }
-
-            .sa-pro-panel-top p {
-                margin: 6px 0 0;
-                color: #64775c;
-                font-size: 12px;
-                line-height: 1.55;
-            }
-
-            .sa-pro-close {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 34px;
-                height: 34px;
-                border: 1px solid #dce5d4;
-                border-radius: 999px;
-                background: #ffffff;
-                color: #173d39;
-                cursor: pointer;
-            }
-
-            .sa-pro-close:hover {
-                background: #edf3e4;
-                color: #176957;
-            }
-
-            .sa-pro-summary {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                margin: 14px 14px 0;
-                padding: 14px;
-                border: 1px solid #e1eadc;
-                border-radius: 18px;
-                background: linear-gradient(135deg, #173d39, #176957);
-                color: #ffffff;
-            }
-
-            .sa-pro-summary-avatar,
-            .sa-pro-avatar {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                flex-shrink: 0;
-                width: 46px;
-                height: 46px;
-                border-radius: 50%;
-                background:
-                    linear-gradient(#ffffff, #ffffff) padding-box,
-                    linear-gradient(135deg, #176957, #8fbd75, #ffffff) border-box;
-                border: 2px solid transparent;
-                color: #176957;
-                font-size: 14px;
-                font-weight: 900;
-            }
-
-            .sa-pro-summary-avatar {
-                width: 48px;
-                height: 48px;
-                background:
-                    linear-gradient(#f6fbf3, #ffffff) padding-box,
-                    linear-gradient(135deg, #a9d488, #ffffff) border-box;
-            }
-
-            .sa-pro-summary strong,
-            .sa-pro-summary span {
-                display: block;
-            }
-
-            .sa-pro-summary strong {
-                font-size: 15px;
-                line-height: 1.25;
-            }
-
-            .sa-pro-summary span {
-                margin-top: 4px;
-                color: #dcebd5;
-                font-size: 12px;
-                line-height: 1.45;
-            }
-
-            .sa-pro-toolbar {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                padding: 14px;
-                border-bottom: 1px solid #edf2ea;
-            }
-
-            .sa-pro-tabs {
-                display: inline-flex;
-                align-items: center;
-                gap: 4px;
-                padding: 4px;
-                border: 1px solid #dce5d4;
-                border-radius: 999px;
-                background: #f6faf3;
-            }
-
-            .sa-pro-tabs button {
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                min-height: 31px;
-                padding: 6px 12px;
-                border: 0;
-                border-radius: 999px;
-                background: transparent;
-                color: #64775c;
-                font-size: 12px;
-                font-weight: 800;
-                cursor: pointer;
-            }
-
-            .sa-pro-tabs button[data-active="true"] {
-                background: #ffffff;
-                color: #176957;
-                box-shadow: 0 3px 12px #173d3910;
-            }
-
-            .sa-pro-tabs span {
-                min-width: 18px;
-                height: 18px;
-                padding: 0 5px;
-                border-radius: 999px;
-                background: #176957;
-                color: #ffffff;
-                font-size: 10px;
-                line-height: 18px;
-                text-align: center;
-            }
-
-            .sa-pro-icon-action,
-            .sa-pro-read-all {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 35px;
-                border: 1px solid #dce5d4;
-                border-radius: 999px;
-                background: #ffffff;
-                color: #176957;
-                font-size: 12px;
-                font-weight: 800;
-                cursor: pointer;
-            }
-
-            .sa-pro-icon-action {
-                width: 35px;
-                margin-left: auto;
-            }
-
-            .sa-pro-read-all {
-                gap: 6px;
-                padding: 7px 11px;
-            }
-
-            .sa-pro-icon-action:hover,
-            .sa-pro-read-all:hover {
-                background: #edf3e4;
-            }
-
-            .sa-pro-icon-action:disabled,
-            .sa-pro-read-all:disabled {
-                cursor: not-allowed;
-                opacity: 0.55;
-            }
-
-            .sa-pro-icon-action:disabled svg {
-                animation: saSpin 0.9s linear infinite;
-            }
-
-            @keyframes saSpin {
-                to {
-                    transform: rotate(360deg);
-                }
-            }
-
-            .sa-pro-error {
-                margin: 12px 14px 0;
-                padding: 11px 12px;
-                border: 1px solid #fecaca;
-                border-radius: 14px;
-                background: #fff1f2;
-                color: #b42318;
-                font-size: 12px;
-                font-weight: 750;
-                line-height: 1.45;
-            }
-
-            .sa-pro-list {
-                max-height: calc(min(760px, 100vh - 88px) - 226px);
-                overflow-y: auto;
-                padding: 12px 14px 14px;
-                background: #fbfdf9;
-            }
-
-            .sa-pro-list::-webkit-scrollbar {
-                width: 8px;
-            }
-
-            .sa-pro-list::-webkit-scrollbar-thumb {
-                border: 2px solid #fbfdf9;
-                border-radius: 999px;
-                background: #cddbc7;
-            }
-
-            .sa-pro-empty {
-                display: grid;
-                justify-items: center;
-                gap: 8px;
-                padding: 44px 22px;
-                color: #64775c;
-                text-align: center;
-            }
-
-            .sa-pro-empty > div {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 54px;
-                height: 54px;
-                border-radius: 50%;
-                background: #edf3e4;
-                color: #176957;
-            }
-
-            .sa-pro-empty strong {
-                color: #173d39;
-                font-size: 15px;
-            }
-
-            .sa-pro-empty p {
-                max-width: 300px;
-                margin: 0;
-                font-size: 12px;
-                line-height: 1.6;
-            }
-
-            .sa-pro-card {
-                position: relative;
-                overflow: hidden;
-                margin-bottom: 12px;
-                border: 1px solid #e1eadc;
-                border-radius: 18px;
-                background: #ffffff;
-                box-shadow: 0 10px 26px #173d390a;
-            }
-
-            .sa-pro-card[data-read="false"] {
-                border-color: #b7d5aa;
-                background: linear-gradient(180deg, #ffffff 0%, #f3faf0 100%);
-            }
-
-            .sa-pro-card::before {
-                position: absolute;
-                top: 0;
-                bottom: 0;
-                left: 0;
-                width: 4px;
-                content: "";
-                background: transparent;
-            }
-
-            .sa-pro-card[data-read="false"]::before {
-                background: linear-gradient(180deg, #176957, #90b970);
-            }
-
-            .sa-pro-card-main {
-                display: flex;
-                align-items: flex-start;
-                gap: 12px;
-                padding: 15px;
-            }
-
-            .sa-pro-avatar {
-                position: relative;
-                margin-top: 1px;
-            }
-
-            .sa-pro-avatar > span {
-                position: absolute;
-                right: -1px;
-                bottom: 1px;
-                width: 11px;
-                height: 11px;
-                border: 2px solid #ffffff;
-                border-radius: 50%;
-                background: #176957;
-            }
-
-            .sa-pro-content {
-                min-width: 0;
-                flex: 1;
-            }
-
-            .sa-pro-card-title {
-                display: flex;
-                align-items: flex-start;
-                justify-content: space-between;
-                gap: 10px;
-            }
-
-            .sa-pro-card-title strong {
-                min-width: 0;
-                color: #173d39;
-                font-size: 14px;
-                font-weight: 850;
-                line-height: 1.3;
-            }
-
-            .sa-pro-card-title small {
-                display: inline-flex;
-                align-items: center;
-                gap: 4px;
-                flex-shrink: 0;
-                color: #7a897e;
-                font-size: 11px;
-                white-space: nowrap;
-            }
-
-            .sa-pro-subtitle {
-                margin: 3px 0 0;
-                color: #64775c;
-                font-size: 12px;
-                line-height: 1.5;
-            }
-
-            .sa-pro-interest {
-                display: inline-flex;
-                width: fit-content;
-                margin-top: 9px;
-                padding: 5px 9px;
-                border-radius: 999px;
-                background: #edf3e4;
-                color: #176957;
-                font-size: 11px;
-                font-weight: 850;
-            }
-
-            .sa-pro-lead-grid {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 8px;
-                margin-top: 12px;
-            }
-
-            .sa-pro-lead-grid span {
-                display: flex;
-                align-items: center;
-                gap: 7px;
-                min-width: 0;
-                padding: 8px 9px;
-                border: 1px solid #edf2ea;
-                border-radius: 11px;
-                background: #fbfdf9;
-                color: #415146;
-                font-size: 11px;
-                line-height: 1.35;
-            }
-
-            .sa-pro-lead-grid svg {
-                flex-shrink: 0;
-                color: #176957;
-            }
-
-            .sa-pro-message {
-                display: flex;
-                align-items: flex-start;
-                gap: 8px;
-                margin-top: 12px;
-                padding: 11px;
-                border-radius: 13px;
-                background: #f6faf3;
-                color: #415146;
-            }
-
-            .sa-pro-message svg {
-                flex-shrink: 0;
-                margin-top: 2px;
-                color: #176957;
-            }
-
-            .sa-pro-message p {
-                margin: 0;
-                font-size: 12px;
-                line-height: 1.6;
-            }
-
-            .sa-pro-card-actions {
-                display: flex;
-                align-items: center;
-                flex-wrap: wrap;
-                gap: 8px;
-                margin-top: 13px;
-            }
-
-            .sa-pro-card-actions a,
-            .sa-pro-card-actions button {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                gap: 6px;
-                min-height: 35px;
-                padding: 8px 12px;
-                border: 1px solid #dce5d4;
-                border-radius: 999px;
-                background: #ffffff;
-                color: #176957;
-                font-size: 12px;
-                font-weight: 850;
-                text-decoration: none;
-                cursor: pointer;
-            }
-
-            .sa-pro-card-actions a:first-child {
-                background: #176957;
-                border-color: #176957;
-                color: #ffffff;
-            }
-
-            .sa-pro-card-actions a:hover,
-            .sa-pro-card-actions button:hover {
-                transform: translateY(-1px);
-                box-shadow: 0 8px 18px #173d3912;
-            }
-
-            @media (max-width: 620px) {
-                .sa-pro-panel {
-                    position: fixed;
-                    top: 70px;
-                    right: 10px;
-                    left: 10px;
-                    width: auto;
-                    max-height: calc(100vh - 86px);
-                    border-radius: 20px;
-                }
-
-                .sa-pro-panel-top {
-                    padding: 18px 18px 14px;
-                }
-
-                .sa-pro-toolbar {
-                    flex-wrap: wrap;
-                }
-
-                .sa-pro-tabs {
-                    width: 100%;
-                }
-
-                .sa-pro-tabs button {
-                    flex: 1;
-                    justify-content: center;
-                }
-
-                .sa-pro-icon-action {
-                    margin-left: 0;
-                }
-
-                .sa-pro-list {
-                    max-height: calc(100vh - 330px);
-                }
-
-                .sa-pro-card-main {
-                    gap: 10px;
-                    padding: 13px;
-                }
-
-                .sa-pro-card-title {
-                    display: grid;
-                    gap: 4px;
-                }
-
-                .sa-pro-card-title small {
-                    white-space: normal;
-                }
-
-                .sa-pro-lead-grid {
-                    grid-template-columns: 1fr;
-                }
-
-                .sa-pro-card-actions a,
-                .sa-pro-card-actions button {
-                    flex: 1;
-                }
-            }
-        `}</style>
+        <article className="snn-row" data-unread={!item.isRead}>
+            <div className="snn-avatar" aria-hidden="true">{name.trim().charAt(0).toUpperCase() || "N"}</div>
+            <div className="snn-content">
+                <div className="snn-row-heading"><h3>{item.title}</h3>{!item.isRead && <span className="snn-unread-dot" aria-label="Unread" />}</div>
+                <p className="snn-message">{item.message}</p>
+                <time dateTime={validDate ? date.toISOString() : undefined} title={validDate ? date.toLocaleString() : undefined}>
+                    {relativeTime(item.createdAt)}
+                </time>
+                {metadata && <details className="snn-details">
+                    <summary>Contact details <ChevronDown size={14} aria-hidden="true" /></summary>
+                    <dl>{[
+                        ["Name", metadata.name], ["Phone", metadata.phone],
+                        ["Hospital / clinic", metadata.organization], ["City", metadata.city],
+                        ["Interest", metadata.interest], ["Message", metadata.message],
+                    ].map(([label, value]) => value ? <div key={label}><dt>{label}</dt><dd>{value}</dd></div> : null)}</dl>
+                </details>}
+                <div className="snn-row-actions">
+                    {phone && <a href={`tel:${phone}`} aria-label={`Call ${name}`}><Phone size={14} />Call</a>}
+                    {!item.isRead && <button type="button" disabled={disabled} onClick={onMarkRead}>
+                        {pending ? <Loader2 size={14} className="snn-spin" /> : <CheckCheck size={14} />}Mark read
+                    </button>}
+                </div>
+            </div>
+        </article>
     );
+}
+
+function NotificationStyles() {
+    return <style>{`
+        .snn { position:relative; display:inline-flex; font-family:inherit; color:#173d39; }
+        .snn * { box-sizing:border-box; }
+        .snn button,.snn a { font:inherit; -webkit-tap-highlight-color:transparent; }
+        .snn button { cursor:pointer; }
+        .snn button:disabled { opacity:.45; cursor:not-allowed; }
+        .snn button:focus-visible,.snn a:focus-visible,.snn summary:focus-visible { outline:3px solid #78a795; outline-offset:2px; }
+        .snn-trigger,.snn-icon { display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; flex-shrink:0; border:0; border-radius:50%; color:#173d39; background:#f1f5ef; }
+        .snn-trigger { position:relative; }
+        .snn-trigger:hover,.snn-icon:hover { background:#e5eee2; }
+        .snn-badge { position:absolute; right:-3px; top:-3px; min-width:20px; height:20px; padding:0 5px; border:2px solid white; border-radius:20px; background:#c84444; color:white; font-size:10px; font-weight:800; line-height:16px; }
+        .snn-panel { position:absolute; top:54px; right:0; z-index:1000; width:min(440px,calc(100vw - 24px)); max-height:min(720px,80dvh); display:flex; flex-direction:column; overflow:hidden; background:#fff; border:1px solid #e0e7e2; border-radius:20px; box-shadow:0 18px 60px #173d3929; animation:snn-enter .18s ease-out; }
+        .snn-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:21px 20px 16px; }
+        .snn-header h2 { margin:0; font-size:22px; font-weight:750; line-height:1.3; letter-spacing:-.6px; color:#173d39; }
+        .snn-header p { margin:5px 0 0; font-size:12px; line-height:1.5; color:#6c7b73; }
+        .snn-icon { width:36px; height:36px; background:transparent; }
+        .snn-toolbar { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:0 16px 14px; border-bottom:1px solid #edf0ed; }
+        .snn-filters { display:flex; gap:4px; }
+        .snn-filters button { display:flex; align-items:center; gap:6px; min-height:40px; padding:8px 12px; border:0; border-radius:20px; background:transparent; color:#66766e; font-size:13px; font-weight:650; }
+        .snn-filters button[aria-pressed=true] { background:#e8f1e4; color:#176957; }
+        .snn-filters span { font-size:11px; }
+        .snn-mark-all { display:flex; align-items:center; gap:5px; min-height:40px; padding:5px; border:0; background:transparent; color:#176957; font-size:11px!important; font-weight:650!important; }
+        .snn-list { min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#c9d6cb transparent; }
+        .snn-row { display:flex; align-items:flex-start; gap:12px; padding:18px 20px; border-bottom:1px solid #edf0ed; }
+        .snn-row[data-unread=true] { background:#f1f6ee; }
+        .snn-avatar { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:42px; height:42px; border-radius:50%; background:#e2ece0; color:#31654f; font-size:17px; font-weight:700; }
+        .snn-content { flex:1; min-width:0; overflow-wrap:anywhere; }
+        .snn-row-heading { display:flex; align-items:center; gap:10px; justify-content:space-between; }
+        .snn-row h3 { margin:0; font-size:13px; line-height:1.5; font-weight:650; color:#203e34; }
+        .snn-row[data-unread=true] h3 { font-weight:750; }
+        .snn-unread-dot { width:7px; height:7px; background:#176957; border-radius:50%; flex-shrink:0; }
+        .snn-message { margin:4px 0 6px; font-size:12px; line-height:1.6; color:#596b62; white-space:pre-line; }
+        .snn-row time { display:block; color:#75857b; font-size:11px; line-height:1.5; }
+        .snn-row[data-unread=true] time { color:#176957; font-weight:600; }
+        .snn-details { margin-top:8px; }
+        .snn-details summary { display:flex; align-items:center; gap:6px; width:fit-content; min-height:36px; color:#52685c; cursor:pointer; list-style:none; font-size:11px; font-weight:650; }
+        .snn-details summary::-webkit-details-marker { display:none; }
+        .snn-details[open] summary svg { transform:rotate(180deg); }
+        .snn-details dl { margin:4px 0 10px; padding:12px; background:#fff; border:1px solid #e1e8de; border-radius:10px; }
+        .snn-details dl>div+div { margin-top:9px; }
+        .snn-details dt { color:#78877d; font-size:10px; }
+        .snn-details dd { margin:2px 0 0; font-size:12px; line-height:1.5; color:#244638; white-space:pre-line; }
+        .snn-row-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+        .snn-row-actions:empty { display:none; }
+        .snn-row-actions a,.snn-row-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:36px; padding:6px 10px; border:1px solid #dce6d8; border-radius:8px; background:#fff; color:#176957; font-size:11px; text-decoration:none; }
+        .snn-row-actions a:hover,.snn-row-actions button:hover:not(:disabled) { background:#e7f0e3; }
+        .snn-empty { display:flex; align-items:center; flex-direction:column; gap:12px; padding:46px 24px; text-align:center; }
+        .snn-empty-icon { display:grid; place-items:center; width:60px; height:60px; border-radius:50%; background:#edf3e8; color:#658365; }
+        .snn-empty strong { font-size:15px; }
+        .snn-empty p { margin:0; max-width:250px; font-size:12px; color:#758078; line-height:1.6; }
+        .snn-error { margin:10px 14px; padding:10px 12px; border-radius:8px; background:#fff1ed; color:#a13629; font-size:12px; line-height:1.5; }
+        .snn-error button { display:inline-flex; align-items:center; gap:5px; padding:7px; border:0; background:transparent; color:inherit; font-weight:700; }
+        .snn-footer { display:flex; align-items:center; justify-content:center; gap:7px; padding:12px; border-top:1px solid #edf0ed; color:#79877c; font-size:10px; background:#fafbf8; }
+        .snn-live-dot { height:5px; width:5px; border-radius:50%; background:#8bab86; }
+        .snn-spin { animation:snn-spin 1s linear infinite; }
+        @keyframes snn-spin { to { transform:rotate(360deg); } }
+        @keyframes snn-enter { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+        @media(max-width:540px) {
+            .snn-panel { position:fixed; top:calc(env(safe-area-inset-top,0px) + 12px); right:12px; left:12px; width:auto; max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 24px); border-radius:18px; }
+            .snn-header { padding:18px 16px 12px; }
+            .snn-row { padding:16px; gap:10px; }
+            .snn-icon,.snn-filters button,.snn-mark-all,.snn-row-actions a,.snn-row-actions button,.snn-details summary { min-height:44px; }
+            .snn-avatar { width:38px; height:38px; }
+        }
+        @media(prefers-reduced-motion:reduce) { .snn-panel,.snn-spin { animation:none; } }
+    `}</style>;
 }

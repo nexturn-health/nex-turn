@@ -1,45 +1,46 @@
 import { Router } from "express";
 
 import {
-  createQueue,
-  getQueues,
-  callNextPatient,
-  startServingPatient,
-  completePatient,
-  skipPatient,
-  getDoctorQueue,
-  takeDoctorBreak,
-  resumeDoctorDuty,
-  callSelectedPatient,
+    createQueue,
+    getQueues,
+    callNextPatient,
+    startServingPatient,
+    completePatient,
+    skipPatient,
+    getDoctorQueue,
+    takeDoctorBreak,
+    resumeDoctorDuty,
+    callSelectedPatient,
+    recallSkippedPatient,
+    markSkippedPatientNoShow,
 } from "../controllers/queue.controller";
 
 import {
-  trackQueue,
+    trackQueue,
 } from "../controllers/queueTracking.controller";
 
 import {
-  protect,
+    protect,
 } from "../middleware/auth.middleware";
 
 import {
-  authorize,
+    authorize,
 } from "../middleware/role.middleware";
 
 import {
-  requireSubscription,
+    requireSubscription,
 } from "../middleware/subscription.middleware";
 
 const router = Router();
 
 /* =========================================================
    PUBLIC PATIENT TRACKING
-
    GET /api/queues/track/:trackingToken
 ========================================================= */
 
 router.get(
-  "/track/:trackingToken",
-  trackQueue,
+    "/track/:trackingToken",
+    trackQueue,
 );
 
 /* =========================================================
@@ -50,7 +51,6 @@ router.use(protect);
 
 /* =========================================================
    ACTIVE SUBSCRIPTION REQUIRED
-
    BASIC + PREMIUM
 ========================================================= */
 
@@ -58,143 +58,162 @@ router.use(requireSubscription);
 
 /* =========================================================
    CREATE QUEUE / GENERATE TOKEN
-
    POST /api/queues
-
-   HOSPITAL_ADMIN
-   RECEPTIONIST
+   HOSPITAL_ADMIN / RECEPTIONIST
 ========================================================= */
 
 router.post(
-  "/",
-  authorize(
-    "HOSPITAL_ADMIN",
-    "RECEPTIONIST",
-  ),
-  createQueue,
+    "/",
+    authorize(
+        "HOSPITAL_ADMIN",
+        "RECEPTIONIST",
+    ),
+    createQueue,
 );
 
 /* =========================================================
    GET TODAY'S QUEUE
-
    GET /api/queues
-
-   HOSPITAL_ADMIN
-   RECEPTIONIST
-   DOCTOR
+   HOSPITAL_ADMIN / RECEPTIONIST / DOCTOR
 ========================================================= */
 
 router.get(
-  "/",
-  authorize(
-    "HOSPITAL_ADMIN",
-    "RECEPTIONIST",
-    "DOCTOR",
-  ),
-  getQueues,
+    "/",
+    authorize(
+        "HOSPITAL_ADMIN",
+        "RECEPTIONIST",
+        "DOCTOR",
+    ),
+    getQueues,
 );
 
 /* =========================================================
    DOCTOR QUEUE
-
    GET /api/queues/doctor
 ========================================================= */
 
 router.get(
-  "/doctor",
-  authorize(
-    "DOCTOR",
-  ),
-  getDoctorQueue,
+    "/doctor",
+    authorize("DOCTOR"),
+    getDoctorQueue,
 );
 
 /* =========================================================
    DOCTOR CALL NEXT PATIENT
-
    PATCH /api/queues/call-next
 ========================================================= */
 
 router.patch(
-  "/call-next",
-  authorize(
-    "DOCTOR",
-  ),
-  callNextPatient,
+    "/call-next",
+    authorize("DOCTOR"),
+    callNextPatient,
 );
 
+/* =========================================================
+   DOCTOR BREAK
+   PATCH /api/queues/doctor/break
+========================================================= */
 
 router.patch(
-  "/doctor/break",
-  protect,
-  authorize(
-    "DOCTOR",
-  ),
-  takeDoctorBreak,
+    "/doctor/break",
+    authorize("DOCTOR"),
+    takeDoctorBreak,
 );
+
+/* =========================================================
+   DOCTOR RESUME
+   PATCH /api/queues/doctor/resume
+========================================================= */
 
 router.patch(
-  "/doctor/resume",
-  protect,
-  authorize(
-    "DOCTOR",
-  ),
-  resumeDoctorDuty,
+    "/doctor/resume",
+    authorize("DOCTOR"),
+    resumeDoctorDuty,
 );
 
-router.patch(
-  "/:id/call-selected",
-  protect,
-  authorize("DOCTOR"),
-  callSelectedPatient,
-);
-
+/* =========================================================
+   CALL SELECTED / MANUAL OVERRIDE
+   PATCH /api/queues/:id/call-selected
+========================================================= */
 
 router.patch(
     "/:id/call-selected",
-    protect,
     authorize("DOCTOR"),
     callSelectedPatient,
 );
+
+/* =========================================================
+   RECALL SKIPPED PATIENT
+   PATCH /api/queues/:id/recall-skipped
+
+   body:
+   {
+      "mode": "RECALL_NOW" | "AFTER_CURRENT" | "END_OF_QUEUE",
+      "reason": "Patient returned"
+   }
+========================================================= */
+
+router.patch(
+    "/:id/recall-skipped",
+    authorize(
+        "DOCTOR",
+        "HOSPITAL_ADMIN",
+        "RECEPTIONIST",
+    ),
+    recallSkippedPatient,
+);
+
+/* =========================================================
+   MARK SKIPPED PATIENT AS NO-SHOW
+   PATCH /api/queues/:id/skipped-no-show
+
+   body:
+   {
+      "reason": "Patient did not return"
+   }
+========================================================= */
+
+router.patch(
+    "/:id/skipped-no-show",
+    authorize(
+        "DOCTOR",
+        "HOSPITAL_ADMIN",
+        "RECEPTIONIST",
+    ),
+    markSkippedPatientNoShow,
+);
+
 /* =========================================================
    START SERVING
-
    PATCH /api/queues/:id/start
 ========================================================= */
 
 router.patch(
-  "/:id/start",
-  authorize(
-    "DOCTOR",
-  ),
-  startServingPatient,
+    "/:id/start",
+    authorize("DOCTOR"),
+    startServingPatient,
 );
 
 /* =========================================================
    COMPLETE PATIENT
-
    PATCH /api/queues/:id/complete
 ========================================================= */
 
 router.patch(
-  "/:id/complete",
-  authorize(
-    "DOCTOR",
-  ),
-  completePatient,
+    "/:id/complete",
+    authorize("DOCTOR"),
+    completePatient,
 );
 
 /* =========================================================
    SKIP PATIENT
-
    PATCH /api/queues/:id/skip
 ========================================================= */
 
 router.patch(
-  "/:id/skip",
-  authorize(
-    "DOCTOR",
-  ),
-  skipPatient,
+    "/:id/skip",
+    authorize("DOCTOR"),
+    skipPatient,
 );
 
 /* =========================================================

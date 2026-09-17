@@ -3,6 +3,8 @@ import type {
     Response,
 } from "express";
 
+import { Types } from "mongoose";
+
 import { ContactLead } from "../models/ContactLead.model";
 import { SuperAdminNotification } from "../models/SuperAdminNotification.model";
 
@@ -39,11 +41,92 @@ const isValidEmail = (
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 };
 
+const suspiciousPatterns = [
+    /https?:\/\//i,
+    /www\./i,
+    /casino/i,
+    /betting/i,
+    /loan/i,
+    /crypto/i,
+    /telegram/i,
+    /whatsapp group/i,
+    /seo service/i,
+    /backlink/i,
+    /adult/i,
+    /porn/i,
+];
+
+const hasSuspiciousContent = (
+    value: string,
+) => {
+    return suspiciousPatterns.some((pattern) =>
+        pattern.test(value),
+    );
+};
+
 export const createContactLead = async (
     req: Request,
     res: Response,
 ) => {
     try {
+        console.log("✅ CONTACT FORM HIT:", {
+            phone: req.body.phone,
+            source: req.body.source,
+            time: new Date().toISOString(),
+        });
+
+        // ============================================================
+        // BASIC BOT PROTECTION
+        // ============================================================
+
+        const honeypot =
+            cleanText(req.body.website, 100);
+
+        // Hidden field. Real users will not fill this.
+        // Bots often fill every field.
+        if (honeypot) {
+            return res.status(400).json({
+                success: false,
+                code: "INVALID_CONTACT_REQUEST",
+                message: "Invalid request.",
+            });
+        }
+
+        const formStartedAt =
+            Number(req.body.formStartedAt || 0);
+
+        // This will not break old frontend.
+        // When frontend sends formStartedAt, we validate timing.
+        if (formStartedAt) {
+            const timeTaken =
+                Date.now() - formStartedAt;
+
+            if (
+                Number.isNaN(formStartedAt) ||
+                timeTaken < 3000
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    code: "CONTACT_FORM_TOO_FAST",
+                    message:
+                        "Please wait a few seconds before submitting the form.",
+                });
+            }
+
+            if (timeTaken > 30 * 60 * 1000) {
+                return res.status(400).json({
+                    success: false,
+                    code: "CONTACT_FORM_EXPIRED",
+                    message:
+                        "Form expired. Please refresh and submit again.",
+                });
+            }
+        }
+
+        // ============================================================
+        // CLEAN INPUT
+        // ============================================================
+
         const name =
             cleanText(req.body.name, 80);
 
@@ -65,9 +148,20 @@ export const createContactLead = async (
         const message =
             cleanText(req.body.message, 1000);
 
+        const source =
+            cleanText(
+                req.body.source,
+                80,
+            ) || "WEBSITE_CONTACT_FORM";
+
+        // ============================================================
+        // VALIDATION
+        // ============================================================
+
         if (!name) {
             return res.status(400).json({
                 success: false,
+                code: "CONTACT_NAME_REQUIRED",
                 message: "Name is required.",
             });
         }
@@ -75,23 +169,102 @@ export const createContactLead = async (
         if (!/^\d{10}$/.test(phone)) {
             return res.status(400).json({
                 success: false,
-                message: "Phone number must be exactly 10 digits.",
+                code: "CONTACT_INVALID_PHONE",
+                message:
+                    "Phone number must be exactly 10 digits.",
             });
         }
 
         if (!isValidEmail(email)) {
             return res.status(400).json({
                 success: false,
-                message: "Please enter a valid email address.",
+                code: "CONTACT_INVALID_EMAIL",
+                message:
+                    "Please enter a valid email address.",
             });
         }
 
         if (!message) {
             return res.status(400).json({
                 success: false,
+                code: "CONTACT_MESSAGE_REQUIRED",
                 message: "Message is required.",
             });
         }
+
+        if (message.length < 10) {
+            return res.status(400).json({
+                success: false,
+                code: "CONTACT_MESSAGE_TOO_SHORT",
+                message:
+                    "Message should be at least 10 characters.",
+            });
+        }
+
+        const combinedText =
+            [
+                name,
+                email,
+                organization,
+                city,
+                interest,
+                message,
+            ].join(" ");
+
+        if (hasSuspiciousContent(combinedText)) {
+            return res.status(400).json({
+                success: false,
+                code: "CONTACT_SPAM_CONTENT",
+                message:
+                    "Your message contains unsupported content.",
+            });
+        }
+
+        // Block messages like aaaaaaaaaaaaa / 111111111111.
+        if (/(.)\1{9,}/.test(message)) {
+            return res.status(400).json({
+                success: false,
+                code: "CONTACT_INVALID_MESSAGE",
+                message:
+                    "Please enter a valid message.",
+            });
+        }
+
+        // ============================================================
+        // DUPLICATE PHONE PROTECTION
+        // Same phone number will not create another lead/notification
+        // for 24 hours.
+        // ============================================================
+
+        const oneDayAgo =
+            new Date(
+                Date.now() - 24 * 60 * 60 * 1000,
+            );
+
+        const existingRecentLead =
+            await ContactLead.findOne({
+                phone,
+                createdAt: {
+                    $gte: oneDayAgo,
+                },
+            }).lean();
+
+        if (existingRecentLead) {
+            return res.status(409).json({
+                success: false,
+                code: "DUPLICATE_CONTACT_PHONE",
+                message:
+                    "This phone number already submitted a demo request today. We will contact you soon.",
+                data: {
+                    duplicate: true,
+                    leadId: existingRecentLead._id,
+                },
+            });
+        }
+
+        // ============================================================
+        // CREATE LEAD
+        // ============================================================
 
         const lead =
             await ContactLead.create({
@@ -102,22 +275,27 @@ export const createContactLead = async (
                 city,
                 interest,
                 message,
-                source:
-                    cleanText(
-                        req.body.source,
-                        80,
-                    ) || "WEBSITE_CONTACT_FORM",
+                source,
             });
+
+        const leadId =
+            lead._id as Types.ObjectId;
+
+        // ============================================================
+        // CREATE SUPER ADMIN NOTIFICATION
+        // ============================================================
 
         const notification =
             await SuperAdminNotification.create({
                 title: "New demo request",
-                message: `${name} submitted a contact form for ${organization || "hospital/clinic demo"}.`,
+                message: `${name} submitted a contact form for ${
+                    organization || "hospital/clinic demo"
+                }.`,
                 type: "CONTACT_LEAD",
-                entityId: lead._id,
+                entityId: leadId,
                 entityModel: "ContactLead",
                 metadata: {
-                    leadId: lead._id,
+                    leadId,
                     name: lead.name,
                     phone: lead.phone,
                     email: lead.email,
@@ -125,6 +303,7 @@ export const createContactLead = async (
                     city: lead.city,
                     interest: lead.interest,
                     message: lead.message,
+                    source: lead.source,
                 },
             });
 
@@ -133,7 +312,7 @@ export const createContactLead = async (
             message:
                 "Thank you. We received your request and will contact you soon.",
             data: {
-                leadId: lead._id,
+                leadId,
                 notificationId: notification._id,
             },
         });
@@ -145,6 +324,7 @@ export const createContactLead = async (
 
         return res.status(500).json({
             success: false,
+            code: "CONTACT_SUBMIT_FAILED",
             message:
                 "Something went wrong while submitting contact form.",
         });

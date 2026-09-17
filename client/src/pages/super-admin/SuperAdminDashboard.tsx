@@ -27,6 +27,7 @@ import SuperAdminHospitals from "./SuperAdminHospitals";
 import SuperHospitalAdmin from "./SuperHospitalAdmin";
 import SuperDoctors from "./SuperDoctors";
 import SuperAdminNotifications from "./SuperAdminNotifications";
+import SuperAdminLeads from "./SuperAdminLeads";
 
 // =============================================================================
 // Types
@@ -41,6 +42,7 @@ type SuperAdminPage =
   | "patients"
   | "departments"
   | "queue"
+  |"CRM"
   | "reports"
   | "settings";
 
@@ -63,6 +65,7 @@ const PAGE_TITLES: Record<SuperAdminPage, string> = {
   patients: "Patients",
   departments: "Departments",
   queue: "Queue Monitoring",
+  CRM: "Customer Relationship Management",
   reports: "Reports",
   settings: "Settings",
 };
@@ -76,6 +79,7 @@ const PAGE_DESCRIPTIONS: Record<SuperAdminPage, string> = {
   patients: "View platform patient statistics",
   departments: "Monitor hospital departments",
   queue: "Monitor queues across all hospitals",
+  CRM: "Manage customer relationships",
   reports: "Platform reports and analytics",
   settings: "Manage Super Admin settings",
 };
@@ -89,6 +93,7 @@ const PAGE_ICONS: Record<SuperAdminPage, LucideIcon> = {
   patients: Users,
   departments: Network,
   queue: Ticket,
+  CRM: ShieldCheck,
   reports: Activity,
   settings: Settings,
 };
@@ -102,6 +107,7 @@ const NAV_ITEMS: NavConfig[] = [
   { page: "patients", label: "Patients", icon: Users },
   { page: "departments", label: "Departments", icon: Network },
   { page: "queue", label: "Queue Monitoring", icon: Ticket },
+  { page: "CRM", label: "CRM", icon: ShieldCheck },
   { page: "reports", label: "Reports", icon: Activity },
   { page: "settings", label: "Settings", icon: Settings },
 ];
@@ -110,6 +116,7 @@ const IMPLEMENTED_PAGES: Partial<Record<SuperAdminPage, ComponentType>> = {
   hospitals: SuperAdminHospitals,
   admins: SuperHospitalAdmin,
   doctors: SuperDoctors,
+  CRM: SuperAdminLeads,
 };
 
 // =============================================================================

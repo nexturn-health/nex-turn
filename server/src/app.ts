@@ -30,6 +30,7 @@ import publicAppointmentRoutes from "./routes/publicAppointment.routes";
 import doctorAvailabilityRoutes from "./routes/doctorAvailability.routes";
 import contactRoutes from "./routes/contact.routes";
 import superAdminNotificationRoutes from "./routes/superAdminNotification.routes";
+import superAdminLeadRoutes from "./routes/superAdminLead.routes";
 
 import { shutdownPostHog } from "./services/posthog.service";
 import { protect } from "./middleware/auth.middleware";
@@ -207,6 +208,10 @@ app.use(
     "/api/doctor-availability",
     protect,
     doctorAvailabilityRoutes,
+);
+app.use(
+    "/api/super-admin/leads",
+    superAdminLeadRoutes,
 );
 
 // ============================================================

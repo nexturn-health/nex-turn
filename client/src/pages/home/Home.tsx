@@ -333,10 +333,6 @@ export default function Home() {
         >
             <HomeStyles />
 
-
-
-
-
             <header className="nx-header">
                 <div className="nx-container nx-header-row">
                     <button
@@ -346,7 +342,7 @@ export default function Home() {
                         aria-label="NextSynq Health home"
                     >
                         <img className="nx-brand-image" src={LOGO_IMAGE}
-                                    alt="NextSynq Health" width={2048} height={768} />
+                            alt="NextSynq Health" width={2048} height={768} />
                     </button>
 
                     <nav
@@ -475,7 +471,7 @@ export default function Home() {
                                 <span className="nx-kicker">
                                     All-in-one OPD management for hospitals
                                 </span>
-</div>
+                            </div>
 
                             <h1>
                                 Smarter OPD,
@@ -1266,15 +1262,99 @@ interface ContactFormState {
     city: string;
     interest: string;
     message: string;
+
+    // Anti-spam
+    website: string;
+    formStartedAt: number;
 }
 
 interface ContactApiResponse {
     success: boolean;
+    code?: string;
     message?: string;
     data?: {
         leadId?: string;
         notificationId?: string;
+        duplicate?: boolean;
     };
+}
+
+type ContactPopupType =
+    | "success"
+    | "error";
+
+interface ContactPopupState {
+    type: ContactPopupType;
+    title: string;
+    message: string;
+}
+
+interface ContactPhoneCache {
+    phone: string;
+    submittedAt: number;
+}
+
+const CONTACT_PHONE_CACHE_KEY =
+    "nextsynq-contact-submitted-phone";
+
+const CONTACT_PHONE_CACHE_TIME =
+    24 * 60 * 60 * 1000;
+
+function hasRecentlySubmittedContactPhone(
+    phone: string,
+) {
+    if (typeof window === "undefined") {
+        return false;
+    }
+
+    try {
+        const raw =
+            window.localStorage.getItem(
+                CONTACT_PHONE_CACHE_KEY,
+            );
+
+        if (!raw) {
+            return false;
+        }
+
+        const cache =
+            JSON.parse(raw) as ContactPhoneCache;
+
+        if (!cache.phone || !cache.submittedAt) {
+            return false;
+        }
+
+        const isSamePhone =
+            cache.phone === phone;
+
+        const isStillBlocked =
+            Date.now() - cache.submittedAt <
+            CONTACT_PHONE_CACHE_TIME;
+
+        return isSamePhone && isStillBlocked;
+    } catch {
+        return false;
+    }
+}
+
+function saveSubmittedContactPhone(
+    phone: string,
+) {
+    if (typeof window === "undefined") {
+        return;
+    }
+
+    try {
+        window.localStorage.setItem(
+            CONTACT_PHONE_CACHE_KEY,
+            JSON.stringify({
+                phone,
+                submittedAt: Date.now(),
+            } satisfies ContactPhoneCache),
+        );
+    } catch {
+        // Browser storage is optional.
+    }
 }
 
 const createInitialContactForm = (): ContactFormState => ({
@@ -1285,6 +1365,10 @@ const createInitialContactForm = (): ContactFormState => ({
     city: "",
     interest: "Free demo",
     message: "",
+
+    // Anti-spam
+    website: "",
+    formStartedAt: Date.now(),
 });
 
 function ContactSection() {
@@ -1296,11 +1380,20 @@ function ContactSection() {
     const [loading, setLoading] =
         useState(false);
 
-    const [successMessage, setSuccessMessage] =
-        useState("");
+    const [popup, setPopup] =
+        useState<ContactPopupState | null>(null);
 
-    const [errorMessage, setErrorMessage] =
-        useState("");
+    function showContactPopup(
+        type: ContactPopupType,
+        title: string,
+        message: string,
+    ) {
+        setPopup({
+            type,
+            title,
+            message,
+        });
+    }
 
     function updateField(
         field: keyof ContactFormState,
@@ -1329,8 +1422,7 @@ function ContactSection() {
     ) {
         event.preventDefault();
 
-        setSuccessMessage("");
-        setErrorMessage("");
+        setPopup(null);
 
         const payload = {
             name: form.name.trim(),
@@ -1341,15 +1433,25 @@ function ContactSection() {
             interest: form.interest.trim(),
             message: form.message.trim(),
             source: "WEBSITE_HOME_CONTACT_FORM",
+            website: form.website,
+            formStartedAt: form.formStartedAt,
         };
 
         if (!payload.name) {
-            setErrorMessage("Please enter your name.");
+            showContactPopup(
+                "error",
+                "Name required",
+                "Please enter your name.",
+            );
             return;
         }
 
         if (!/^\d{10}$/.test(payload.phone)) {
-            setErrorMessage("Please enter a valid 10 digit phone number.");
+            showContactPopup(
+                "error",
+                "Invalid phone number",
+                "Please enter a valid 10 digit phone number.",
+            );
             return;
         }
 
@@ -1357,17 +1459,46 @@ function ContactSection() {
             payload.email &&
             !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)
         ) {
-            setErrorMessage("Please enter a valid email address.");
+            showContactPopup(
+                "error",
+                "Invalid email",
+                "Please enter a valid email address.",
+            );
             return;
         }
 
         if (!payload.message) {
-            setErrorMessage("Please enter your message.");
+            showContactPopup(
+                "error",
+                "Message required",
+                "Please enter your message.",
+            );
+            return;
+        }
+
+        if (hasRecentlySubmittedContactPhone(payload.phone)) {
+            showContactPopup(
+                "error",
+                "Already submitted",
+                "This phone number already submitted a demo request today. We will contact you soon.",
+            );
             return;
         }
 
         try {
             setLoading(true);
+
+            const remainingTime =
+                Math.max(
+                    0,
+                    3000 - (Date.now() - form.formStartedAt),
+                );
+
+            if (remainingTime > 0) {
+                await new Promise((resolve) =>
+                    window.setTimeout(resolve, remainingTime),
+                );
+            }
 
             const response =
                 await fetch(`${API_URL}/contact`, {
@@ -1383,21 +1514,44 @@ function ContactSection() {
                     .json()
                     .catch(() => null)) as ContactApiResponse | null;
 
+            if (
+                response.status === 409 ||
+                data?.code === "DUPLICATE_CONTACT_PHONE" ||
+                data?.data?.duplicate
+            ) {
+                saveSubmittedContactPhone(payload.phone);
+
+                showContactPopup(
+                    "error",
+                    "Already submitted",
+                    data?.message ||
+                    "This phone number already submitted a demo request today. We will contact you soon.",
+                );
+
+                return;
+            }
+
             if (!response.ok || !data?.success) {
                 throw new Error(
                     data?.message ||
-                        "Unable to submit contact form.",
+                    "Unable to submit contact form.",
                 );
             }
 
-            setSuccessMessage(
+            saveSubmittedContactPhone(payload.phone);
+
+            showContactPopup(
+                "success",
+                "Request submitted",
                 data.message ||
-                    "Thank you. We received your request. Our team will contact you soon.",
+                "Thank you. We received your request. Our team will contact you soon.",
             );
 
             setForm(createInitialContactForm());
         } catch (error) {
-            setErrorMessage(
+            showContactPopup(
+                "error",
+                "Unable to submit",
                 error instanceof Error
                     ? error.message
                     : "Unable to submit contact form.",
@@ -1455,24 +1609,29 @@ function ContactSection() {
                     className="nx-contact-form"
                     onSubmit={submitContactForm}
                 >
+                    <input
+                        type="text"
+                        name="website"
+                        value={form.website}
+                        onChange={(event) =>
+                            updateField(
+                                "website",
+                                event.target.value,
+                            )
+                        }
+                        tabIndex={-1}
+                        autoComplete="off"
+                        className="nx-contact-honeypot"
+                        aria-hidden="true"
+                    />
+
+
                     <div className="nx-contact-form-head">
                         <h3>Request a demo</h3>
                         <p>
                             Fill the form to next step.
                         </p>
                     </div>
-
-                    {successMessage && (
-                        <div className="nx-contact-alert success">
-                            {successMessage}
-                        </div>
-                    )}
-
-                    {errorMessage && (
-                        <div className="nx-contact-alert error">
-                            {errorMessage}
-                        </div>
-                    )}
 
                     <label>
                         <span>
@@ -1593,8 +1752,7 @@ function ContactSection() {
                             required
                         />
                     </label>
-
-                    <button
+<button
                         type="submit"
                         className="nx-button nx-contact-submit"
                         disabled={loading}
@@ -1604,10 +1762,87 @@ function ContactSection() {
                     </button>
                 </form>
             </div>
+
+            {popup && (
+                <ContactMessagePopup
+                    type={popup.type}
+                    title={popup.title}
+                    message={popup.message}
+                    onClose={() => setPopup(null)}
+                />
+            )}
         </section>
     );
 }
 
+
+
+interface ContactMessagePopupProps {
+    type: ContactPopupType;
+    title: string;
+    message: string;
+    onClose: () => void;
+}
+
+function ContactMessagePopup({
+    type,
+    title,
+    message,
+    onClose,
+}: ContactMessagePopupProps) {
+    const isSuccess =
+        type === "success";
+
+    return (
+        <div
+            className="nx-contact-popup-backdrop"
+            role="presentation"
+            onClick={onClose}
+        >
+            <div
+                className="nx-contact-popup"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="nx-contact-popup-title"
+                onClick={(event) => event.stopPropagation()}
+                data-type={type}
+            >
+                <button
+                    type="button"
+                    className="nx-contact-popup-close"
+                    onClick={onClose}
+                    aria-label="Close message"
+                >
+                    <X size={18} />
+                </button>
+
+                <div className="nx-contact-popup-icon">
+                    {isSuccess ? (
+                        <Check size={26} />
+                    ) : (
+                        <X size={25} />
+                    )}
+                </div>
+
+                <h3 id="nx-contact-popup-title">
+                    {title}
+                </h3>
+
+                <p>
+                    {message}
+                </p>
+
+                <button
+                    type="button"
+                    className="nx-button nx-contact-popup-action"
+                    onClick={onClose}
+                >
+                    Okay
+                </button>
+            </div>
+        </div>
+    );
+}
 
 // Inline social icons keep this file compatible with Lucide versions without brand icons.
 function Instagram({ size = 18 }: { size?: number }) {
@@ -3849,6 +4084,15 @@ function HomeStyles() {
                 grid-column: 1 / -1;
             }
 
+            .nx-contact-honeypot {
+                position: absolute !important;
+                left: -9999px !important;
+                width: 1px !important;
+                height: 1px !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
+            }
+
             .nx-contact-form-head h3 {
                 font-size: 25px;
                 line-height: 1.2;
@@ -3971,6 +4215,116 @@ function HomeStyles() {
 
                 .nx-contact-submit {
                     width: 100%;
+                }
+            }
+
+
+
+            .nx-contact-popup-backdrop {
+                position: fixed;
+                inset: 0;
+                z-index: 9999;
+                display: grid;
+                place-items: center;
+                padding: 18px;
+                background: rgba(23, 61, 57, 0.42);
+                backdrop-filter: blur(5px);
+            }
+
+            .nx-contact-popup {
+                position: relative;
+                width: min(420px, 100%);
+                padding: 30px 24px 24px;
+                border: 1px solid var(--line);
+                border-radius: 24px;
+                background: var(--surface);
+                color: var(--ink);
+                text-align: center;
+                box-shadow: 0 28px 80px #0f241d40;
+                animation: nxContactPopupIn 0.18s ease-out;
+            }
+
+            .nx-contact-popup::before {
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 5px;
+                content: "";
+                border-radius: 24px 24px 0 0;
+                background: var(--green);
+            }
+
+            .nx-contact-popup[data-type="error"]::before {
+                background: #dc2626;
+            }
+
+            .nx-contact-popup-close {
+                position: absolute;
+                top: 13px;
+                right: 13px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 34px;
+                height: 34px;
+                border: 1px solid var(--line);
+                border-radius: 999px;
+                background: var(--surface);
+                color: var(--ink);
+            }
+
+            .nx-contact-popup-close:hover {
+                background: var(--soft);
+                color: var(--green);
+            }
+
+            .nx-contact-popup-icon {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 62px;
+                height: 62px;
+                margin-bottom: 16px;
+                border-radius: 999px;
+                background: var(--soft);
+                color: var(--green);
+            }
+
+            .nx-contact-popup[data-type="error"] .nx-contact-popup-icon {
+                background: #fff0f0;
+                color: #dc2626;
+            }
+
+            .nx-contact-popup h3 {
+                margin: 0;
+                font-size: 24px;
+                font-weight: 850;
+                line-height: 1.2;
+            }
+
+            .nx-contact-popup p {
+                margin: 10px auto 0;
+                max-width: 330px;
+                color: var(--muted);
+                font-size: 14px;
+                line-height: 1.65;
+            }
+
+            .nx-contact-popup-action {
+                width: 100%;
+                margin-top: 22px;
+            }
+
+            @keyframes nxContactPopupIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(8px) scale(0.98);
+                }
+
+                to {
+                    opacity: 1;
+                    transform: translateY(0) scale(1);
                 }
             }
 

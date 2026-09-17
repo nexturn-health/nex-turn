@@ -36,6 +36,18 @@ export type AppointmentCallStatus =
     | "PRIORITY"
     | "MISSED";
 
+export type QueueRecallStatus =
+    | "NONE"
+    | "WAITING_RECALL"
+    | "RECALLED"
+    | "NO_SHOW";
+
+export type QueueRecallMode =
+    | "NONE"
+    | "RECALL_NOW"
+    | "AFTER_CURRENT"
+    | "END_OF_QUEUE";
+
 /* ============================================================
 
    QUEUE INTERFACE
@@ -141,6 +153,46 @@ export interface IQueue {
 
     manuallyCalledAfterMissedAt?:
         Date | null;
+
+    /* ============================================================
+       SKIPPED / RECALL / OVERRIDE FLOW
+    ============================================================ */
+
+    skipReason?:
+        string;
+
+    skippedAt?:
+        Date | null;
+
+    skippedBy?:
+        mongoose.Types.ObjectId | null;
+
+    skipCount?:
+        number;
+
+    recallStatus?:
+        QueueRecallStatus;
+
+    recallMode?:
+        QueueRecallMode;
+
+    recalledAt?:
+        Date | null;
+
+    recalledBy?:
+        mongoose.Types.ObjectId | null;
+
+    manualOverride?:
+        boolean;
+
+    manualOverrideReason?:
+        string;
+
+    manualOverrideAt?:
+        Date | null;
+
+    manualOverrideBy?:
+        mongoose.Types.ObjectId | null;
 
     createdAt?:
         Date;
@@ -538,6 +590,150 @@ const queueSchema =
                 default:
                     null,
             },
+
+            /* ============================================================
+               SKIPPED / RECALL / OVERRIDE FLOW
+            ============================================================ */
+
+            skipReason: {
+                type:
+                    String,
+
+                trim:
+                    true,
+
+                maxlength:
+                    300,
+
+                default:
+                    "",
+            },
+
+            skippedAt: {
+                type:
+                    Date,
+
+                default:
+                    null,
+            },
+
+            skippedBy: {
+                type:
+                    Schema.Types.ObjectId,
+
+                ref:
+                    "User",
+
+                default:
+                    null,
+            },
+
+            skipCount: {
+                type:
+                    Number,
+
+                default:
+                    0,
+
+                min:
+                    0,
+            },
+
+            recallStatus: {
+                type:
+                    String,
+
+                enum: [
+                    "NONE",
+                    "WAITING_RECALL",
+                    "RECALLED",
+                    "NO_SHOW",
+                ],
+
+                default:
+                    "NONE",
+
+                index:
+                    true,
+            },
+
+            recallMode: {
+                type:
+                    String,
+
+                enum: [
+                    "NONE",
+                    "RECALL_NOW",
+                    "AFTER_CURRENT",
+                    "END_OF_QUEUE",
+                ],
+
+                default:
+                    "NONE",
+            },
+
+            recalledAt: {
+                type:
+                    Date,
+
+                default:
+                    null,
+            },
+
+            recalledBy: {
+                type:
+                    Schema.Types.ObjectId,
+
+                ref:
+                    "User",
+
+                default:
+                    null,
+            },
+
+            manualOverride: {
+                type:
+                    Boolean,
+
+                default:
+                    false,
+
+                index:
+                    true,
+            },
+
+            manualOverrideReason: {
+                type:
+                    String,
+
+                trim:
+                    true,
+
+                maxlength:
+                    300,
+
+                default:
+                    "",
+            },
+
+            manualOverrideAt: {
+                type:
+                    Date,
+
+                default:
+                    null,
+            },
+
+            manualOverrideBy: {
+                type:
+                    Schema.Types.ObjectId,
+
+                ref:
+                    "User",
+
+                default:
+                    null,
+            },
         },
         {
             timestamps:
@@ -814,6 +1010,62 @@ queueSchema.index({
         1,
 
     appointmentMissedAt:
+        -1,
+});
+
+/* ============================================================
+
+   SKIPPED / RECALL / OVERRIDE FLOW INDEXES
+
+   Used for:
+   - skipped patient section
+   - manual recall
+   - queue override before normal queue
+
+============================================================ */
+
+queueSchema.index({
+    hospitalId:
+        1,
+
+    doctorId:
+        1,
+
+    queueDate:
+        1,
+
+    status:
+        1,
+
+    manualOverride:
+        -1,
+});
+
+queueSchema.index({
+    hospitalId:
+        1,
+
+    doctorId:
+        1,
+
+    queueDate:
+        1,
+
+    recallStatus:
+        1,
+});
+
+queueSchema.index({
+    hospitalId:
+        1,
+
+    queueDate:
+        1,
+
+    status:
+        1,
+
+    skippedAt:
         -1,
 });
 
