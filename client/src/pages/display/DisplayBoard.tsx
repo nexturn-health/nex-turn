@@ -68,18 +68,7 @@ const ANNOUNCEMENT_TEXT: Record<DisplayLanguage, (token: string, dept: string) =
   ML: (t, d) => `ടോക്കൺ ${t}, ${d} ദയവായി മുന്നോട്ട് വരിക.`,
 };
 
-const EMERGENCY_ANNOUNCEMENT_TEXT: Record<DisplayLanguage, (token: string, dept: string) => string> = {
-  EN: (t, d) => `Emergency token ${t}, please proceed immediately to ${d}.`,
-  HI: (t, d) => `आपातकालीन टोकन ${toHindiSpeech(t)}, कृपया तुरंत ${d} में आगे आएं।`,
-  BN: (t, d) => `জরুরি টোকেন ${t}, অনুগ্রহ করে এখনই ${d} এর জন্য এগিয়ে আসুন।`,
-  MR: (t, d) => `आपत्कालीन टोकन ${t}, कृपया त्वरित ${d} मध्ये पुढे या.`,
-  TA: (t, d) => `அவசர டோக்கன் ${t}, ${d} தயவுசெய்து உடனே முன் வாருங்கள்.`,
-  TE: (t, d) => `ఎమర్జెన్సీ టోకెన్ ${t}, ${d} కు వెంటనే ముందుకు రండి.`,
-  KN: (t, d) => `ತುರ್ತು ಟೋಕನ್ ${t}, ದಯವಿಟ್ಟು ತಕ್ಷಣ ${d} ಗೆ ಬನ್ನಿ.`,
-  GU: (t, d) => `ઇમરજન્સી ટોકન ${t}, કૃપા કરીને તરત ${d} માટે આગળ આવો.`,
-  PA: (t, d) => `ਐਮਰਜੈਂਸੀ ਟੋਕਨ ${t}, ਕਿਰਪਾ ਕਰਕੇ ਤੁਰੰਤ ${d} ਲਈ ਅੱਗੇ ਆਓ।`,
-  ML: (t, d) => `അടിയന്തര ടോക്കൺ ${t}, ദയവായി ഉടൻ ${d} ലേക്ക് വരിക.`,
-};
+
 
 type DisplayTokenSource = "WALK_IN" | "APPOINTMENT" | "EMERGENCY";
 
@@ -136,18 +125,7 @@ const DOCTOR_OFFLINE_TEXT: Record<DisplayLanguage, (name: string) => string> = {
   ML: (n) => `ഡോക്ടർ ${n} നിലവിൽ ഓഫ്‌ലൈനിലാണ്. ദയവായി കാത്തിരിക്കുക.`,
 };
 
-const DOCTOR_ONLINE_TEXT: Record<DisplayLanguage, (name: string) => string> = {
-  EN: (n) => `Doctor ${n} is now online.`,
-  HI: (n) => `डॉक्टर ${n} अब ऑनलाइन हैं।`,
-  BN: (n) => `ডাক্তার ${n} এখন অনলাইনে আছেন।`,
-  MR: (n) => `डॉक्टर ${n} आता ऑनलाइन आहेत.`,
-  TA: (n) => `டாக்டர் ${n} இப்போது ஆன்லைனில் உள்ளார்.`,
-  TE: (n) => `డాక్టర్ ${n} ఇప్పుడు ఆన్‌లైన్‌లో ఉన్నారు.`,
-  KN: (n) => `ಡಾಕ್ಟರ್ ${n} ಈಗ ಆನ್‌ಲೈನ್‌ನಲ್ಲಿದ್ದಾರೆ.`,
-  GU: (n) => `ડૉક્ટર ${n} હવે ઑનલાઇન છે.`,
-  PA: (n) => `ਡਾਕਟਰ ${n} ਹੁਣ ਔਨਲਾਈਨ ਹਨ.`,
-  ML: (n) => `ഡോക്ടർ ${n} ഇപ്പോൾ ഓൺലൈനിലാണ്.`,
-};
+
 
 const DOCTOR_BREAK_TEXT: Record<DisplayLanguage, (name: string) => string> = {
   EN: (n) => `Doctor ${n} is on break. Queue is paused. Please wait for the next announcement.`,
@@ -162,73 +140,12 @@ const DOCTOR_BREAK_TEXT: Record<DisplayLanguage, (name: string) => string> = {
   ML: (n) => `ഡോക്ടർ ${n} ഇടവേളയിലാണ്. ദയവായി അടുത്ത പ്രഖ്യാപനം കാത്തിരിക്കുക.`,
 };
 
-const DOCTOR_RESUME_TEXT: Record<DisplayLanguage, (name: string) => string> = {
-  EN: (n) => `Doctor ${n} has resumed duty. Queue will continue now.`,
-  HI: (n) => `डॉक्टर ${n} वापस आ गए हैं। कतार अब फिर से शुरू होगी।`,
-  BN: (n) => `ডাক্তার ${n} আবার কাজ শুরু করেছেন। কিউ এখন চলবে।`,
-  MR: (n) => `डॉक्टर ${n} पुन्हा ड्युटीवर आले आहेत. कतार आता सुरू होईल.`,
-  TA: (n) => `டாக்டர் ${n} மீண்டும் பணிக்கு வந்துள்ளார். வரிசை இப்போது தொடரும்.`,
-  TE: (n) => `డాక్టర్ ${n} తిరిగి విధుల్లో చేరారు. క్యూ ఇప్పుడు కొనసాగుతుంది.`,
-  KN: (n) => `ಡಾಕ್ಟರ್ ${n} ಮತ್ತೆ ಕರ್ತವ್ಯಕ್ಕೆ ಬಂದಿದ್ದಾರೆ. ಸಾಲು ಈಗ ಮುಂದುವರಿಯುತ್ತದೆ.`,
-  GU: (n) => `ડૉક્ટર ${n} ફરી ડ્યૂટી પર આવી ગયા છે. કતાર હવે ચાલુ રહેશે.`,
-  PA: (n) => `ਡਾਕਟਰ ${n} ਮੁੜ ਡਿਊਟੀ 'ਤੇ ਆ ਗਏ ਹਨ। ਕਤਾਰ ਹੁਣ ਜਾਰੀ ਰਹੇਗੀ।`,
-  ML: (n) => `ഡോക്ടർ ${n} വീണ്ടും ഡ്യൂട്ടിയിൽ എത്തിയിട്ടുണ്ട്. ക്യൂ ഇപ്പോൾ തുടരും.`,
-};
+
 
 const POLL_INTERVAL_MS = 1_000;
-const SPEECH_REPEAT_DELAY_MS = 600;
-const MAX_SPEECH_REPEATS = 3;
+// Announcements repeat twice with a short, natural pause.
+const SPEECH_REPEAT_DELAY_MS = 1500;
 const DEFAULT_VOICE_LOCALE = "en-IN";
-const CHIME_TO_SPEECH_DELAY_MS = 900;
-
-/**
- * Plays a two-tone descending chime (like Indian metro/PA systems) before an
- * announcement, using the Web Audio API — no audio file needed. Resolves
- * once the chime has finished so the caller can start speaking after it.
- */
-function playAnnouncementChime(): Promise<void> {
-  return new Promise((resolve) => {
-    try {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioContextClass) {
-        resolve();
-        return;
-      }
-
-      const ctx = new AudioContextClass();
-      const startTime = ctx.currentTime;
-
-      const playTone = (frequency: number, start: number, duration: number) => {
-        const oscillator = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        oscillator.type = "sine";
-        oscillator.frequency.value = frequency;
-
-        gain.gain.setValueAtTime(0, startTime + start);
-        gain.gain.linearRampToValueAtTime(0.25, startTime + start + 0.05);
-        gain.gain.linearRampToValueAtTime(0, startTime + start + duration);
-
-        oscillator.connect(gain);
-        gain.connect(ctx.destination);
-        oscillator.start(startTime + start);
-        oscillator.stop(startTime + start + duration + 0.05);
-      };
-
-      // "Ding" (G5) then "dong" (E5) — a calm, familiar two-tone chime.
-      playTone(784, 0, 0.35);
-      playTone(659, 0.32, 0.45);
-
-      window.setTimeout(() => {
-        ctx.close();
-        resolve();
-      }, CHIME_TO_SPEECH_DELAY_MS);
-    } catch (err) {
-      console.error("CHIME ERROR:", err);
-      resolve();
-    }
-  });
-}
 
 function useClock() {
   const [now, setNow] = useState(() => new Date());
@@ -328,178 +245,115 @@ function useDisplayPolling(displayKey: string | undefined) {
 
 // Hook: text-to-speech announcer
 
+type SpeechJob = { text: string; locale: DisplayLanguage; repeats: number; valid: () => boolean };
+
+// One speech queue prevents announcements from cutting each other off.
 function useSpeechAnnouncer(voicesRef: { current: SpeechSynthesisVoice[] }) {
   const [enabled, setEnabled] = useState(false);
-  const [selectedVoiceName, setSelectedVoiceName] = useState<string>(() =>
-    typeof window !== "undefined" ? localStorage.getItem("nexturn-display-voice") ?? "" : "",
-  );
+  const [selectedVoiceName, setSelectedVoiceName] = useState("");
+  const [speechError, setSpeechError] = useState("");
+  const enabledRef = useRef(false);
+  const selectedRef = useRef("");
+  const jobs = useRef<SpeechJob[]>([]);
+  const running = useRef(false);
+  const generation = useRef(0);
+  const release = useRef<(() => void) | null>(null);
+  const activeUtterance = useRef<SpeechSynthesisUtterance | null>(null);
 
-  const findVoice = (locale: DisplayLanguage) => {
-    const voiceCode = VOICE_LOCALES[locale] ?? DEFAULT_VOICE_LOCALE;
-    const voices = voicesRef.current.length > 0
-      ? voicesRef.current
-      : (voicesRef.current = window.speechSynthesis.getVoices());
+  function cancel() {
+    generation.current += 1;
+    jobs.current = [];
+    running.current = false;
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    release.current?.();
+    release.current = null;
+    activeUtterance.current = null;
+  }
 
-    // If the user selected a specific browser voice, always use it.
-    // This makes the voice selector work independently from the display language.
-    if (selectedVoiceName) {
-      const selectedVoice = voices.find((v) => v.name === selectedVoiceName);
-      if (selectedVoice) {
-        return { voiceCode: selectedVoice.lang || voiceCode, voice: selectedVoice };
-      }
-    }
+  function findVoice(locale: DisplayLanguage) {
+    const code = VOICE_LOCALES[locale] || DEFAULT_VOICE_LOCALE;
+    const prefix = code.split("-")[0].toLowerCase();
+    const voices = window.speechSynthesis.getVoices();
+    voicesRef.current = voices;
+    // Never use an English voice to read Hindi just because it was selected earlier.
+    const compatible = voices.filter(v => v.lang.toLowerCase().split(/[-_]/)[0] === prefix);
+    return compatible.find(v => v.name === selectedRef.current)
+      || compatible.find(v => /natural|neural|google/i.test(v.name))
+      || compatible.find(v => v.lang.toLowerCase() === code.toLowerCase())
+      || compatible[0];
+  }
 
-    // Prefer Google's voices where available — noticeably clearer and calmer
-    // than most default OS voices, which tends to matter most for Hindi.
-    const preferGoogle = (candidates: SpeechSynthesisVoice[]) =>
-      candidates.find((v) => v.name.toLowerCase().includes("google")) ?? candidates[0];
-
-    let match = preferGoogle(voices.filter((v) => v.lang.toLowerCase() === voiceCode.toLowerCase()));
-
-    if (!match) {
-      const prefix = voiceCode.split("-")[0].toLowerCase();
-      match = preferGoogle(voices.filter((v) => v.lang.toLowerCase().startsWith(prefix)));
-    }
-
-    // Some Android/Chrome voice packs expose Hindi without a matching BCP-47 tag.
-    if (!match && locale === "HI") {
-      match = preferGoogle(
-        voices.filter((v) => {
-          const name = v.name.toLowerCase();
-          const lang = v.lang.toLowerCase();
-          return lang.includes("hi") || name.includes("hindi") || name.includes("हिंदी");
-        }),
-      );
-    }
-
-    return { voiceCode, voice: match };
-  };
-
-  const speak = async (text: string, locale: DisplayLanguage, repeatCount = 1) => {
-    if (!enabled || !text.trim() || !("speechSynthesis" in window)) return;
-
-    const synth = window.speechSynthesis;
-    const { voiceCode, voice } = findVoice(locale);
-    const repeats = Math.min(Math.max(repeatCount, 1), MAX_SPEECH_REPEATS);
-
-    synth.cancel();
-
-    // The metro-style chime + slower pacing is specifically for Hindi
-    // announcements. Every other language speaks immediately, same as before.
-    if (locale === "HI") {
-      await playAnnouncementChime();
-    }
-
-    const speakOnce = (count: number) => {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = voiceCode;
-      utterance.rate = locale === "HI" ? 0.66 : 0.82;
-      utterance.pitch = locale === "HI" ? 0.95 : 1;
-      utterance.volume = 1;
-      if (voice) utterance.voice = voice;
-
-      utterance.onerror = (event) => console.error("VOICE ERROR:", event);
-      utterance.onend = () => {
-        if (count < repeats) {
-          window.setTimeout(() => speakOnce(count + 1), SPEECH_REPEAT_DELAY_MS);
+  async function drain() {
+    if (running.current) return;
+    running.current = true;
+    const version = generation.current;
+    while (jobs.current.length && version === generation.current) {
+      const job = jobs.current.shift()!;
+      for (let count = 0; count < job.repeats; count += 1) {
+        if (!enabledRef.current || version !== generation.current || !job.valid()) break;
+        const voice = findVoice(job.locale);
+        if (!voice) {
+          setSpeechError(`Install a ${LANGUAGE_NAMES[job.locale]} voice on this device, then try again.`);
+          break;
         }
-      };
-
-      try {
-        synth.speak(utterance);
-      } catch (err) {
-        console.error("SPEECH ERROR:", err);
+        await new Promise<void>(resolve => {
+          const utterance = new SpeechSynthesisUtterance(job.text);
+          activeUtterance.current = utterance;
+          utterance.voice = voice;
+          utterance.lang = voice.lang;
+          utterance.rate = job.locale === "HI" ? 0.9 : 0.94;
+          utterance.pitch = 1;
+          let finished = false;
+          const finish = () => {
+            if (finished) return;
+            finished = true;
+            window.clearTimeout(watchdog);
+            resolve();
+          };
+          const watchdog = window.setTimeout(() => {
+            if (version === generation.current) window.speechSynthesis.cancel();
+            finish();
+          }, 45000);
+          release.current = finish;
+          utterance.onend = finish;
+          utterance.onerror = event => {
+            if (event.error !== "canceled" && event.error !== "interrupted") setSpeechError("Voice could not play. Check the device sound and test the voice.");
+            finish();
+          };
+          try { window.speechSynthesis.speak(utterance); } catch { finish(); }
+        });
+        if (version !== generation.current) return;
+        if (count + 1 < job.repeats) await new Promise<void>(resolve => {
+          const timer = window.setTimeout(resolve, SPEECH_REPEAT_DELAY_MS);
+          release.current = () => { window.clearTimeout(timer); resolve(); };
+        });
       }
-    };
-
-    speakOnce(1);
-  };
-
-  const selectVoice = (voiceName: string) => {
-    setSelectedVoiceName(voiceName);
-    localStorage.setItem("nexturn-display-voice", voiceName);
-
-    if (!voiceName || !("speechSynthesis" in window)) return;
-
-    const voice = voicesRef.current.find((v) => v.name === voiceName);
-    if (!voice) return;
-
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance("Voice selected.");
-    utterance.voice = voice;
-    utterance.lang = voice.lang || DEFAULT_VOICE_LOCALE;
-    utterance.rate = 0.85;
-    utterance.volume = 1;
-
-    try {
-      window.speechSynthesis.speak(utterance);
-    } catch (err) {
-      console.error("VOICE TEST ERROR:", err);
     }
-  };
+    if (version === generation.current) running.current = false;
+  }
 
-  const testVoice = (locale: DisplayLanguage) => {
-    if (!("speechSynthesis" in window)) return;
-
-    const { voiceCode, voice } = findVoice(locale);
-    const text = locale === "HI"
-      ? "यह नेक्सटर्न वॉइस टेस्ट है।"
-      : "This is a NexTurn voice test.";
-
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = voiceCode;
-    utterance.rate = locale === "HI" ? 0.72 : 0.85;
-    utterance.pitch = locale === "HI" ? 0.95 : 1;
-    utterance.volume = 1;
-    if (voice) utterance.voice = voice;
-
-    try {
-      window.speechSynthesis.speak(utterance);
-    } catch (err) {
-      console.error("VOICE TEST ERROR:", err);
-    }
-  };
-
-  const activate = () => {
-    if (!("speechSynthesis" in window)) {
-      alert("Speech synthesis is not supported in this browser.");
-      return;
-    }
-
-    const synth = window.speechSynthesis;
-    voicesRef.current = synth.getVoices();
+  function speak(text: string, locale: DisplayLanguage, repeatCount = 1, valid = () => true) {
+    if (!enabledRef.current || !text.trim()) return;
+    jobs.current.push({ text, locale, repeats: Math.min(2, Math.max(1, repeatCount)), valid });
+    void drain();
+  }
+  function activate() {
+    if (!("speechSynthesis" in window)) { setSpeechError("This browser does not support voice announcements."); return; }
+    enabledRef.current = true;
     setEnabled(true);
-
-    synth.cancel();
-    const utterance = new SpeechSynthesisUtterance("Voice announcements enabled.");
-    utterance.lang = DEFAULT_VOICE_LOCALE;
-    utterance.rate = 0.85;
-    utterance.volume = 1;
-
-    try {
-      synth.speak(utterance);
-    } catch (err) {
-      console.error("VOICE ACTIVATION ERROR:", err);
-    }
-  };
-
-  useEffect(
-    () => () => {
-      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-    },
-    [],
-  );
-
-  return {
-    enabled,
-    speak,
-    activate,
-    voices: voicesRef.current,
-    selectedVoiceName,
-    selectVoice,
-    testVoice,
-  };
+    setSpeechError("");
+    window.speechSynthesis.resume();
+  }
+  function deactivate() { enabledRef.current = false; setEnabled(false); cancel(); }
+  function selectVoice(name: string) { selectedRef.current = name; setSelectedVoiceName(name); }
+  function testVoice(locale: DisplayLanguage) {
+    activate();
+    if (!("speechSynthesis" in window)) return;
+    cancel();
+    speak(locale === "HI" ? "टोकन नंबर एच शून्य एक दो। कृपया डॉक्टर के कमरे में जाएँ।" : "Token number H zero one two. Please proceed to the doctor's room.", locale);
+  }
+  useEffect(() => () => { enabledRef.current = false; cancel(); }, []);
+  return { enabled, speak, cancel, activate, deactivate, speechError, voices: voicesRef.current, selectedVoiceName, selectVoice, testVoice };
 }
 
 
@@ -666,93 +520,92 @@ function DoctorBreakPanel({
 
 // Hook: derives voice announcements from display state changes
 
+// Queue status is authoritative: never advance or call a patient with a timer.
 function useAnnouncements(
   displayKey: string | undefined,
   data: DisplayResponse | null,
   announcer: ReturnType<typeof useSpeechAnnouncer>,
+  connectionError: string | null,
+  language: DisplayLanguage,
 ) {
-  const lastAnnouncedToken = useRef<string | null>(null);
-  const lastDoctorId = useRef<string | null>(null);
-  const lastDoctorOnline = useRef<boolean | null>(null);
-  const lastDoctorBreak = useRef<boolean | null>(null);
-  const isFirstLoad = useRef(true);
-
-  // Reset announcement state whenever we switch to a different display.
-  useEffect(() => {
-    lastAnnouncedToken.current = null;
-    lastDoctorId.current = null;
-    lastDoctorOnline.current = null;
-    lastDoctorBreak.current = null;
-    isFirstLoad.current = true;
-  }, [displayKey]);
+  const latest = useRef(data);
+  latest.current = data;
+  const previous = useRef(new Map<string, string>());
+  const pauseState = useRef("");
+  const nextTimer = useRef<number | null>(null);
+  const nextSignature = useRef("");
+  const errorRef = useRef(connectionError);
+  errorRef.current = connectionError;
 
   useEffect(() => {
-    if (!data) return;
+    previous.current.clear();
+    pauseState.current = "";
+    nextSignature.current = "";
+    return () => {
+      if (nextTimer.current !== null) window.clearTimeout(nextTimer.current);
+      announcer.cancel();
+    };
+  }, [displayKey, announcer.enabled, language]);
 
-    const { display, current = [] } = data;
-    if (!display.voiceEnabled || !display.announcementEnabled) return;
+  useEffect(() => {
+    if (!data || !announcer.enabled) return;
+    const canAnnounce = data.display.voiceEnabled && data.display.announcementEnabled;
+    const paused = getDoctorBreakInfo(data).isOnBreak;
+    const state = !canAnnounce ? "disabled" : connectionError ? "stale" : paused ? "break" : data.doctorOnline !== true ? "offline" : "ready";
+    if (state !== pauseState.current) {
+      announcer.cancel();
+      if (nextTimer.current !== null) window.clearTimeout(nextTimer.current);
+      nextSignature.current = "";
+      if (state === "break") announcer.speak(DOCTOR_BREAK_TEXT[language](data.doctorName || ""), language);
+      else if (state === "offline") announcer.speak(DOCTOR_OFFLINE_TEXT[language](data.doctorName || ""), language);
+      pauseState.current = state;
+    }
+    if (state !== "ready") { previous.current.clear(); return; }
 
-    // Doctor presence/break is authoritative from the API root,
-    // with queue doctor payload as fallback for older backend responses.
-    const doctorOnline = data.doctorOnline === true;
-    const doctorId = data.doctorId ?? "display-doctor";
-    const doctorName = data.doctorName ?? "Doctor";
-    const doctorBreak = getDoctorBreakInfo(data);
-    const doctorOnBreak = doctorBreak.isOnBreak;
+    const current = data.current || [];
+    const statusOf = (queue: DisplayQueue) => String((queue as DisplayQueue & { status?: string }).status || "CURRENT");
+    const snapshot = new Map(current.map(queue => [queue._id, statusOf(queue)]));
+    const changed = [...snapshot].some(([id, status]) => previous.current.get(id) !== status)
+      || [...previous.current.keys()].some(id => !snapshot.has(id));
+    if (changed) announcer.cancel();
+    for (const queue of current) {
+      const status = statusOf(queue);
+      // SERVING means the patient has already entered. Do not call them again.
+      if (status === "SERVING" || (status !== "CALLED" && status !== "CURRENT")) continue;
+      if (previous.current.get(queue._id) === status) continue;
+      const rawName = queue.doctorId?.name || data.doctorName || "";
+      const name = rawName.replace(/^dr\.?\s*/i, "");
+      const token = language === "HI" ? toHindiSpeech(queue.tokenLabel) : queue.tokenLabel.replace(/-/g, " ").split("").join(" ");
+      const text = language === "HI"
+        ? `टोकन नंबर ${token}। कृपया ${name ? `डॉक्टर ${name} के` : "डॉक्टर के"} कमरे में जाएँ।`
+        : language === "EN"
+          ? `Token number ${token}. Please proceed to ${name ? `Doctor ${name}'s` : "the doctor's"} room.`
+          : ANNOUNCEMENT_TEXT[language](queue.tokenLabel, queue.departmentId?.name || "OPD");
+      announcer.speak(text, language, 2, () => !errorRef.current && !!latest.current?.current?.some(q => q._id === queue._id && statusOf(q) === status) && !getDoctorBreakInfo(latest.current).isOnBreak);
+    }
+    previous.current = snapshot;
 
-    if (lastDoctorId.current !== doctorId) {
-      // New doctor session — establish a baseline without announcing.
-      lastDoctorId.current = doctorId;
-      lastDoctorOnline.current = doctorOnline;
-      lastDoctorBreak.current = doctorOnBreak;
-    } else {
-      if (lastDoctorOnline.current === true && doctorOnline === false) {
-        announcer.speak(DOCTOR_OFFLINE_TEXT[display.displayLanguage](doctorName), display.displayLanguage, 2);
-      }
-      if (lastDoctorOnline.current === false && doctorOnline === true) {
-        announcer.speak(DOCTOR_ONLINE_TEXT[display.displayLanguage](doctorName), display.displayLanguage, 1);
-      }
-      if (lastDoctorBreak.current === false && doctorOnBreak === true) {
-        announcer.speak(DOCTOR_BREAK_TEXT[display.displayLanguage](doctorName), display.displayLanguage, 2);
-      }
-      if (lastDoctorBreak.current === true && doctorOnBreak === false) {
-        announcer.speak(DOCTOR_RESUME_TEXT[display.displayLanguage](doctorName), display.displayLanguage, 1);
+    // After 15 seconds of a stable serving/empty state, tell the next patient
+    // to be ready. This is not a call to enter the room. Announce once per change.
+    const candidate = data.next?.[0];
+    const hasCalled = current.some(q => statusOf(q) === "CALLED" || statusOf(q) === "CURRENT");
+    const signature = !hasCalled && candidate ? `${candidate._id}:${[...snapshot.keys()].join(",")}` : "";
+    if (signature !== nextSignature.current) {
+      if (nextTimer.current !== null) window.clearTimeout(nextTimer.current);
+      nextSignature.current = signature;
+      if (candidate && signature && (language === "HI" || language === "EN")) {
+        nextTimer.current = window.setTimeout(() => {
+          const valid = () => !errorRef.current && latest.current?.next?.[0]?._id === candidate._id
+            && !getDoctorBreakInfo(latest.current).isOnBreak && latest.current?.doctorOnline === true
+            && !(latest.current.current || []).some(q => statusOf(q) === "CALLED" || statusOf(q) === "CURRENT");
+          if (!valid()) return;
+          announcer.speak(language === "HI"
+            ? `अगला नंबर टोकन ${toHindiSpeech(candidate.tokenLabel)} का है। कृपया तैयार रहें। बुलाए जाने पर ही डॉक्टर के कमरे में जाएँ।`
+            : `Up next, token number ${candidate.tokenLabel.replace(/-/g, " ")}. Please be ready. Wait for your call before entering the doctor's room.`, language, 1, valid);
+        }, 15000);
       }
     }
-    lastDoctorOnline.current = doctorOnline;
-    lastDoctorBreak.current = doctorOnBreak;
-
-    if (current.length === 0) {
-      lastAnnouncedToken.current = null;
-      return;
-    }
-    if (!doctorOnline || doctorOnBreak) return;
-
-    const token = current[0]?.tokenLabel;
-    if (!token) return;
-
-    if (isFirstLoad.current) {
-      isFirstLoad.current = false;
-      lastAnnouncedToken.current = token;
-      return;
-    }
-    if (lastAnnouncedToken.current === token) return;
-
-    lastAnnouncedToken.current = token;
-
-    const currentQueue = current[0];
-    const department = currentQueue.departmentId?.name ?? "OPD";
-    const isEmergency = isEmergencyQueue(currentQueue);
-
-    announcer.speak(
-      isEmergency
-        ? EMERGENCY_ANNOUNCEMENT_TEXT[display.displayLanguage](token, department)
-        : ANNOUNCEMENT_TEXT[display.displayLanguage](token, department),
-      display.displayLanguage,
-      display.announcementRepeat,
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, announcer.enabled]);
+  }, [data, connectionError, announcer.enabled, language]);
 }
 
 // TV layout: large numbers first, with setup controls tucked away.
@@ -762,7 +615,9 @@ const DisplayBoard = () => {
   const { voicesRef } = useSpeechVoices();
   const { data, loading, error } = useDisplayPolling(displayKey);
   const announcer = useSpeechAnnouncer(voicesRef);
-  useAnnouncements(displayKey, data, announcer);
+  const [languageOverride, setLanguageOverride] = useState<DisplayLanguage | "">("");
+  const announcementLanguage = languageOverride || data?.display.displayLanguage || "EN";
+  useAnnouncements(displayKey, data, announcer, error, announcementLanguage);
 
   // Rotate long lists without requiring a mouse or remote to scroll.
   const [page, setPage] = useState(0);
@@ -828,15 +683,20 @@ const DisplayBoard = () => {
           <button type="button" onClick={toggleFullscreen}>Toggle fullscreen</button>
           {fullscreenError && <p role="alert">{fullscreenError}</p>}
           {display.voiceEnabled ? <>
-            <p>Announcement language: {LANGUAGE_NAMES[display.displayLanguage]}</p>
-            {!announcer.enabled ? <button type="button" onClick={announcer.activate}>Enable voice announcements</button> : <p>Voice announcements enabled</p>}
+            <label htmlFor="tv-language">Announcement language</label>
+            <select id="tv-language" value={languageOverride} onChange={event => setLanguageOverride(event.target.value as DisplayLanguage | "")}>
+              <option value="">Hospital setting ({LANGUAGE_NAMES[display.displayLanguage]})</option>
+              <option value="HI">हिन्दी</option><option value="EN">English</option>
+            </select>
+            {!announcer.enabled ? <button type="button" onClick={announcer.activate}>Enable voice announcements</button> : <button type="button" onClick={announcer.deactivate}>Mute announcements</button>}
             <label htmlFor="tv-voice">Announcement voice</label>
             <select id="tv-voice" value={announcer.selectedVoiceName} onChange={event => announcer.selectVoice(event.target.value)}>
               <option value="">Automatic — match language</option>
               {[...announcer.voices].sort((a, b) => a.name.localeCompare(b.name)).map(voice => <option key={`${voice.name}-${voice.lang}`} value={voice.name}>{voice.name} ({voice.lang})</option>)}
             </select>
-            <button type="button" onClick={() => announcer.testVoice(display.displayLanguage)}>Test voice</button>
-            <p>Available voices depend on this device.</p>
+            <button type="button" onClick={() => announcer.testVoice(announcementLanguage)}>Test voice</button>
+            <p>Calls play twice. Next-token reminders play after 15 seconds. Voice quality depends on installed device voices.</p>
+            {announcer.speechError && <p role="alert">{announcer.speechError}</p>}
           </> : <p>Voice is disabled in the hospital display configuration.</p>}
         </div>
       </details>
@@ -853,7 +713,7 @@ const DisplayBoard = () => {
     {/* One or two columns depending on the hospital's display settings. */}
     {hasMain ? <main className="tv-main" data-split={display.showCurrent && display.showNext}>
       {display.showCurrent && <section className="tv-current" data-break={doctorOnBreak}>
-        <div className="tv-panel-heading"><h2>{doctorOnBreak ? "Queue paused" : "Now serving"}</h2><PageLabel total={current.length} size={2} page={page} /></div>
+        <div className="tv-panel-heading"><h2>{doctorOnBreak ? "Queue paused" : "Now attending · आपका टोकन"}</h2><PageLabel total={current.length} size={2} page={page} /></div>
         {doctorOnBreak ? (
           <DoctorBreakPanel
             doctorName={data.doctorName}
@@ -901,11 +761,11 @@ const DisplayBoard = () => {
             );
           })}
         </div> : <div className="tv-empty"><strong>{doctorOnline ? "Please wait for your token" : "Doctor is currently offline"}</strong><p>{doctorOnline ? "The next token will appear here." : "Please contact reception for an update."}</p></div>}
-        <p className="tv-instruction">{error ? "Please confirm the current token with reception." : !doctorOnline ? "Please wait for the doctor to become available." : doctorOnBreak ? "Doctor is on break. Queue will resume after doctor returns." : "When your token appears, proceed to the department shown."}</p>
+        <p className="tv-instruction">{error ? "Please confirm the current token with reception." : !doctorOnline ? "Please wait for the doctor to become available." : doctorOnBreak ? "Doctor is on break. Queue will resume after doctor returns." : "When your token appears, proceed to the doctor’s room shown."}</p>
       </section>}
 
       {display.showNext && <section className="tv-next">
-        <div className="tv-panel-heading"><h2>Up next</h2><PageLabel total={next.length} size={4} page={page} /></div>
+        <div className="tv-panel-heading"><h2>Up next · तैयार रहें</h2><PageLabel total={next.length} size={4} page={page} /></div>
         {next.length ? <ol className="tv-next-list">
           {nextPage.map(queue => {
             const emergency = isEmergencyQueue(queue);
@@ -1077,5 +937,25 @@ function TVStyles() {
       .tv-current { min-height: 350px; }
       .tv-footer { flex-wrap: wrap; gap: 8px; }
     }
+
+    /* Quiet, high-contrast TV layout: large token, destination, then next tokens. */
+    .tv-board { background:#f8f9f3; }
+    .tv-current,.tv-next { border-radius:24px; }
+    .tv-current { background:#123f39; }
+    .tv-panel-heading h2 { font-size:clamp(22px,1.8vw,36px); }
+    .tv-current-token > strong { font-size:clamp(80px,11vw,210px); letter-spacing:-.035em; }
+    .tv-current-token h3 { color:inherit; font-weight:650; }
+    .tv-current-token p { font-size:clamp(22px,1.9vw,36px); }
+    .tv-next-list li { display:grid; grid-template-columns:1fr; gap:5px; padding:18px 0; }
+    .tv-next-list li > span { max-width:100%; text-align:left; font-size:clamp(16px,1.15vw,23px); }
+    .tv-next-list strong { font-size:clamp(32px,3.2vw,62px); }
+    .tv-token-type { font-size:clamp(12px,.85vw,17px); padding:6px 12px; letter-spacing:.02em; }
+    .tv-current-token[data-emergency="true"] { animation:none; box-shadow:none; border-width:3px; }
+    .tv-current[data-break="true"] .tv-instruction { color:#854817; border-color:#e8caa4; }
+    .tv-break-panel { padding:24px; gap:14px; }
+    .tv-break-panel h2 { font-size:clamp(32px,3.5vw,70px); }
+    .tv-break-panel p { font-size:clamp(20px,1.6vw,30px); }
+    .tv-info { flex-wrap:wrap; }
+    @media(prefers-reduced-motion:reduce) { .tv-board * { animation:none!important; } }
   `}</style>;
 }
