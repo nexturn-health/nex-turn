@@ -1,23 +1,22 @@
+// routes/whatsappWebhook.routes.ts
+
 import { Router } from "express";
+
 import {
-  verifyWhatsAppWebhook,
-  receiveWhatsAppWebhook,
+    verifyWhatsAppWebhook,
+    receiveWhatsAppWebhook,
 } from "../controllers/whatsappWebhook.controller";
 
 const router = Router();
 
-/**
- * Meta webhook verification
- *
- * GET /api/webhooks/whatsapp
- */
-router.get("/", verifyWhatsAppWebhook);
+router.get(
+    "/",
+    verifyWhatsAppWebhook,
+);
 
-/**
- * WhatsApp webhook events
- *
- * POST /api/webhooks/whatsapp
- */
-router.post("/", receiveWhatsAppWebhook);
+router.post(
+    "/",
+    receiveWhatsAppWebhook,
+);
 
 export default router;

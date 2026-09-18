@@ -1,68 +1,75 @@
-import type { Request, Response } from "express";
 
-/**
- * GET /api/webhooks/whatsapp
- *
- * Meta calls this endpoint when you click
- * "Verify and Save" in the WhatsApp Webhook settings.
- */
+import type {
+    Request,
+    Response,
+} from "express";
+
 export const verifyWhatsAppWebhook = (
-  req: Request,
-  res: Response
+    req: Request,
+    res: Response,
 ) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  console.log("\n========================================");
-  console.log("📥 WhatsApp Webhook Verification");
-  console.log("Mode:", mode);
-  console.log("Verify Token:", token);
-  console.log("Challenge:", challenge);
-  console.log("========================================");
-
-  const expectedToken =
-    process.env.WHATSAPP_VERIFY_TOKEN;
-
-  if (!expectedToken) {
-    console.error(
-      "❌ WHATSAPP_VERIFY_TOKEN is missing from .env"
+    console.log(
+        "WHATSAPP VERIFY REQUEST:",
+        req.query,
     );
 
-    return res.status(500).send("Webhook verify token not configured");
-  }
+    const mode =
+        typeof req.query["hub.mode"] === "string"
+            ? req.query["hub.mode"]
+            : "";
 
-  if (
-    mode === "subscribe" &&
-    token === expectedToken
-  ) {
-    console.log("✅ WhatsApp Webhook Verified!");
+    const token =
+        typeof req.query[
+            "hub.verify_token"
+        ] === "string"
+            ? req.query[
+                  "hub.verify_token"
+              ]
+            : "";
 
-    return res.status(200).send(challenge);
-  }
+    const challenge =
+        typeof req.query[
+            "hub.challenge"
+        ] === "string"
+            ? req.query[
+                  "hub.challenge"
+              ]
+            : "";
 
-  console.error(
-    "❌ WhatsApp Webhook Verification Failed"
-  );
+    if (
+        mode === "subscribe" &&
+        token ===
+            process.env
+                .WHATSAPP_VERIFY_TOKEN
+    ) {
+        console.log(
+            "WHATSAPP WEBHOOK VERIFIED",
+        );
 
-  return res.sendStatus(403);
+        return res
+            .status(200)
+            .send(challenge);
+    }
+
+    console.log(
+        "WHATSAPP WEBHOOK TOKEN FAILED",
+    );
+
+    return res.sendStatus(403);
 };
 
-/**
- * POST /api/webhooks/whatsapp
- *
- * Meta will send WhatsApp messages and status
- * updates to this endpoint.
- */
 export const receiveWhatsAppWebhook = (
-  req: Request,
-  res: Response
+    req: Request,
+    res: Response,
 ) => {
-  console.log("\n========================================");
-  console.log("📥 WhatsApp Webhook Event");
-  console.log(JSON.stringify(req.body, null, 2));
-  console.log("========================================");
+    console.log(
+        "WHATSAPP EVENT RECEIVED:",
+        JSON.stringify(
+            req.body,
+            null,
+            2,
+        ),
+    );
 
-  // Tell Meta that we received the webhook.
-  return res.sendStatus(200);
+    return res.sendStatus(200);
 };
