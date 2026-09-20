@@ -31,6 +31,7 @@ import doctorAvailabilityRoutes from "./routes/doctorAvailability.routes";
 import contactRoutes from "./routes/contact.routes";
 import superAdminNotificationRoutes from "./routes/superAdminNotification.routes";
 import superAdminLeadRoutes from "./routes/superAdminLead.routes";
+import superAdminSettingsRoutes from "./routes/superAdminSettings.routes";
 
 import { shutdownPostHog } from "./services/posthog.service";
 import { protect } from "./middleware/auth.middleware";
@@ -191,7 +192,10 @@ app.use(
     "/api/contact",
     contactRoutes,
 );
-
+app.use(
+    "/api/super-admin/settings",
+    superAdminSettingsRoutes,
+);
 // Super Admin notification route must be before /api/super-admin
 app.use(
     "/api/super-admin/notifications",

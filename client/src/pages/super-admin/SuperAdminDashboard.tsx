@@ -28,6 +28,7 @@ import SuperHospitalAdmin from "./SuperHospitalAdmin";
 import SuperDoctors from "./SuperDoctors";
 import SuperAdminNotifications from "./SuperAdminNotifications";
 import SuperAdminLeads from "./SuperAdminLeads";
+import SuperAdminSettings from "./SuperAdminSettings";
 
 // =============================================================================
 // Types
@@ -42,7 +43,7 @@ type SuperAdminPage =
   | "patients"
   | "departments"
   | "queue"
-  |"CRM"
+  | "CRM"
   | "reports"
   | "settings";
 
@@ -117,6 +118,7 @@ const IMPLEMENTED_PAGES: Partial<Record<SuperAdminPage, ComponentType>> = {
   admins: SuperHospitalAdmin,
   doctors: SuperDoctors,
   CRM: SuperAdminLeads,
+  settings: SuperAdminSettings,
 };
 
 // =============================================================================
@@ -318,16 +320,15 @@ function Sidebar({
 }) {
   return (
     <aside
-      className={`sa-sidebar fixed left-0 top-0 z-50 flex h-screen w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-300 lg:translate-x-0 ${
-        open ? "translate-x-0" : "-translate-x-full"
-      }`}
+      className={`sa-sidebar fixed left-0 top-0 z-50 flex h-screen w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-300 lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"
+        }`}
     >
-      <div className="sa-brand flex h-20 shrink-0 items-center gap-3 border-b border-slate-200 px-6">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-600 text-xl"><Hospital size={24} strokeWidth={1.7} /></div>
-        <div>
-          <h1 className="font-bold text-slate-900">NextSynq</h1>
-          <p className="text-xs text-slate-500">Super Admin</p>
-        </div>
+      <div className="sa-brand flex h-20 shrink-0 items-center gap-3 border-b border-slate-200 px-5">
+        <img
+          src="/nexsynq1.png"
+          alt="NexSynq Health"
+          className="h-14 w-40 object-contain object-left"
+        />
       </div>
 
       <nav aria-label="Platform navigation" className="sa-navigation flex-1 space-y-1 overflow-y-auto p-4">
@@ -439,9 +440,8 @@ function NavItem({
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`sa-nav-item flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${
-        active ? "bg-teal-50 text-teal-600" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-      }`}
+      className={`sa-nav-item flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${active ? "bg-teal-50 text-teal-600" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+        }`}
     >
       {icon}
       {label}

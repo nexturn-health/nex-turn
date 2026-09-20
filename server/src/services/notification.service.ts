@@ -1,8 +1,4 @@
 import {
-  sendWhatsApp,
-} from "./whatsapp.service";
-
-import {
   sendSMS,
 } from "./sms.service";
 
@@ -76,15 +72,12 @@ export const sendPatientNotification = async (
   console.log("TYPE:", type);
   console.log("PATIENT:", patientName);
   console.log("PHONE:", phone || "NOT PROVIDED");
-  console.log(
-    "EMAIL:",
-    email || "NOT PROVIDED",
-  );
+  console.log("EMAIL:", email || "NOT PROVIDED");
   console.log("TOKEN:", tokenLabel);
   console.log("=================================");
 
   /* =======================================================
-     CREATE MESSAGE
+     CREATE SMS MESSAGE
   ======================================================= */
 
   let message = "";
@@ -115,7 +108,7 @@ export const sendPatientNotification = async (
 
     if (trackingUrl) {
       message +=
-        ` Track your queue: ${trackingUrl}`;
+        ` Track your queue here: ${trackingUrl}`;
     }
   }
 
@@ -126,13 +119,10 @@ export const sendPatientNotification = async (
   }
 
   /* =======================================================
-     TOKEN CREATED
+     TOKEN CREATED EMAIL
      
-     IMPORTANT:
-     For token creation we try EMAIL FIRST.
-     
-     This guarantees your default/test email is attempted
-     without waiting for WhatsApp/SMS failures.
+     Initial token WhatsApp is sent separately from
+     createQueue using sendOpdQueueConfirmed.
   ======================================================= */
 
   if (type === "TOKEN_CREATED") {
@@ -142,17 +132,9 @@ export const sendPatientNotification = async (
     if (recipientEmail) {
       try {
         console.log("=================================");
-        console.log(
-          "📧 TRYING TOKEN EMAIL",
-        );
-        console.log(
-          "TO:",
-          recipientEmail,
-        );
-        console.log(
-          "TOKEN:",
-          tokenLabel,
-        );
+        console.log("📧 TRYING TOKEN EMAIL");
+        console.log("TO:", recipientEmail);
+        console.log("TOKEN:", tokenLabel);
         console.log("=================================");
 
         const emailResult =
@@ -185,17 +167,9 @@ export const sendPatientNotification = async (
 
         if (emailResult) {
           console.log("=================================");
-          console.log(
-            "✅ TOKEN EMAIL SENT",
-          );
-          console.log(
-            "TO:",
-            recipientEmail,
-          );
-          console.log(
-            "TOKEN:",
-            tokenLabel,
-          );
+          console.log("✅ TOKEN EMAIL SENT");
+          console.log("TO:", recipientEmail);
+          console.log("TOKEN:", tokenLabel);
           console.log("=================================");
 
           return {
@@ -205,7 +179,7 @@ export const sendPatientNotification = async (
         }
 
         console.log(
-          "⚠️ Email failed → trying WhatsApp",
+          "⚠️ Token email failed. Trying SMS...",
         );
       } catch (error) {
         console.error(
@@ -217,50 +191,18 @@ export const sendPatientNotification = async (
   }
 
   /* =======================================================
-     WHATSAPP
+     SMS NOTIFICATION
+     
+     Used for:
+     - Near-turn notification
+     - Called notification
+     - Token email fallback
   ======================================================= */
 
   if (phone) {
     try {
       console.log(
-        "📱 Trying WhatsApp:",
-        phone,
-      );
-
-      const whatsappResult =
-        await sendWhatsApp({
-          phone,
-          message,
-        });
-
-      if (whatsappResult.success) {
-        console.log(
-          "✅ WhatsApp notification sent",
-        );
-
-        return {
-          success: true,
-          channel: "WHATSAPP",
-        };
-      }
-
-      console.log(
-        "⚠️ WhatsApp failed → trying SMS",
-      );
-    } catch (error) {
-      console.error(
-        "❌ WhatsApp error:",
-        error,
-      );
-    }
-
-    /* =====================================================
-       SMS FALLBACK
-    ===================================================== */
-
-    try {
-      console.log(
-        "📤 Trying SMS:",
+        "📤 TRYING SMS:",
         phone,
       );
 
@@ -282,7 +224,7 @@ export const sendPatientNotification = async (
       }
 
       console.log(
-        "⚠️ SMS failed",
+        "⚠️ SMS failed. Trying email fallback...",
       );
     } catch (error) {
       console.error(
@@ -295,66 +237,65 @@ export const sendPatientNotification = async (
   /* =======================================================
      EMAIL FALLBACK
      
-     Important for NEAR_TURN / CALLED.
-     
-     TOKEN_CREATED already attempted email above.
+     Used for:
+     - NEAR_TURN
+     - CALLED
+     - Failed token SMS
   ======================================================= */
 
-  if (type !== "TOKEN_CREATED") {
-    const recipientEmail =
-      email || TEST_PATIENT_EMAIL;
+  const recipientEmail =
+    email || TEST_PATIENT_EMAIL;
 
-    if (recipientEmail) {
-      try {
+  if (recipientEmail) {
+    try {
+      console.log(
+        "📧 TRYING FALLBACK EMAIL:",
+        recipientEmail,
+      );
+
+      const emailResult =
+        await sendPatientTrackingEmail({
+          email: recipientEmail,
+
+          phone,
+
+          patientName,
+
+          tokenLabel,
+
+          hospitalName:
+            hospitalName ||
+            "NexTurn Hospital",
+
+          departmentName:
+            departmentName ||
+            "Department",
+
+          doctorName,
+
+          trackingUrl:
+            trackingUrl || "",
+
+          patientsAhead,
+
+          estimatedWaitTime,
+        });
+
+      if (emailResult) {
         console.log(
-          "📧 Trying fallback email:",
-          recipientEmail,
+          "✅ FALLBACK EMAIL SENT",
         );
 
-        const emailResult =
-          await sendPatientTrackingEmail({
-            email: recipientEmail,
-
-            phone,
-
-            patientName,
-
-            tokenLabel,
-
-            hospitalName:
-              hospitalName ||
-              "NexTurn Hospital",
-
-            departmentName:
-              departmentName ||
-              "Department",
-
-            doctorName,
-
-            trackingUrl:
-              trackingUrl || "",
-
-            patientsAhead,
-
-            estimatedWaitTime,
-          });
-
-        if (emailResult) {
-          console.log(
-            "✅ Fallback email sent",
-          );
-
-          return {
-            success: true,
-            channel: "EMAIL",
-          };
-        }
-      } catch (error) {
-        console.error(
-          "❌ Fallback email error:",
-          error,
-        );
+        return {
+          success: true,
+          channel: "EMAIL",
+        };
       }
+    } catch (error) {
+      console.error(
+        "❌ Fallback email error:",
+        error,
+      );
     }
   }
 
@@ -366,10 +307,7 @@ export const sendPatientNotification = async (
   console.error(
     "⚠️ ALL NOTIFICATION CHANNELS FAILED",
   );
-  console.error(
-    "TOKEN:",
-    tokenLabel,
-  );
+  console.error("TOKEN:", tokenLabel);
   console.error("=================================");
 
   return {

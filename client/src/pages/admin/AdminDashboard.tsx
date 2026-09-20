@@ -1,6 +1,5 @@
 import {
     Activity,
-    Bell,
     Building2,
     CalendarDays,
     ChevronDown,
@@ -423,18 +422,12 @@ const AdminDashboard = () => {
                     }
                 `}
             >
-                <div className="hospital-brand flex h-20 items-center gap-3 border-b border-slate-200 px-6">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-600 text-xl">
-                        <Stethoscope size={25} strokeWidth={1.8} />
-                    </div>
-                    <div>
-                        <h1 className="font-bold text-slate-900">
-                            NexSynq
-                        </h1>
-                        <p className="text-xs text-slate-500">
-                            Hospital workspace
-                        </p>
-                    </div>
+                <div className="hospital-brand flex h-20 items-center justify-start border-b border-slate-200 px-5">
+                    <img
+                        src="/nexsynq1.png"
+                        alt="NexSynq Health"
+                        className="h-14 w-44 object-contain object-left"
+                    />
                 </div>
                 <nav aria-label="Hospital navigation" className="hospital-navigation space-y-1 p-4">
                     <p className="hospital-nav-caption">WORKSPACE</p>
@@ -840,13 +833,6 @@ const AdminDashboard = () => {
                                 </div>
                             </div>
                         )}
-                        <button
-                            type="button"
-                            className="relative rounded-xl p-2.5 text-slate-500 hover:bg-slate-100"
-                        >
-                            <Bell size={20} />
-                            <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" />
-                        </button>
                         <div className="relative border-l border-slate-200 pl-3 sm:pl-4">
                             {profileMenuOpen && (
                                 <button

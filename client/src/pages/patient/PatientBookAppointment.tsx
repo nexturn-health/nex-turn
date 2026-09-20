@@ -40,21 +40,132 @@ import {
 } from "../../store/indiaLocations";
 
 // Dates use the patient's local calendar, rather than UTC.
-function today(): string {
-  const date =
-    new Date();
+const INDIA_TIME_ZONE = "Asia/Kolkata";
 
-  return `${date.getFullYear()}-${String(
-    date.getMonth() + 1,
-  ).padStart(
-    2,
-    "0",
-  )}-${String(
-    date.getDate(),
-  ).padStart(
-    2,
-    "0",
-  )}`;
+function indiaDate(value = new Date()): string {
+  const parts = new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      timeZone: INDIA_TIME_ZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    },
+  ).formatToParts(value);
+
+  const year =
+    parts.find(
+      (part) => part.type === "year",
+    )?.value || "";
+
+  const month =
+    parts.find(
+      (part) => part.type === "month",
+    )?.value || "";
+
+  const day =
+    parts.find(
+      (part) => part.type === "day",
+    )?.value || "";
+
+  return `${year}-${month}-${day}`;
+}
+
+function today(): string {
+  return indiaDate();
+}
+
+function parseTimeToMinutes(
+  value: string,
+): number | null {
+  const match = String(value)
+    .trim()
+    .match(
+      /^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i,
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const meridiem = match[3]?.toUpperCase();
+
+  if (
+    Number.isNaN(hours) ||
+    Number.isNaN(minutes) ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  if (meridiem === "PM" && hours < 12) {
+    hours += 12;
+  }
+
+  if (meridiem === "AM" && hours === 12) {
+    hours = 0;
+  }
+
+  if (hours > 23) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
+function currentIndiaMinutes(
+  value = new Date(),
+): number {
+  const time =
+    new Intl.DateTimeFormat(
+      "en-GB",
+      {
+        timeZone: INDIA_TIME_ZONE,
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      },
+    ).format(value);
+
+  const [
+    hours,
+    minutes,
+  ] = time.split(":").map(Number);
+
+  return hours * 60 + minutes;
+}
+
+function isSlotStillBookable(
+  slot: PublicSlot,
+  selectedDate: string,
+  value = new Date(),
+): boolean {
+  const currentDate =
+    indiaDate(value);
+
+  if (selectedDate > currentDate) {
+    return true;
+  }
+
+  if (selectedDate < currentDate) {
+    return false;
+  }
+
+  const slotMinutes =
+    parseTimeToMinutes(
+      slot.startTime,
+    );
+
+  if (slotMinutes === null) {
+    return false;
+  }
+
+  return (
+    slotMinutes >
+    currentIndiaMinutes(value)
+  );
 }
 
 function formatDate(
@@ -201,7 +312,7 @@ function useBookingList<T>(
                 );
               }
             } catch (
-              err
+            err
             ) {
               const message =
                 errorMessage(
@@ -368,6 +479,10 @@ export default function PatientBookAppointment() {
     useState(
       "MALE",
     );
+  const [
+    clockTick,
+    setClockTick,
+  ] = useState(() => Date.now());
 
   const [
     reason,
@@ -468,22 +583,22 @@ export default function PatientBookAppointment() {
     error:
       "",
     retry:
-      () => {},
+      () => { },
   };
 
   const districts = {
     items:
       state
         ? getDistrictsByState(
-            state,
-          )
+          state,
+        )
         : [],
     loading:
       false,
     error:
       "",
     retry:
-      () => {},
+      () => { },
   };
 
   const hospitals =
@@ -491,17 +606,17 @@ export default function PatientBookAppointment() {
       useCallback(
         async () =>
           state &&
-          district
+            district
             ? (
-                await getPublicHospitals({
-                  state,
-                  district,
-                  q:
-                    search.trim() ||
-                    undefined,
-                })
-              ).data ||
-              []
+              await getPublicHospitals({
+                state,
+                district,
+                q:
+                  search.trim() ||
+                  undefined,
+              })
+            ).data ||
+            []
             : [],
         [
           state,
@@ -518,11 +633,11 @@ export default function PatientBookAppointment() {
         async () =>
           hospital
             ? (
-                await getPublicDepartments(
-                  hospital._id,
-                )
-              ).data ||
-              []
+              await getPublicDepartments(
+                hospital._id,
+              )
+            ).data ||
+            []
             : [],
         [
           hospital,
@@ -536,14 +651,14 @@ export default function PatientBookAppointment() {
       useCallback(
         async () =>
           hospital &&
-          department
+            department
             ? (
-                await getPublicDoctors(
-                  hospital._id,
-                  department._id,
-                )
-              ).data ||
-              []
+              await getPublicDoctors(
+                hospital._id,
+                department._id,
+              )
+            ).data ||
+            []
             : [],
         [
           hospital,
@@ -558,16 +673,16 @@ export default function PatientBookAppointment() {
       useCallback(
         async () =>
           hospital &&
-          doctor &&
-          date
+            doctor &&
+            date
             ? (
-                await getPublicSlots(
-                  hospital._id,
-                  doctor._id,
-                  date,
-                )
-              ).data.slots ||
-              []
+              await getPublicSlots(
+                hospital._id,
+                doctor._id,
+                date,
+              )
+            ).data.slots ||
+            []
             : [],
         [
           hospital,
@@ -576,6 +691,15 @@ export default function PatientBookAppointment() {
         ],
       ),
       showErrorPopup,
+    );
+
+  const visibleSlots =
+    slots.items.filter((item) =>
+      isSlotStillBookable(
+        item,
+        date,
+        new Date(clockTick),
+      ),
     );
 
   // Move keyboard focus to the new screen without adding extra Next buttons.
@@ -588,6 +712,17 @@ export default function PatientBookAppointment() {
       success,
     ],
   );
+
+  useEffect(() => {
+    const timer =
+      window.setInterval(() => {
+        setClockTick(Date.now());
+      }, 30_000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
 
   function resetHospital(): void {
     setHospital(
@@ -660,7 +795,7 @@ export default function PatientBookAppointment() {
 
     if (
       digits.length ===
-        12 &&
+      12 &&
       digits.startsWith(
         "91",
       )
@@ -754,7 +889,7 @@ export default function PatientBookAppointment() {
         response.data,
       );
     } catch (
-      err
+    err
     ) {
       showBookingError(
         errorMessage(
@@ -935,7 +1070,7 @@ export default function PatientBookAppointment() {
                     }
                     aria-current={
                       step ===
-                      index + 1
+                        index + 1
                         ? "step"
                         : undefined
                     }
@@ -946,7 +1081,7 @@ export default function PatientBookAppointment() {
                   >
                     <span>
                       {step >
-                      index + 1 ? (
+                        index + 1 ? (
                         <CheckCircle2 size={16} />
                       ) : (
                         index + 1
@@ -971,15 +1106,15 @@ export default function PatientBookAppointment() {
 
                     <p>
                       {step === 3 &&
-                      doctor &&
-                      slot
+                        doctor &&
+                        slot
                         ? `${doctorName(
-                            doctor.name,
-                          )} · ${formatDate(
-                            date,
-                          )} · ${slot.startTime}`
+                          doctor.name,
+                        )} · ${formatDate(
+                          date,
+                        )} · ${slot.startTime}`
                         : hospital.address ||
-                          `${hospital.district}, ${hospital.state}`}
+                        `${hospital.district}, ${hospital.state}`}
                     </p>
                   </div>
 
@@ -1282,7 +1417,7 @@ export default function PatientBookAppointment() {
                               item._id ===
                               e.target.value,
                           ) ||
-                            null,
+                          null,
                         );
 
                         setDoctor(
@@ -1405,7 +1540,7 @@ export default function PatientBookAppointment() {
                                   </span>
 
                                   {doctor?._id ===
-                                  item._id ? (
+                                    item._id ? (
                                     <CheckCircle2 size={19} />
                                   ) : (
                                     <ChevronRight size={18} />
@@ -1480,7 +1615,7 @@ export default function PatientBookAppointment() {
                       {!slots.loading &&
                         !slots.error && (
                           <div className="pb-times">
-                            {slots.items.map(
+                            {visibleSlots.map(
                               (
                                 item,
                               ) => (
@@ -1515,7 +1650,7 @@ export default function PatientBookAppointment() {
 
                       {!slots.loading &&
                         !slots.error &&
-                        !slots.items.length && (
+                        !visibleSlots.length && (
                           <p className="pb-empty">
                             No times available. Try another date or doctor.
                           </p>
@@ -1550,7 +1685,7 @@ export default function PatientBookAppointment() {
                         !!slots.error ||
                         !date ||
                         date <
-                          today()
+                        today()
                       }
                       onClick={() =>
                         setStep(
@@ -1792,9 +1927,9 @@ function ErrorPopup({
   onClose,
 }: {
   message:
-    string;
+  string;
   onClose:
-    () => void;
+  () => void;
 }) {
   useEffect(
     () => {
@@ -1893,13 +2028,13 @@ function ListFeedback({
   showPopup,
 }: {
   loading:
-    boolean;
+  boolean;
   error:
-    string;
+  string;
   retry:
-    () => void;
+  () => void;
   showPopup?:
-    (message: string) => void;
+  (message: string) => void;
 }) {
   if (
     loading

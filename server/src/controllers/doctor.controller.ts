@@ -1164,7 +1164,7 @@ export const updateDoctorStatus =
             },
           },
           {
-            new: true,
+            returnDocument: "after",
           },
         )
           .select("-password")

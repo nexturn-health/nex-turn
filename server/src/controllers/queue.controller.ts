@@ -17,9 +17,9 @@ import {
 } from "../services/queueNotification.service";
 
 import {
-  sendTokenCreatedNotification,
-  sendCalledNotification,
-} from "../services/notification.service";
+  sendOpdQueueConfirmed,
+} from "../services/whatsapp.service";
+import { sendCalledNotification } from "../services/notification.service";
 
 
 const getIndiaQueueDate = () => {
@@ -2453,50 +2453,9 @@ export const createQueue = async (
       doctorData?.name ||
       "Doctor";
 
-    const notificationEmail =
-      patientData?.email ||
-      process.env.TEST_PATIENT_EMAIL ||
-      "akash0001tech@gmail.com";
-
     const notificationPhone =
       patientData?.phone ||
       patient.phone;
-
-    const notificationPayload = {
-      phone:
-        notificationPhone,
-
-      email:
-        String(
-          notificationEmail || "",
-        )
-          .trim()
-          .toLowerCase(),
-
-      patientName:
-        finalPatientName,
-
-      tokenLabel,
-
-      hospitalName:
-        finalHospitalName,
-
-      departmentName:
-        finalDepartmentName,
-
-      doctorName:
-        finalDoctorName,
-
-      trackingUrl,
-
-      estimatedWaitTime:
-        estimate.estimatedWaitTime,
-
-      doctorShiftStartTime:
-        dutyValidation.shiftStartTime,
-
-      averageConsultationMinutes,
-    };
 
     console.log(
       "=================================",
@@ -2542,38 +2501,73 @@ export const createQueue = async (
       "=================================",
     );
 
-    void sendTokenCreatedNotification(
-      notificationPayload,
-    )
-      .then(
-        async (
-          notificationResult,
-        ) => {
-          if (
-            notificationResult.success
-          ) {
-            await Queue.findByIdAndUpdate(
-              queue._id,
-              {
-                $set: {
-                  tokenNotificationSent:
-                    true,
-                },
+    /* =====================================
+       SEND APPROVED META WHATSAPP TEMPLATE
+    ===================================== */
+
+    void (async () => {
+      if (!notificationPhone) {
+        console.warn(
+          "⚠️ Patient phone is missing. WhatsApp confirmation skipped.",
+        );
+
+        return;
+      }
+
+      try {
+        const whatsappResult =
+          await sendOpdQueueConfirmed({
+            to:
+              notificationPhone,
+
+            patientName:
+              finalPatientName,
+
+            queueNumber:
+              tokenLabel,
+
+            hospitalName:
+              finalHospitalName,
+
+            departmentName:
+              finalDepartmentName,
+
+            estimatedWaitMinutes:
+              estimate.estimatedWaitTime,
+
+            trackingToken,
+          });
+
+        if (
+          whatsappResult.success
+        ) {
+          await Queue.findByIdAndUpdate(
+            queue._id,
+            {
+              $set: {
+                tokenNotificationSent:
+                  true,
               },
-            );
-          }
-        },
-      )
-      .catch(
-        (
-          error,
-        ) => {
-          console.error(
-            "❌ Background token notification crashed:",
-            error,
+            },
           );
-        },
-      );
+
+          console.log(
+            "✅ Meta WhatsApp token confirmation sent:",
+            notificationPhone,
+          );
+        } else {
+          console.error(
+            "❌ Meta WhatsApp token confirmation failed:",
+            whatsappResult,
+          );
+        }
+      } catch (error) {
+        console.error(
+          "❌ Meta WhatsApp token notification crashed:",
+          error,
+        );
+      }
+    })();
 
     getIO()
       .to(
@@ -2642,6 +2636,7 @@ export const createQueue = async (
     });
   }
 };
+
 
 
 
@@ -3003,11 +2998,11 @@ export const callNextPatient = async (
 
       if (patient?.phone) {
         try {
-          const result = await sendCalledNotification({
+        const result = await sendCalledNotification({
             phone: patient.phone,
             patientName: patient.name,
             tokenLabel: nextPatient.tokenLabel,
-          });
+          });  
 
           if (result.success) {
             await Queue.findByIdAndUpdate(

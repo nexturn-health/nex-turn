@@ -598,7 +598,7 @@ export const updateDoctorAvailability =
                         },
                     },
                     {
-                        new: true,
+                       returnDocument: "after",
                         upsert: true,
                         runValidators: true,
                     },

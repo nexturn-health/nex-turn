@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+import { Hospital } from "../models/Hospital.model";
 import { Queue } from "../models/Queue.model";
 
 import {
@@ -14,6 +15,78 @@ type IdType =
   | string
   | mongoose.Types.ObjectId;
 
+type PopulatedPatient = {
+  name?: string;
+  phone?: string;
+  email?: string;
+  patientCode?: string;
+};
+
+type PopulatedDepartment = {
+  name?: string;
+  tokenPrefix?: string;
+};
+
+type PopulatedDoctor = {
+  name?: string;
+  email?: string;
+};
+
+type PopulatedQueue = {
+  _id: mongoose.Types.ObjectId | string;
+
+  tokenLabel: string;
+  tokenNumber: number;
+
+  priority?: string;
+
+  patientId?:
+    | PopulatedPatient
+    | mongoose.Types.ObjectId
+    | string
+    | null;
+
+  departmentId?:
+    | PopulatedDepartment
+    | mongoose.Types.ObjectId
+    | string
+    | null;
+
+  doctorId?:
+    | PopulatedDoctor
+    | mongoose.Types.ObjectId
+    | string
+    | null;
+
+  trackingToken?: string | null;
+
+  estimatedWaitTime?: number;
+
+  nearTurnNotificationSent?: boolean;
+};
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const getPopulatedObject = <
+  T extends {
+    name?: string;
+  },
+>(
+  value: unknown,
+): T | null => {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("name" in value)
+  ) {
+    return null;
+  }
+
+  return value as T;
+};
+
 /* =========================================================
    CHECK AND SEND NEAR-TURN NOTIFICATIONS
 ========================================================= */
@@ -22,7 +95,7 @@ export const checkAndSendNearTurnNotifications = async (
   hospitalId: IdType,
   departmentId: IdType,
   queueDate: string,
-) => {
+): Promise<void> => {
   try {
     console.log("====================================");
     console.log("🔔 CHECKING NEAR-TURN NOTIFICATIONS");
@@ -32,36 +105,48 @@ export const checkAndSendNearTurnNotifications = async (
     console.log("====================================");
 
     /* =====================================
+       GET HOSPITAL NAME
+    ===================================== */
+
+    const hospital = await Hospital.findById(hospitalId)
+      .select("name")
+      .lean();
+
+    const hospitalName =
+      hospital?.name?.trim() || "Hospital";
+
+    /* =====================================
        FIND WAITING PATIENTS
     ===================================== */
 
-    const waitingQueues = await Queue.find({
-      hospitalId,
-      departmentId,
-      queueDate,
-      status: "WAITING",
-      trackingLinkActive: true,
-      trackingExpiresAt: {
-        $gt: new Date(),
-      },
-    })
-      .sort({
-        priority: -1,
-        tokenNumber: 1,
+    const waitingQueues =
+      (await Queue.find({
+        hospitalId,
+        departmentId,
+        queueDate,
+        status: "WAITING",
+        trackingLinkActive: true,
+        trackingExpiresAt: {
+          $gt: new Date(),
+        },
       })
-      .populate(
-        "patientId",
-        "name phone email patientCode",
-      )
-      .populate(
-        "departmentId",
-        "name tokenPrefix",
-      )
-      .populate(
-        "doctorId",
-        "name email",
-      )
-      .lean();
+        .sort({
+          priority: -1,
+          tokenNumber: 1,
+        })
+        .populate(
+          "patientId",
+          "name phone email patientCode",
+        )
+        .populate(
+          "departmentId",
+          "name tokenPrefix",
+        )
+        .populate(
+          "doctorId",
+          "name email",
+        )
+        .lean()) as unknown as PopulatedQueue[];
 
     console.log(
       `👥 Waiting patients found: ${waitingQueues.length}`,
@@ -78,187 +163,210 @@ export const checkAndSendNearTurnNotifications = async (
     ) {
       const queue = waitingQueues[index];
 
-      /*
-       * Number of patients ahead.
-       *
-       * Example:
-       *
-       * C-001 → 0 ahead
-       * C-002 → 1 ahead
-       * C-003 → 2 ahead
-       * C-004 → 3 ahead
-       */
+      try {
+        /*
+         * Number of patients ahead.
+         *
+         * First patient  = 0 ahead
+         * Second patient = 1 ahead
+         * Third patient  = 2 ahead
+         */
 
-      const patientsAhead = index;
+        const patientsAhead = index;
 
-      /* =====================================
-         ONLY NOTIFY <= 2 PATIENTS AHEAD
-      ===================================== */
+        /* =====================================
+           ONLY NOTIFY FIRST 3 PATIENTS
+        ===================================== */
 
-      if (patientsAhead > 2) {
-        continue;
-      }
+        if (patientsAhead > 2) {
+          continue;
+        }
 
-      /* =====================================
-         PREVENT DUPLICATE
-      ===================================== */
+        /* =====================================
+           PREVENT DUPLICATE NOTIFICATION
+        ===================================== */
 
-      if (queue.nearTurnNotificationSent) {
+        if (queue.nearTurnNotificationSent) {
+          console.log(
+            `⏭️ ${queue.tokenLabel} already notified`,
+          );
+
+          continue;
+        }
+
+        /* =====================================
+           PATIENT
+        ===================================== */
+
+        const patient =
+          getPopulatedObject<PopulatedPatient>(
+            queue.patientId,
+          );
+
+        if (!patient) {
+          console.log(
+            `⚠️ Patient missing for ${queue.tokenLabel}`,
+          );
+
+          continue;
+        }
+
+        const patientName =
+          patient.name?.trim();
+
+        const patientPhone =
+          patient.phone?.trim();
+
+        if (!patientName) {
+          console.log(
+            `⚠️ Patient name missing for ${queue.tokenLabel}`,
+          );
+
+          continue;
+        }
+
+        if (!patientPhone) {
+          console.log(
+            `⚠️ Phone missing for ${queue.tokenLabel}`,
+          );
+
+          continue;
+        }
+
+        /* =====================================
+           DEPARTMENT
+        ===================================== */
+
+        const department =
+          getPopulatedObject<PopulatedDepartment>(
+            queue.departmentId,
+          );
+
+        const departmentName =
+          department?.name?.trim() ||
+          "Department";
+
+        /* =====================================
+           DOCTOR
+        ===================================== */
+
+        const doctor =
+          getPopulatedObject<PopulatedDoctor>(
+            queue.doctorId,
+          );
+
+        const doctorName =
+          doctor?.name?.trim() ||
+          undefined;
+
+        /* =====================================
+           TRACKING URL
+        ===================================== */
+
+        const clientUrl = (
+          process.env.CLIENT_URL ||
+          "http://localhost:5173"
+        ).replace(/\/+$/, "");
+
+        const trackingToken =
+          queue.trackingToken?.trim();
+
+        const trackingUrl =
+          trackingToken
+            ? `${clientUrl}/track/${trackingToken}`
+            : undefined;
+
+        /* =====================================
+           LOG
+        ===================================== */
+
+        console.log("====================================");
         console.log(
-          `⏭️ ${queue.tokenLabel} already notified`,
+          `📨 NEAR TURN: ${queue.tokenLabel}`,
         );
-
-        continue;
-      }
-
-      /* =====================================
-         PATIENT
-      ===================================== */
-
-      const patient =
-        queue.patientId &&
-        typeof queue.patientId === "object"
-          ? queue.patientId as unknown as {
-              name: string;
-              phone?: string;
-              email?: string;
-            }
-          : null;
-
-      if (!patient) {
+        console.log("PATIENT:", patientName);
+        console.log("PHONE:", patientPhone);
         console.log(
-          `⚠️ Patient missing for ${queue.tokenLabel}`,
+          "HOSPITAL:",
+          hospitalName,
         );
-
-        continue;
-      }
-
-      if (!patient.phone) {
         console.log(
-          `⚠️ Phone missing for ${queue.tokenLabel}`,
+          "DEPARTMENT:",
+          departmentName,
         );
-
-        continue;
-      }
-
-      /* =====================================
-         DEPARTMENT
-      ===================================== */
-
-      const department =
-        queue.departmentId &&
-        typeof queue.departmentId === "object"
-          ? queue.departmentId as unknown as {
-              name: string;
-            }
-          : null;
-
-      /* =====================================
-         DOCTOR
-      ===================================== */
-
-      const doctor =
-        queue.doctorId &&
-        typeof queue.doctorId === "object"
-          ? queue.doctorId as unknown as {
-              name: string;
-            }
-          : null;
-
-      /* =====================================
-         TRACKING URL
-      ===================================== */
-
-      const clientUrl =
-        process.env.CLIENT_URL ||
-        "http://localhost:5173";
-
-      const trackingUrl =
-        queue.trackingToken
-          ? `${clientUrl}/track/${queue.trackingToken}`
-          : undefined;
-
-      console.log("====================================");
-      console.log(
-        `📨 NEAR TURN: ${queue.tokenLabel}`,
-      );
-      console.log("PATIENT:", patient.name);
-      console.log("PHONE:", patient.phone);
-      console.log("PATIENT EMAIL:", patient.email);
-      console.log(
-        "DEPARTMENT:",
-        department?.name,
-      );
-      console.log(
-        "DOCTOR:",
-        doctor?.name,
-      );
-      console.log(
-        "PATIENTS AHEAD:",
-        patientsAhead,
-      );
-      console.log(
-        "TRACKING URL:",
-        trackingUrl,
-      );
-      console.log("====================================");
-
-      /* =====================================
-         SEND NOTIFICATION
-      ===================================== */
-
-      const result =
-        await sendNearTurnNotification({
-          phone: patient.phone,
-
-          email: patient.email,
-
-          patientName:
-            patient.name,
-
-          tokenLabel:
-            queue.tokenLabel,
-
-          hospitalName:
-            "Hospital",
-
-          departmentName:
-            department?.name ||
-            "Department",
-
-          doctorName:
-            doctor?.name,
-
-          trackingUrl,
-
+        console.log(
+          "DOCTOR:",
+          doctorName || "Not assigned",
+        );
+        console.log(
+          "PATIENTS AHEAD:",
           patientsAhead,
+        );
+        console.log(
+          "TRACKING URL:",
+          trackingUrl || "Not available",
+        );
+        console.log("====================================");
 
-          estimatedWaitTime:
-            queue.estimatedWaitTime,
-        });
+        /* =====================================
+           SEND NOTIFICATION
+        ===================================== */
 
-      /* =====================================
-         MARK AS SENT
-      ===================================== */
+        const result =
+          await sendNearTurnNotification({
+            phone: patientPhone,
 
-      if (result.success) {
-        await Queue.findByIdAndUpdate(
-          queue._id,
-          {
-            $set: {
-              nearTurnNotificationSent:
-                true,
+            email: patient.email,
+
+            patientName,
+
+            tokenLabel:
+              queue.tokenLabel,
+
+            hospitalName,
+
+            departmentName,
+
+            doctorName,
+
+            trackingUrl,
+
+            patientsAhead,
+
+            estimatedWaitTime:
+              queue.estimatedWaitTime ?? 0,
+          });
+
+        /* =====================================
+           MARK AS SENT
+        ===================================== */
+
+        if (result.success) {
+          await Queue.findByIdAndUpdate(
+            queue._id,
+            {
+              $set: {
+                nearTurnNotificationSent: true,
+              },
             },
-          },
+          );
+
+          console.log(
+            `✅ Near-turn notification sent: ${queue.tokenLabel}`,
+          );
+        } else {
+          console.log(
+            `❌ Near-turn notification failed: ${queue.tokenLabel}`,
+          );
+        }
+      } catch (queueError) {
+        console.error(
+          `❌ Failed processing ${queue.tokenLabel}:`,
+          queueError,
         );
 
-        console.log(
-          `✅ Near-turn notification sent: ${queue.tokenLabel}`,
-        );
-      } else {
-        console.log(
-          `❌ Near-turn notification failed: ${queue.tokenLabel}`,
-        );
+        // Continue with the next patient.
+        continue;
       }
     }
 
@@ -271,9 +379,6 @@ export const checkAndSendNearTurnNotifications = async (
       error,
     );
 
-    /*
-     * Notification failure should NEVER
-     * break the queue operation.
-     */
+    // Notification errors must not break queue operations.
   }
 };

@@ -1,195 +1,225 @@
-import "dotenv/config";
-import twilio from "twilio";
+const GRAPH_API_VERSION =
+    process.env.META_GRAPH_API_VERSION || "v25.0";
 
-/* =========================================================
-   TWILIO CONFIG
-========================================================= */
+const META_ACCESS_TOKEN =
+    process.env.META_ACCESS_TOKEN;
 
-const accountSid =
-    process.env.TWILIO_ACCOUNT_SID;
+const PHONE_NUMBER_ID =
+    process.env.META_PHONE_NUMBER_ID;
 
-const authToken =
-    process.env.TWILIO_AUTH_TOKEN;
+const TEMPLATE_NAME = String(
+  process.env.WHATSAPP_TEMPLATE_NAME ||
+    process.env.META_TEMPLATE_NAME ||
+    "opd_queue_confirmed",
+).trim();
 
-if (!accountSid || !authToken) {
-    throw new Error(
-        "Twilio credentials are missing"
-    );
+const TEMPLATE_LANGUAGE = String(
+  process.env.WHATSAPP_TEMPLATE_LANGUAGE ||
+    process.env.META_TEMPLATE_LANGUAGE ||
+    "en_US",
+).trim();
+
+console.log("META TEMPLATE CONFIG:", {
+  name: TEMPLATE_NAME,
+  language: TEMPLATE_LANGUAGE,
+  wabaId: process.env.META_WABA_ID,
+  phoneNumberId: process.env.META_PHONE_NUMBER_ID,
+});
+
+const DEFAULT_COUNTRY_CODE =
+    process.env.WHATSAPP_DEFAULT_COUNTRY_CODE ||
+    "91";
+
+interface MetaResponse {
+    messages?: Array<{
+        id: string;
+    }>;
+
+    error?: {
+        message?: string;
+        code?: number;
+        type?: string;
+    };
 }
 
-const client = twilio(
-    accountSid,
-    authToken
-);
-
-/* =========================================================
-   TYPES
-========================================================= */
-
-export interface SendWhatsAppParams {
-    phone: string;
-    message: string;
+export interface SendOpdQueueMessageParams {
+    to: string;
+    patientName: string;
+    queueNumber: string;
+    hospitalName: string;
+    departmentName: string;
+    estimatedWaitMinutes: number;
+    trackingToken: string;
 }
 
-export interface WhatsAppResult {
-    success: boolean;
-    sid?: string;
-    error?: string;
-}
-
-/* =========================================================
-   PHONE NORMALIZATION
-========================================================= */
-
-function normalizePhone(
-    phone: string
-): string {
-
-    let value =
-        phone.trim();
-
-    // Remove spaces, -, (, )
-    value = value.replace(
-        /[\s\-()]/g,
-        ""
-    );
-
-    // 10 digit Indian number
-    if (/^\d{10}$/.test(value)) {
-        value =
-            `+91${value}`;
-    }
-
-    // 91XXXXXXXXXX
-    if (/^91\d{10}$/.test(value)) {
-        value =
-            `+${value}`;
+const requiredEnv = (
+    value: string | undefined,
+    name: string,
+) => {
+    if (!value) {
+        throw new Error(
+            `${name} is missing in .env`,
+        );
     }
 
     return value;
-}
+};
 
-/* =========================================================
-   SEND WHATSAPP
-========================================================= */
+const normalizePhoneNumber = (
+    phone: string,
+) => {
+    let digits = String(phone || "").replace(
+        /\D/g,
+        "",
+    );
 
-export async function sendWhatsApp({
-    phone,
-    message,
-}: SendWhatsAppParams): Promise<WhatsAppResult> {
+    if (digits.startsWith("00")) {
+        digits = digits.slice(2);
+    }
 
-    try {
+    if (digits.length === 10) {
+        digits =
+            `${DEFAULT_COUNTRY_CODE}${digits}`;
+    }
 
-        const normalizedPhone =
-            normalizePhone(phone);
+    if (digits.length < 11) {
+        throw new Error(
+            "Invalid WhatsApp phone number",
+        );
+    }
 
-        console.log(
-            "================================"
+    return digits;
+};
+
+export const sendOpdQueueConfirmed =
+    async ({
+        to,
+        patientName,
+        queueNumber,
+        hospitalName,
+        departmentName,
+        estimatedWaitMinutes,
+        trackingToken,
+    }: SendOpdQueueMessageParams) => {
+        const accessToken = requiredEnv(
+            META_ACCESS_TOKEN,
+            "META_ACCESS_TOKEN",
         );
 
-        console.log(
-            " Sending WhatsApp..."
+        const phoneNumberId = requiredEnv(
+            PHONE_NUMBER_ID,
+            "META_PHONE_NUMBER_ID",
         );
 
-        console.log(
-            " To:",
-            normalizedPhone
-        );
+        if (!trackingToken) {
+            throw new Error(
+                "Tracking token is missing",
+            );
+        }
+
+        const recipient =
+            normalizePhoneNumber(to);
+
+        const url =
+            `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
+
+        const payload = {
+            messaging_product: "whatsapp",
+
+            to: recipient,
+
+            type: "template",
+
+            template: {
+                name: TEMPLATE_NAME,
+
+                language: {
+                    code: TEMPLATE_LANGUAGE,
+                },
+
+                components: [
+                    {
+                        type: "body",
+
+                        parameters: [
+                            {
+                                type: "text",
+                                text: patientName,
+                            },
+                            {
+                                type: "text",
+                                text: queueNumber,
+                            },
+                            {
+                                type: "text",
+                                text: hospitalName,
+                            },
+                            {
+                                type: "text",
+                                text: departmentName,
+                            },
+                            {
+                                type: "text",
+                                text: String(
+                                    estimatedWaitMinutes || 0,
+                                ),
+                            },
+                        ],
+                    },
+
+                    {
+                        type: "button",
+                        sub_type: "url",
+                        index: "0",
+
+                        parameters: [
+                            {
+                                type: "text",
+                                text: trackingToken,
+                            },
+                        ],
+                    },
+                ],
+            },
+        };
+
+        const response = await fetch(url, {
+            method: "POST",
+
+            headers: {
+                Authorization:
+                    `Bearer ${accessToken}`,
+
+                "Content-Type":
+                    "application/json",
+            },
+
+            body: JSON.stringify(payload),
+        });
+
+        const result =
+            (await response.json().catch(() => ({}))) as MetaResponse;
+
+        if (!response.ok) {
+            throw new Error(
+                `Meta WhatsApp error ${response.status}: ${
+                    result.error?.message ||
+                    JSON.stringify(result)
+                }`,
+            );
+        }
+
+        const messageId =
+            result.messages?.[0]?.id;
 
         console.log(
-            " Message:",
-            message
-        );
-
-        console.log(
-            "================================"
-        );
-
-        /*
-         * ====================================================
-         * IMPORTANT
-         *
-         * Twilio Sandbox currently requires an approved
-         * WhatsApp template for business-initiated messages.
-         *
-         * Therefore this 'message' is currently logged,
-         * while the Sandbox template is used for testing.
-         *
-         * Once your production NexTurn WhatsApp template
-         * is approved, we'll pass the template variables here.
-         * ====================================================
-         */
-
-        const twilioMessage =
-            await client.messages.create({
-
-                from:
-                    process.env
-                        .TWILIO_WHATSAPP_FROM,
-
-                to:
-                    `whatsapp:${normalizedPhone}`,
-
-                /*
-                 * YOUR CURRENT WORKING
-                 * SANDBOX CONTENT SID
-                 */
-                contentSid:
-                    "HXfe5ab5f00277942d4d4200328b4d403c",
-
-                /*
-                 * Temporary Sandbox variables.
-                 *
-                 * These can be changed once we create
-                 * the actual NexTurn WhatsApp template.
-                 */
-                contentVariables:
-                    JSON.stringify({
-                        "1":
-                            "NexTurn",
-
-                        "2":
-                            message,
-                    }),
-            });
-
-        console.log(
-            "✅ WhatsApp sent"
-        );
-
-        console.log(
-            "SID:",
-            twilioMessage.sid
-        );
-
-        console.log(
-            "Status:",
-            twilioMessage.status
+            "WHATSAPP OPD MESSAGE SENT:",
+            messageId,
         );
 
         return {
             success: true,
-            sid:
-                twilioMessage.sid,
+            messageId,
+            response: result,
         };
-
-    } catch (error: any) {
-
-        console.error(
-            "❌ WhatsApp failed:"
-        );
-
-        console.error(
-            error?.message ||
-            error
-        );
-
-        return {
-            success: false,
-
-            error:
-                error?.message ||
-                "WhatsApp sending failed",
-        };
-    }
-}
+    };
