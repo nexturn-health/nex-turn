@@ -174,7 +174,7 @@ export default function PatientTracking() {
                 if (data.status ===
                     "COMPLETED" ||
                     data.status ===
-                        "CANCELLED") {
+                    "CANCELLED") {
                     setLoading(false);
                     setRefreshing(false);
                     setIsLive(false);
@@ -206,7 +206,18 @@ export default function PatientTracking() {
             if (!active) {
                 return;
             }
+
+            console.log(
+                "✅ Patient socket connected:",
+                socket.id,
+            );
+
             setIsLive(true);
+
+            // Join only after the socket is connected.
+            joinPatientQueue(token);
+
+            // Immediately refresh after connecting.
             void loadQueue();
         }
         function handleDisconnect() {
@@ -224,7 +235,7 @@ export default function PatientTracking() {
             }
             if (data?.trackingToken &&
                 data.trackingToken !==
-                    token) {
+                token) {
                 return;
             }
             void loadQueue();
@@ -241,7 +252,7 @@ export default function PatientTracking() {
             if (doctorId &&
                 data.doctorId &&
                 data.doctorId !==
-                    doctorId) {
+                doctorId) {
                 return;
             }
             void loadQueue();
@@ -257,7 +268,7 @@ export default function PatientTracking() {
             if (doctorId &&
                 data?.doctorId &&
                 data.doctorId !==
-                    doctorId) {
+                doctorId) {
                 return;
             }
             void loadQueue();
@@ -277,7 +288,7 @@ export default function PatientTracking() {
             if (doctorId &&
                 data.doctorId &&
                 data.doctorId !==
-                    doctorId) {
+                doctorId) {
                 return;
             }
             const isNowOnBreak = Boolean(data.isOnBreak);
@@ -331,6 +342,14 @@ export default function PatientTracking() {
         socket.on("doctor:timing-updated", handleDoctorTimingUpdated);
         socket.on("queue:doctor-status", handleDoctorBreakStatus);
         socket.on("doctor:break-status", handleDoctorBreakStatus);
+        socket.on("queue:created", handleQueueUpdate);
+        socket.on("queue:called", handleQueueUpdate);
+        socket.on("queue:serving", handleQueueUpdate);
+        socket.on("queue:completed", handleQueueUpdate);
+        socket.on("queue:skipped", handleQueueUpdate);
+        socket.on("queue:recalled", handleQueueUpdate);
+        socket.on("queue:updated", handleQueueUpdate);
+        socket.on("queue:status", handleQueueUpdate);
         joinPatientQueue(token);
         if (socket.connected) {
             handleConnect();
@@ -384,6 +403,14 @@ export default function PatientTracking() {
             socket.off("doctor:timing-updated", handleDoctorTimingUpdated);
             socket.off("queue:doctor-status", handleDoctorBreakStatus);
             socket.off("doctor:break-status", handleDoctorBreakStatus);
+            socket.off("queue:created", handleQueueUpdate);
+            socket.off("queue:called", handleQueueUpdate);
+            socket.off("queue:serving", handleQueueUpdate);
+            socket.off("queue:completed", handleQueueUpdate);
+            socket.off("queue:skipped", handleQueueUpdate);
+            socket.off("queue:recalled", handleQueueUpdate);
+            socket.off("queue:updated", handleQueueUpdate);
+            socket.off("queue:status", handleQueueUpdate);
             leavePatientQueue(token);
         }
         return stopTracking;

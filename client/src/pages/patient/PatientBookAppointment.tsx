@@ -13,7 +13,6 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
-  HeartPulse,
   Loader2,
   MapPin,
   Search,
@@ -39,7 +38,7 @@ import {
   getDistrictsByState,
 } from "../../store/indiaLocations";
 
-// Dates use the patient's local calendar, rather than UTC.
+// Booking dates follow the hospital's India calendar, regardless of patient location.
 const INDIA_TIME_ZONE = "Asia/Kolkata";
 
 function indiaDate(value = new Date()): string {
@@ -73,6 +72,22 @@ function indiaDate(value = new Date()): string {
 
 function today(): string {
   return indiaDate();
+}
+
+// Seven calendar days inclusive: today plus six more days.
+function bookingWindow(now = new Date()) {
+  const min = indiaDate(now);
+  const end = new Date(`${min}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + 6);
+  return { min, max: end.toISOString().slice(0, 10) };
+}
+
+function isBookingDateAllowed(value: string, now = new Date()): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) return false;
+  const { min, max } = bookingWindow(now);
+  return value >= min && value <= max;
 }
 
 function parseTimeToMinutes(
@@ -668,13 +683,16 @@ export default function PatientBookAppointment() {
       showErrorPopup,
     );
 
+  const dateWindow = bookingWindow(new Date(clockTick));
+  const dateAllowed = isBookingDateAllowed(date, new Date(clockTick));
+
   const slots =
     useBookingList<PublicSlot>(
       useCallback(
         async () =>
           hospital &&
             doctor &&
-            date
+            isBookingDateAllowed(date)
             ? (
               await getPublicSlots(
                 hospital._id,
@@ -688,6 +706,7 @@ export default function PatientBookAppointment() {
           hospital,
           doctor,
           date,
+          dateWindow.min,
         ],
       ),
       showErrorPopup,
@@ -695,12 +714,16 @@ export default function PatientBookAppointment() {
 
   const visibleSlots =
     slots.items.filter((item) =>
-      isSlotStillBookable(
+      dateAllowed && isSlotStillBookable(
         item,
         date,
         new Date(clockTick),
       ),
     );
+
+  useEffect(() => {
+    if (!dateAllowed) setSlot(null);
+  }, [dateAllowed]);
 
   // Move keyboard focus to the new screen without adding extra Next buttons.
   useEffect(
@@ -829,11 +852,10 @@ export default function PatientBookAppointment() {
     }
 
     if (
-      date <
-      today()
+      !isBookingDateAllowed(date)
     ) {
       showBookingError(
-        "Please choose an appointment date from today onwards.",
+        "Bookings are available only for today and the following six days.",
       );
 
       return;
@@ -923,10 +945,7 @@ export default function PatientBookAppointment() {
 
       <header className="pb-header">
         <div className="pb-brand">
-          <HeartPulse size={23} />
-          <strong>
-            NextSynq Health
-          </strong>
+          <img src="/nexturn.png" alt="NextSynq Health" className="pb-brand-logo" />
         </div>
 
         <span>
@@ -1576,9 +1595,10 @@ export default function PatientBookAppointment() {
                           <input
                             id="pb-date"
                             type="date"
-                            min={
-                              today()
-                            }
+                            min={dateWindow.min}
+                            max={dateWindow.max}
+                            aria-describedby="pb-date-window"
+                            aria-invalid={!dateAllowed}
                             value={
                               date
                             }
@@ -1597,6 +1617,10 @@ export default function PatientBookAppointment() {
                         </div>
                       </div>
 
+                      <p id="pb-date-window" className="pb-window-note">
+                        Book from {formatDate(dateWindow.min)} to {formatDate(dateWindow.max)}.
+                        {!dateAllowed && " This date is unavailable. Please choose within this range."}
+                      </p>
                       <ListFeedback
                         loading={
                           slots.loading
@@ -1683,15 +1707,15 @@ export default function PatientBookAppointment() {
                         !slot ||
                         slots.loading ||
                         !!slots.error ||
-                        !date ||
-                        date <
-                        today()
+                        !dateAllowed
                       }
-                      onClick={() =>
-                        setStep(
-                          3,
-                        )
-                      }
+                      onClick={() => {
+                        if (!isBookingDateAllowed(date)) {
+                          showBookingError("Please choose a date within the seven-day booking window.");
+                          return;
+                        }
+                        setStep(3);
+                      }}
                     >
                       Continue
                       <ChevronRight size={16} />
@@ -2139,6 +2163,8 @@ function BookingStyles() {
       .pb-option-text small { display: flex; align-items: center; gap: 4px; }
       .pb-section { margin-top: 24px; border-top: 1px solid #e8eddf; padding-top: 22px; }
       .pb-section h2 { margin-bottom: 14px; font-size: 16px; font-weight: 600; }
+      .pb-brand-logo { display:block; width:clamp(135px,18vw,190px); height:auto; object-fit:contain; }
+      .pb-window-note { margin:0 0 16px; font-size:13px; color:#526b59; line-height:1.6; }
       .pb-date-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
       .pb-date-heading h2 { margin: 0; }
       .pb-times { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
