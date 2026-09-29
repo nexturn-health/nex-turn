@@ -48,10 +48,6 @@ const INDIA_TIME_ZONE = "Asia/Kolkata";
 // This creates a seven-day booking window in total.
 const APPOINTMENT_BOOKING_WINDOW_DAYS = 7;
 
-// A slot is held while the patient is entering their details. The backend
-// remains the source of truth; this timer only keeps the UI in sync with it.
-const SLOT_LIST_REFRESH_MS = 5_000;
-
 type ActiveSlotHold = {
   hospitalId: string;
   doctorId: string;
@@ -1038,35 +1034,6 @@ export default function PatientBookAppointment() {
       setHoldingSlot(false);
     }
   }
-
-  // Other patients who already have this page open see the change quickly.
-  // The atomic backend hold remains the final protection against races.
-  useEffect(() => {
-    if (
-      step !== 2 ||
-      !hospital ||
-      !doctor ||
-      !isDateWithinBookingWindow(date)
-    ) {
-      return;
-    }
-
-    const timer =
-      window.setInterval(
-        () => slots.retry(),
-        SLOT_LIST_REFRESH_MS,
-      );
-
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [
-    step,
-    hospital?._id,
-    doctor?._id,
-    date,
-    slots.retry,
-  ]);
 
   // Keep the patient on the slot screen when their hold expires. Their form
   // values are intentionally not cleared, so they can choose a new time.
