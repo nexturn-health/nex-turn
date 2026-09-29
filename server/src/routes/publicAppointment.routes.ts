@@ -14,6 +14,8 @@ const {
     getPublicHospitalDepartments,
     getPublicHospitalDoctors,
     getPublicDoctorSlots,
+    holdPublicDoctorSlot,
+    releasePublicDoctorSlot,
     bookPublicAppointment,
     getPublicAppointmentByCode,
 } =
@@ -55,6 +57,23 @@ router.get(
 router.get(
     "/hospitals/:hospitalId/doctors/:doctorId/slots",
     getPublicDoctorSlots,
+);
+
+/* ============================================================
+   PUBLIC SLOT HOLD
+
+   The client calls hold before showing the patient form. The hold
+   is short-lived and is identified by an unguessable token.
+============================================================ */
+
+router.post(
+    "/hospitals/:hospitalId/doctors/:doctorId/slots/:slotId/hold",
+    holdPublicDoctorSlot,
+);
+
+router.post(
+    "/hospitals/:hospitalId/doctors/:doctorId/slots/:slotId/release",
+    releasePublicDoctorSlot,
 );
 
 /* ============================================================

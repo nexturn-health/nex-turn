@@ -52,6 +52,9 @@ export interface IDoctorSlot
     source:
         "AUTO" | "MANUAL";
 
+    holdToken?:
+        string | null;
+
     holdExpiresAt?:
         Date | null;
 }
@@ -88,7 +91,8 @@ const DoctorSlotSchema =
             },
 
             date: {
-                type: String,
+                type:
+                    String,
 
                 required:
                     true,
@@ -98,21 +102,24 @@ const DoctorSlotSchema =
             },
 
             startTime: {
-                type: String,
+                type:
+                    String,
 
                 required:
                     true,
             },
 
             endTime: {
-                type: String,
+                type:
+                    String,
 
                 required:
                     true,
             },
 
             slotType: {
-                type: String,
+                type:
+                    String,
 
                 enum: [
                     "APPOINTMENT",
@@ -125,7 +132,8 @@ const DoctorSlotSchema =
             },
 
             status: {
-                type: String,
+                type:
+                    String,
 
                 enum: [
                     "AVAILABLE",
@@ -138,6 +146,9 @@ const DoctorSlotSchema =
 
                 default:
                     "AVAILABLE",
+
+                index:
+                    true,
             },
 
             appointmentId: {
@@ -163,13 +174,16 @@ const DoctorSlotSchema =
             },
 
             blockReason: {
-                type: String,
+                type:
+                    String,
 
-                trim: true,
+                trim:
+                    true,
             },
 
             source: {
-                type: String,
+                type:
+                    String,
 
                 enum: [
                     "AUTO",
@@ -180,11 +194,33 @@ const DoctorSlotSchema =
                     "AUTO",
             },
 
-            holdExpiresAt: {
-                type: Date,
+            holdToken: {
+                type:
+                    String,
+
+                trim:
+                    true,
 
                 default:
                     null,
+
+                index:
+                    true,
+
+                // Prevent accidental exposure in normal queries.
+                select:
+                    false,
+            },
+
+            holdExpiresAt: {
+                type:
+                    Date,
+
+                default:
+                    null,
+
+                index:
+                    true,
             },
         },
         {
@@ -193,6 +229,9 @@ const DoctorSlotSchema =
         },
     );
 
+/*
+ * Prevent duplicate slots for the same doctor and time.
+ */
 DoctorSlotSchema.index(
     {
         hospitalId: 1,
@@ -201,9 +240,29 @@ DoctorSlotSchema.index(
         startTime: 1,
     },
     {
-        unique: true,
+        unique:
+            true,
     },
 );
+
+/*
+ * Speeds up public slot lookup.
+ */
+DoctorSlotSchema.index({
+    hospitalId: 1,
+    doctorId: 1,
+    date: 1,
+    slotType: 1,
+    status: 1,
+});
+
+/*
+ * Speeds up expired hold cleanup.
+ */
+DoctorSlotSchema.index({
+    status: 1,
+    holdExpiresAt: 1,
+});
 
 export const DoctorSlot =
     mongoose.model<IDoctorSlot>(

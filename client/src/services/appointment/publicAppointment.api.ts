@@ -8,6 +8,10 @@ const publicApi =
     axios.create({
         baseURL:
             API_BASE_URL,
+        headers: {
+            "Content-Type":
+                "application/json",
+        },
     });
 
 export interface PublicHospital {
@@ -44,6 +48,8 @@ export interface PublicSlot {
     startTime: string;
     endTime: string;
     slotType: "APPOINTMENT";
+    // The public slot list only returns AVAILABLE slots. A held slot is
+    // returned only to the patient who successfully held it.
     status: "AVAILABLE";
 }
 
@@ -51,6 +57,7 @@ export interface PublicBookingPayload {
     doctorId: string;
     departmentId: string;
     slotId: string;
+    holdToken: string;
     name: string;
     phone: string;
     age?: string;
@@ -59,11 +66,33 @@ export interface PublicBookingPayload {
     notes?: string;
 }
 
+export interface PublicSlotHoldPayload {
+    doctorId: string;
+    departmentId: string;
+    slotId: string;
+    date: string;
+}
+
+export interface PublicSlotReleasePayload {
+    doctorId: string;
+    departmentId?: string;
+    slotId: string;
+    date?: string;
+    holdToken: string;
+}
+
+export interface PublicSlotHoldResult {
+    holdToken: string;
+    expiresAt: string;
+    slot: PublicSlot;
+}
+
 export interface PublicBookingResult {
     appointmentId: string;
     appointmentCode: string;
     status: string;
     confirmationRequired: boolean;
+    trackingUrl?: string;
     hospital: {
         _id: string;
         name: string;
@@ -90,15 +119,28 @@ export interface PublicBookingResult {
     endTime: string;
 }
 
-interface ApiResponse<T> {
+export interface PublicAppointmentDetails {
+    appointmentCode: string;
+    status: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    patient: unknown;
+    doctor: unknown;
+    department: unknown;
+    hospital: unknown;
+    queue?: unknown;
+}
+
+export interface ApiResponse<T> {
     success: boolean;
     message?: string;
+    code?: string;
     data: T;
 }
 
 export const getPublicStates =
     async () => {
-
         const response =
             await publicApi.get<
                 ApiResponse<string[]>
@@ -114,7 +156,6 @@ export const getPublicDistricts =
         state:
             string,
     ) => {
-
         const response =
             await publicApi.get<
                 ApiResponse<string[]>
@@ -132,14 +173,12 @@ export const getPublicDistricts =
 
 export const getPublicHospitals =
     async (
-        params:
-            {
-                state?: string;
-                district?: string;
-                q?: string;
-            },
+        params: {
+            state?: string;
+            district?: string;
+            q?: string;
+        },
     ) => {
-
         const response =
             await publicApi.get<
                 ApiResponse<PublicHospital[]>
@@ -158,7 +197,6 @@ export const getPublicDepartments =
         hospitalId:
             string,
     ) => {
-
         const response =
             await publicApi.get<
                 ApiResponse<PublicDepartment[]>
@@ -176,7 +214,6 @@ export const getPublicDoctors =
         departmentId?:
             string,
     ) => {
-
         const response =
             await publicApi.get<
                 ApiResponse<PublicDoctor[]>
@@ -203,7 +240,6 @@ export const getPublicSlots =
         date:
             string,
     ) => {
-
         const response =
             await publicApi.get<
                 ApiResponse<{
@@ -226,6 +262,52 @@ export const getPublicSlots =
         return response.data;
     };
 
+/**
+ * Atomically reserves a slot for a short period while the patient enters
+ * their details. The server returns a token which must be sent to booking.
+ */
+export const holdPublicSlot =
+    async (
+        hospitalId:
+            string,
+        payload:
+            PublicSlotHoldPayload,
+    ) => {
+        const response =
+            await publicApi.post<
+                ApiResponse<PublicSlotHoldResult>
+            >(
+                `/public/hospitals/${hospitalId}/doctors/${payload.doctorId}/slots/${payload.slotId}/hold`,
+                payload,
+            );
+
+        return response.data;
+    };
+
+/**
+ * Releases the current browser's hold when the patient goes back, changes
+ * doctor/date, closes the page, or completes booking.
+ */
+export const releasePublicSlot =
+    async (
+        hospitalId:
+            string,
+        payload:
+            PublicSlotReleasePayload,
+    ) => {
+        const response =
+            await publicApi.post<
+                ApiResponse<{
+                    released: boolean;
+                }>
+            >(
+                `/public/hospitals/${hospitalId}/doctors/${payload.doctorId}/slots/${payload.slotId}/release`,
+                payload,
+            );
+
+        return response.data;
+    };
+
 export const bookPublicAppointment =
     async (
         hospitalId:
@@ -233,7 +315,6 @@ export const bookPublicAppointment =
         payload:
             PublicBookingPayload,
     ) => {
-
         const response =
             await publicApi.post<
                 ApiResponse<PublicBookingResult>
@@ -252,10 +333,9 @@ export const getPublicAppointmentByCode =
         phone:
             string,
     ) => {
-
         const response =
             await publicApi.get<
-                ApiResponse<unknown>
+                ApiResponse<PublicAppointmentDetails>
             >(
                 `/public/appointments/${appointmentCode}`,
                 {
@@ -267,3 +347,5 @@ export const getPublicAppointmentByCode =
 
         return response.data;
     };
+
+export default publicApi;

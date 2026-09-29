@@ -179,7 +179,7 @@ const faqItems = [
     {
         question: "What is the price of the Basic Plan?",
         answer:
-            "The Basic Plan is ₹1,499 per month after the 14-day free trial. It is best for hospitals that want OPD token management, appointment booking and live patient tracking.",
+            "The Basic Plan is ₹1,999 per month after the 14-day free trial. It is best for hospitals that want OPD token management, appointment booking and live patient tracking.",
     },
     {
         question: "What is included in the Premium Plan?",
@@ -640,7 +640,7 @@ export default function Home() {
                     <div className="nx-pricing-grid">
                         <PricingCard
                             title="Basic Plan"
-                            price="₹1,499"
+                            price="₹1,999"
                             description="The essentials for your daily OPD."
                             features={basicFeatures}
                             onChoose={startTrial}

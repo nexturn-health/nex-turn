@@ -13,6 +13,7 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
+  HeartPulse,
   Loader2,
   MapPin,
   Search,
@@ -26,6 +27,8 @@ import {
   getPublicDoctors,
   getPublicHospitals,
   getPublicSlots,
+  holdPublicSlot,
+  releasePublicSlot,
   type PublicBookingResult,
   type PublicDepartment,
   type PublicDoctor,
@@ -38,8 +41,25 @@ import {
   getDistrictsByState,
 } from "../../store/indiaLocations";
 
-// Booking dates follow the hospital's India calendar, regardless of patient location.
+// Dates use the patient's local calendar, rather than UTC.
 const INDIA_TIME_ZONE = "Asia/Kolkata";
+
+// Patients can book today and the following six calendar days.
+// This creates a seven-day booking window in total.
+const APPOINTMENT_BOOKING_WINDOW_DAYS = 7;
+
+// A slot is held while the patient is entering their details. The backend
+// remains the source of truth; this timer only keeps the UI in sync with it.
+const SLOT_LIST_REFRESH_MS = 5_000;
+
+type ActiveSlotHold = {
+  hospitalId: string;
+  doctorId: string;
+  departmentId: string;
+  slotId: string;
+  date: string;
+  holdToken: string;
+};
 
 function indiaDate(value = new Date()): string {
   const parts = new Intl.DateTimeFormat(
@@ -74,20 +94,61 @@ function today(): string {
   return indiaDate();
 }
 
-// Seven calendar days inclusive: today plus six more days.
-function bookingWindow(now = new Date()) {
-  const min = indiaDate(now);
-  const end = new Date(`${min}T00:00:00Z`);
-  end.setUTCDate(end.getUTCDate() + 6);
-  return { min, max: end.toISOString().slice(0, 10) };
+function addCalendarDays(
+  dateValue: string,
+  days: number,
+): string {
+  const [
+    year,
+    month,
+    day,
+  ] = dateValue
+    .split("-")
+    .map(Number);
+
+  const date = new Date(
+    Date.UTC(
+      year,
+      month - 1,
+      day,
+    ),
+  );
+
+  date.setUTCDate(
+    date.getUTCDate() + days,
+  );
+
+  return [
+    date.getUTCFullYear(),
+    String(
+      date.getUTCMonth() + 1,
+    ).padStart(2, "0"),
+    String(
+      date.getUTCDate(),
+    ).padStart(2, "0"),
+  ].join("-");
 }
 
-function isBookingDateAllowed(value: string, now = new Date()): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) return false;
-  const { min, max } = bookingWindow(now);
-  return value >= min && value <= max;
+function lastBookableDate(
+  value = new Date(),
+): string {
+  return addCalendarDays(
+    indiaDate(value),
+    APPOINTMENT_BOOKING_WINDOW_DAYS - 1,
+  );
+}
+
+function isDateWithinBookingWindow(
+  selectedDate: string,
+  value = new Date(),
+): boolean {
+  const currentDate = indiaDate(value);
+  const finalDate = lastBookableDate(value);
+
+  return (
+    selectedDate >= currentDate &&
+    selectedDate <= finalDate
+  );
 }
 
 function parseTimeToMinutes(
@@ -159,6 +220,15 @@ function isSlotStillBookable(
 ): boolean {
   const currentDate =
     indiaDate(value);
+
+  if (
+    !isDateWithinBookingWindow(
+      selectedDate,
+      value,
+    )
+  ) {
+    return false;
+  }
 
   if (selectedDate > currentDate) {
     return true;
@@ -252,6 +322,70 @@ function errorMessage(
   }
 
   return "Something went wrong. Please try again.";
+}
+
+function errorStatus(
+  error: unknown,
+): number | null {
+  const status =
+    (
+      error as {
+        response?: {
+          status?: unknown;
+        };
+      }
+    )?.response?.status;
+
+  return typeof status === "number"
+    ? status
+    : null;
+}
+
+function errorCode(
+  error: unknown,
+): string {
+  const code =
+    (
+      error as {
+        response?: {
+          data?: {
+            code?: unknown;
+          };
+        };
+      }
+    )?.response?.data?.code;
+
+  return typeof code === "string"
+    ? code
+    : "";
+}
+
+function isSlotUnavailableError(
+  error: unknown,
+): boolean {
+  return (
+    errorStatus(error) === 409 ||
+    [
+      "SLOT_UNAVAILABLE",
+      "SLOT_HELD",
+      "SLOT_HOLD_EXPIRED",
+    ].includes(
+      errorCode(error),
+    )
+  );
+}
+
+function formatHoldTime(
+  seconds: number,
+): string {
+  const minutes = Math.floor(
+    seconds / 60,
+  );
+
+  const remainingSeconds =
+    seconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
 // Reuse the same small loader for location, hospital, doctor and slot lists.
@@ -374,18 +508,19 @@ function useBookingList<T>(
     ],
   );
 
+  const retry = useCallback(
+    () =>
+      setRetryCount(
+        (value) => value + 1,
+      ),
+    [],
+  );
+
   return {
     items,
     loading,
     error,
-    retry:
-      () =>
-        setRetryCount(
-          (
-            value,
-          ) =>
-            value + 1,
-        ),
+    retry,
   };
 }
 
@@ -462,6 +597,30 @@ export default function PatientBookAppointment() {
     useState<PublicSlot | null>(
       null,
     );
+
+  const [
+    holdToken,
+    setHoldToken,
+  ] = useState("");
+
+  const [
+    holdExpiresAt,
+    setHoldExpiresAt,
+  ] = useState<string | null>(
+    null,
+  );
+
+  const [
+    holdSeconds,
+    setHoldSeconds,
+  ] = useState<number | null>(
+    null,
+  );
+
+  const [
+    holdingSlot,
+    setHoldingSlot,
+  ] = useState(false);
 
   const [
     name,
@@ -542,6 +701,11 @@ export default function PatientBookAppointment() {
   const savingRef =
     useRef(
       false,
+    );
+
+  const activeHoldRef =
+    useRef<ActiveSlotHold | null>(
+      null,
     );
 
   const headingRef =
@@ -683,16 +847,16 @@ export default function PatientBookAppointment() {
       showErrorPopup,
     );
 
-  const dateWindow = bookingWindow(new Date(clockTick));
-  const dateAllowed = isBookingDateAllowed(date, new Date(clockTick));
-
   const slots =
     useBookingList<PublicSlot>(
       useCallback(
         async () =>
           hospital &&
             doctor &&
-            isBookingDateAllowed(date)
+            date &&
+            isDateWithinBookingWindow(
+              date,
+            )
             ? (
               await getPublicSlots(
                 hospital._id,
@@ -706,24 +870,284 @@ export default function PatientBookAppointment() {
           hospital,
           doctor,
           date,
-          dateWindow.min,
         ],
       ),
       showErrorPopup,
     );
 
-  const visibleSlots =
-    slots.items.filter((item) =>
-      dateAllowed && isSlotStillBookable(
+  const visibleSlots = [
+    ...slots.items.filter((item) =>
+      isSlotStillBookable(
         item,
         date,
         new Date(clockTick),
       ),
-    );
+    ),
+    ...(slot &&
+    activeHoldRef.current?.slotId ===
+      slot._id &&
+    !slots.items.some(
+      (item) => item._id === slot._id,
+    )
+      ? [slot]
+      : []),
+  ];
 
+  const clearHoldState = useCallback(
+    () => {
+      setHoldToken("");
+      setHoldExpiresAt(null);
+      setHoldSeconds(null);
+    },
+    [],
+  );
+
+  const forgetHoldState = useCallback(
+    () => {
+      activeHoldRef.current = null;
+      clearHoldState();
+    },
+    [
+      clearHoldState,
+    ],
+  );
+
+  const releaseCurrentHold = useCallback(
+    () => {
+      const activeHold =
+        activeHoldRef.current;
+
+      activeHoldRef.current = null;
+      clearHoldState();
+
+      if (!activeHold) {
+        return;
+      }
+
+      void releasePublicSlot(
+        activeHold.hospitalId,
+        {
+          doctorId:
+            activeHold.doctorId,
+          departmentId:
+            activeHold.departmentId,
+          slotId:
+            activeHold.slotId,
+          date:
+            activeHold.date,
+          holdToken:
+            activeHold.holdToken,
+        },
+      ).catch(() => {
+        // The backend also expires holds automatically. A failed release
+        // request must not block the patient from choosing another slot.
+      });
+    },
+    [
+      clearHoldState,
+    ],
+  );
+
+  async function selectSlot(
+    nextSlot: PublicSlot,
+  ): Promise<void> {
+    if (
+      holdingSlot ||
+      !hospital ||
+      !department ||
+      !doctor
+    ) {
+      return;
+    }
+
+    if (
+      activeHoldRef.current?.slotId ===
+      nextSlot._id
+    ) {
+      setSlot(nextSlot);
+      return;
+    }
+
+    releaseCurrentHold();
+    setHoldingSlot(true);
+    setBookingError("");
+
+    try {
+      const response =
+        await holdPublicSlot(
+          hospital._id,
+          {
+            doctorId:
+              doctor._id,
+            departmentId:
+              department._id,
+            slotId:
+              nextSlot._id,
+            date,
+          },
+        );
+
+      const hold =
+        response.data;
+
+      if (
+        !hold?.holdToken ||
+        !hold?.expiresAt
+      ) {
+        throw new Error(
+          "The slot could not be reserved. Please choose another time.",
+        );
+      }
+
+      activeHoldRef.current = {
+        hospitalId:
+          hospital._id,
+        doctorId:
+          doctor._id,
+        departmentId:
+          department._id,
+        slotId:
+          nextSlot._id,
+        date,
+        holdToken:
+          hold.holdToken,
+      };
+
+      setSlot(
+        hold.slot ||
+        nextSlot,
+      );
+
+      setHoldToken(
+        hold.holdToken,
+      );
+
+      setHoldExpiresAt(
+        hold.expiresAt,
+      );
+    } catch (error) {
+      setSlot(null);
+      slots.retry();
+
+      showBookingError(
+        isSlotUnavailableError(error)
+          ? "This time was just selected by another patient. Please choose another available slot."
+          : errorMessage(error),
+      );
+    } finally {
+      setHoldingSlot(false);
+    }
+  }
+
+  // Other patients who already have this page open see the change quickly.
+  // The atomic backend hold remains the final protection against races.
   useEffect(() => {
-    if (!dateAllowed) setSlot(null);
-  }, [dateAllowed]);
+    if (
+      step !== 2 ||
+      !hospital ||
+      !doctor ||
+      !isDateWithinBookingWindow(date)
+    ) {
+      return;
+    }
+
+    const timer =
+      window.setInterval(
+        () => slots.retry(),
+        SLOT_LIST_REFRESH_MS,
+      );
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [
+    step,
+    hospital?._id,
+    doctor?._id,
+    date,
+    slots.retry,
+  ]);
+
+  // Keep the patient on the slot screen when their hold expires. Their form
+  // values are intentionally not cleared, so they can choose a new time.
+  useEffect(() => {
+    if (!holdExpiresAt) {
+      setHoldSeconds(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil(
+          (new Date(holdExpiresAt).getTime() -
+            Date.now()) /
+            1000,
+        ),
+      );
+
+      if (remaining === 0) {
+        releaseCurrentHold();
+        setSlot(null);
+        setStep(2);
+        slots.retry();
+
+        const message =
+          "Your selected time expired. Please choose another available slot. Your entered details are still saved.";
+
+        setBookingError(message);
+        showErrorPopup(message);
+        return;
+      }
+
+      setHoldSeconds(remaining);
+    };
+
+    updateCountdown();
+
+    const timer =
+      window.setInterval(
+        updateCountdown,
+        1_000,
+      );
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [
+    holdExpiresAt,
+    releaseCurrentHold,
+    showErrorPopup,
+    slots.retry,
+  ]);
+
+  // Release a hold if the patient closes or leaves the booking page.
+  useEffect(() => {
+    return () => {
+      const activeHold =
+        activeHoldRef.current;
+
+      if (!activeHold) {
+        return;
+      }
+
+      void releasePublicSlot(
+        activeHold.hospitalId,
+        {
+          doctorId:
+            activeHold.doctorId,
+          departmentId:
+            activeHold.departmentId,
+          slotId:
+            activeHold.slotId,
+          date:
+            activeHold.date,
+          holdToken:
+            activeHold.holdToken,
+        },
+      ).catch(() => undefined);
+    };
+  }, []);
 
   // Move keyboard focus to the new screen without adding extra Next buttons.
   useEffect(
@@ -748,6 +1172,8 @@ export default function PatientBookAppointment() {
   }, []);
 
   function resetHospital(): void {
+    releaseCurrentHold();
+
     setHospital(
       null,
     );
@@ -800,10 +1226,13 @@ export default function PatientBookAppointment() {
       !hospital ||
       !department ||
       !doctor ||
-      !slot
+      !slot ||
+      !holdToken
     ) {
+      setStep(2);
+
       showBookingError(
-        "Please choose your hospital, doctor and appointment time.",
+        "Please choose an available appointment time before entering patient details.",
       );
 
       return;
@@ -852,10 +1281,23 @@ export default function PatientBookAppointment() {
     }
 
     if (
-      !isBookingDateAllowed(date)
+      date <
+      today()
     ) {
       showBookingError(
-        "Bookings are available only for today and the following six days.",
+        "Please choose an appointment date from today onwards.",
+      );
+
+      return;
+    }
+
+    if (
+      !isDateWithinBookingWindow(
+        date,
+      )
+    ) {
+      showBookingError(
+        `Appointments can be booked only within the next ${APPOINTMENT_BOOKING_WINDOW_DAYS} days.`,
       );
 
       return;
@@ -886,6 +1328,8 @@ export default function PatientBookAppointment() {
             slotId:
               slot._id,
 
+            holdToken,
+
             name:
               name.trim(),
 
@@ -907,17 +1351,32 @@ export default function PatientBookAppointment() {
           },
         );
 
+      forgetHoldState();
+
       setSuccess(
         response.data,
       );
     } catch (
     err
     ) {
-      showBookingError(
-        errorMessage(
-          err,
-        ),
-      );
+      if (
+        isSlotUnavailableError(err)
+      ) {
+        releaseCurrentHold();
+        setSlot(null);
+        slots.retry();
+        setStep(2);
+
+        showBookingError(
+          "This time was just booked by another patient. Please choose another available slot. Your entered details are still saved.",
+        );
+      } else {
+        showBookingError(
+          errorMessage(
+            err,
+          ),
+        );
+      }
     } finally {
       savingRef.current =
         false;
@@ -945,7 +1404,10 @@ export default function PatientBookAppointment() {
 
       <header className="pb-header">
         <div className="pb-brand">
-          <img src="/nexturn.png" alt="NextSynq Health" className="pb-brand-logo" />
+          <HeartPulse size={23} />
+          <strong>
+            NextSynq Health
+          </strong>
         </div>
 
         <span>
@@ -1428,6 +1890,8 @@ export default function PatientBookAppointment() {
                       onChange={(
                         e,
                       ) => {
+                        releaseCurrentHold();
+
                         setDepartment(
                           departments.items.find(
                             (
@@ -1533,6 +1997,8 @@ export default function PatientBookAppointment() {
                                     item._id
                                   }
                                   onClick={() => {
+                                    releaseCurrentHold();
+
                                     setDoctor(
                                       item,
                                     );
@@ -1595,16 +2061,20 @@ export default function PatientBookAppointment() {
                           <input
                             id="pb-date"
                             type="date"
-                            min={dateWindow.min}
-                            max={dateWindow.max}
-                            aria-describedby="pb-date-window"
-                            aria-invalid={!dateAllowed}
+                            min={
+                              today()
+                            }
+                            max={
+                              lastBookableDate()
+                            }
                             value={
                               date
                             }
                             onChange={(
                               e,
                             ) => {
+                              releaseCurrentHold();
+
                               setDate(
                                 e.target.value,
                               );
@@ -1614,13 +2084,13 @@ export default function PatientBookAppointment() {
                               );
                             }}
                           />
+
+                          <small className="pb-date-hint">
+                            Online appointments are available for the next {APPOINTMENT_BOOKING_WINDOW_DAYS} days only.
+                          </small>
                         </div>
                       </div>
 
-                      <p id="pb-date-window" className="pb-window-note">
-                        Book from {formatDate(dateWindow.min)} to {formatDate(dateWindow.max)}.
-                        {!dateAllowed && " This date is unavailable. Please choose within this range."}
-                      </p>
                       <ListFeedback
                         loading={
                           slots.loading
@@ -1635,6 +2105,15 @@ export default function PatientBookAppointment() {
                           showErrorPopup
                         }
                       />
+
+                      {bookingError && (
+                        <div
+                          className="pb-error"
+                          role="alert"
+                        >
+                          {bookingError}
+                        </div>
+                      )}
 
                       {!slots.loading &&
                         !slots.error && (
@@ -1652,8 +2131,16 @@ export default function PatientBookAppointment() {
                                     slot?._id ===
                                     item._id
                                   }
+                                  disabled={
+                                    holdingSlot
+                                  }
+                                  aria-busy={
+                                    holdingSlot &&
+                                    slot?._id ===
+                                      item._id
+                                  }
                                   onClick={() =>
-                                    setSlot(
+                                    void selectSlot(
                                       item,
                                     )
                                   }
@@ -1668,9 +2155,15 @@ export default function PatientBookAppointment() {
                                   </span>
                                 </button>
                               ),
-                            )}
+                              )}
                           </div>
                         )}
+
+                      {holdingSlot && (
+                        <p className="pb-hint">
+                          Reserving your selected time…
+                        </p>
+                      )}
 
                       {!slots.loading &&
                         !slots.error &&
@@ -1690,11 +2183,11 @@ export default function PatientBookAppointment() {
                     <button
                       type="button"
                       className="pb-button pb-secondary"
-                      onClick={() =>
-                        setStep(
-                          1,
-                        )
-                      }
+                      onClick={() => {
+                        releaseCurrentHold();
+                        setSlot(null);
+                        setStep(1);
+                      }}
                     >
                       <ArrowLeft size={16} />
                       Back
@@ -1704,18 +2197,20 @@ export default function PatientBookAppointment() {
                       type="button"
                       className="pb-button pb-primary"
                       disabled={
-                        !slot ||
-                        slots.loading ||
-                        !!slots.error ||
-                        !dateAllowed
+                      !slot ||
+                      !holdToken ||
+                      slots.loading ||
+                      !!slots.error ||
+                        !date ||
+                        !isDateWithinBookingWindow(
+                          date,
+                        )
                       }
-                      onClick={() => {
-                        if (!isBookingDateAllowed(date)) {
-                          showBookingError("Please choose a date within the seven-day booking window.");
-                          return;
-                        }
-                        setStep(3);
-                      }}
+                      onClick={() =>
+                        setStep(
+                          3,
+                        )
+                      }
                     >
                       Continue
                       <ChevronRight size={16} />
@@ -1733,14 +2228,20 @@ export default function PatientBookAppointment() {
                     saving
                   }
                 >
-                  {bookingError && (
+                {bookingError && (
                     <div
                       className="pb-error"
                       role="alert"
                     >
                       {bookingError}
-                    </div>
-                  )}
+                  </div>
+                )}
+
+                {holdSeconds !== null && (
+                  <p className="pb-note">
+                    This time is reserved for you for {formatHoldTime(holdSeconds)}.
+                  </p>
+                )}
 
                   <fieldset
                     className="pb-form"
@@ -2163,10 +2664,9 @@ function BookingStyles() {
       .pb-option-text small { display: flex; align-items: center; gap: 4px; }
       .pb-section { margin-top: 24px; border-top: 1px solid #e8eddf; padding-top: 22px; }
       .pb-section h2 { margin-bottom: 14px; font-size: 16px; font-weight: 600; }
-      .pb-brand-logo { display:block; width:clamp(135px,18vw,190px); height:auto; object-fit:contain; }
-      .pb-window-note { margin:0 0 16px; font-size:13px; color:#526b59; line-height:1.6; }
       .pb-date-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
       .pb-date-heading h2 { margin: 0; }
+      .pb-date-hint { display: block; color: #71816b; font-size: 11px; line-height: 1.5; }
       .pb-times { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
       .pb-times button { padding: 12px; border: 1px solid #d9e3d0; border-radius: 10px; background: #fafbf7; color: #345c42; }
       .pb-times strong { display: block; font-size: 15px; font-weight: 600; }

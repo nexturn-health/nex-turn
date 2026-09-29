@@ -204,6 +204,135 @@ const MAX_ACTIVE_FUTURE_APPOINTMENTS_PER_PATIENT =
 const MAX_NO_SHOW_ALLOWED =
     3;
 
+/*
+ * A public patient gets a short, server-side reservation while they fill in
+ * their details. The slot is not shown to other patients while it is held.
+ * Keep this value short so abandoned browser tabs do not block the schedule.
+ */
+const PUBLIC_SLOT_HOLD_MINUTES = Math.max(
+    2,
+    Math.min(
+        10,
+        Number(
+            process.env.PUBLIC_SLOT_HOLD_MINUTES ||
+            5,
+        ) ||
+        5,
+    ),
+);
+
+const PUBLIC_SLOT_HOLD_MS =
+    PUBLIC_SLOT_HOLD_MINUTES *
+    60 *
+    1000;
+
+const getIndiaCalendarDate =
+    (
+        value:
+            Date = new Date(),
+    ) => {
+        return new Intl.DateTimeFormat(
+            "en-CA",
+            {
+                timeZone:
+                    "Asia/Kolkata",
+                year:
+                    "numeric",
+                month:
+                    "2-digit",
+                day:
+                    "2-digit",
+            },
+        ).format(
+            value,
+        );
+    };
+
+const addCalendarDays =
+    (
+        dateValue:
+            string,
+        days:
+            number,
+    ) => {
+        const [
+            year,
+            month,
+            day,
+        ] = dateValue
+            .split("-")
+            .map(Number);
+
+        const date = new Date(
+            Date.UTC(
+                year,
+                month - 1,
+                day,
+            ),
+        );
+
+        date.setUTCDate(
+            date.getUTCDate() +
+            days,
+        );
+
+        return [
+            date.getUTCFullYear(),
+            String(
+                date.getUTCMonth() +
+                1,
+            ).padStart(
+                2,
+                "0",
+            ),
+            String(
+                date.getUTCDate(),
+            ).padStart(
+                2,
+                "0",
+            ),
+        ].join("-");
+    };
+
+const isPublicBookingDateAllowed =
+    (
+        value:
+            unknown,
+    ) => {
+        const selectedDate =
+            String(
+                value ||
+                "",
+            ).slice(
+                0,
+                10,
+            );
+
+        if (
+            !/^\d{4}-\d{2}-\d{2}$/.test(
+                selectedDate,
+            )
+        ) {
+            return false;
+        }
+
+        const currentDate =
+            getIndiaCalendarDate();
+
+        const lastBookableDate =
+            addCalendarDays(
+                currentDate,
+                6,
+            );
+
+        return (
+            selectedDate >=
+            currentDate &&
+            selectedDate <=
+            lastBookableDate
+        );
+    };
+
 const getDateOnly =
     (
         value:
@@ -490,6 +619,87 @@ const getPublicHospital =
                 true,
         });
     };
+
+const releaseExpiredPublicSlotHolds =
+    async ({
+        hospitalId,
+        doctorId,
+    }: {
+        hospitalId:
+            mongoose.Types.ObjectId;
+        doctorId:
+            mongoose.Types.ObjectId;
+    }) => {
+        await DoctorSlot.updateMany(
+            {
+                hospitalId,
+
+                doctorId,
+
+                slotType:
+                    "APPOINTMENT",
+
+                status:
+                    "HELD",
+
+                holdExpiresAt: {
+                    $ne:
+                        null,
+
+                    $lte:
+                        new Date(),
+                },
+            },
+            {
+                $set: {
+                    status:
+                        "AVAILABLE",
+
+                    patientId:
+                        null,
+
+                    appointmentId:
+                        null,
+                },
+
+                $unset: {
+                    holdToken:
+                        1,
+
+                    holdExpiresAt:
+                        1,
+                },
+            } as any,
+        );
+    };
+
+const publicSlotResponse =
+    (
+        slot:
+            any,
+    ) => ({
+        _id:
+            String(
+                slot._id,
+            ),
+
+        date:
+            getDateOnly(
+                slot.date,
+            ),
+
+        startTime:
+            slot.startTime,
+
+        endTime:
+            slot.endTime,
+
+        slotType:
+            slot.slotType,
+
+        status:
+            slot.status,
+    });
 
 const getHospitalPublicAddress =
     (
@@ -1248,6 +1458,27 @@ export const getPublicDoctorSlots =
                     });
             }
 
+            if (
+                !isPublicBookingDateAllowed(
+                    date,
+                )
+            ) {
+                return res
+                    .status(
+                        400,
+                    )
+                    .json({
+                        success:
+                            false,
+
+                        code:
+                            "BOOKING_WINDOW_EXCEEDED",
+
+                        message:
+                            "Appointments can be booked only from today through the next 6 days.",
+                    });
+            }
+
             const hospital =
                 await getPublicHospital(
                     hospitalId,
@@ -1559,12 +1790,23 @@ export const getPublicDoctorSlots =
 
             const result:
                 any =
-                await generateDoctorSlots(
-                    String(
+                await releaseExpiredPublicSlotHolds({
+                    hospitalId:
                         hospital._id,
-                    ),
-                    doctorId,
-                    date,
+
+                    doctorId:
+                        toObjectId(
+                            doctorId,
+                        ),
+                }).then(
+                    () =>
+                        generateDoctorSlots(
+                            String(
+                                hospital._id,
+                            ),
+                            doctorId,
+                            date,
+                        ),
                 );
 
             const allSlots:
@@ -1589,7 +1831,12 @@ export const getPublicDoctorSlots =
                             any,
                     ) =>
                         slot.status ===
-                        "AVAILABLE",
+                        "AVAILABLE" &&
+                        !isAppointmentSlotPassed(
+                            slot.date ||
+                            date,
+                            slot.startTime,
+                        ),
                 );
 
             return res.json({
@@ -1613,33 +1860,10 @@ export const getPublicDoctorSlots =
                         result.schedule?.slotDurationMinutes ??
                         schedule.slotDurationMinutes,
 
-                    slots:
-                        availableSlots.map(
-                            (
-                                slot:
-                                    any,
-                            ) => ({
-                                _id:
-                                    String(
-                                        slot._id,
-                                    ),
-
-                                date:
-                                    slot.date,
-
-                                startTime:
-                                    slot.startTime,
-
-                                endTime:
-                                    slot.endTime,
-
-                                slotType:
-                                    slot.slotType,
-
-                                status:
-                                    slot.status,
-                            }),
-                        ),
+                        slots:
+                            availableSlots.map(
+                                publicSlotResponse,
+                            ),
                 },
 
                 debug:
@@ -1741,6 +1965,632 @@ export const getPublicDoctorSlots =
     };
 
 /* ============================================================
+   HOLD PUBLIC DOCTOR SLOT
+   POST /api/public/hospitals/:hospitalId/doctors/:doctorId/slots/:slotId/hold
+
+   This is the first half of booking. It is intentionally atomic:
+   only one request can change AVAILABLE -> HELD for a slot.
+============================================================ */
+
+export const holdPublicDoctorSlot =
+    async (
+        req:
+            Request,
+        res:
+            Response,
+    ) => {
+        try {
+            const hospitalId =
+                getParam(
+                    req.params.hospitalId,
+                );
+
+            const doctorId =
+                getParam(
+                    req.params.doctorId,
+                );
+
+            const slotId =
+                getParam(
+                    req.params.slotId,
+                );
+
+            const departmentId =
+                getParam(
+                    req.body?.departmentId,
+                );
+
+            const requestedDate =
+                getParam(
+                    req.body?.date,
+                );
+
+            if (
+                !isValidObjectId(
+                    hospitalId,
+                ) ||
+                !isValidObjectId(
+                    doctorId,
+                ) ||
+                !isValidObjectId(
+                    slotId,
+                ) ||
+                (
+                    departmentId &&
+                    !isValidObjectId(
+                        departmentId,
+                    )
+                )
+            ) {
+                return res
+                    .status(
+                        400,
+                    )
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Invalid slot hold details",
+                    });
+            }
+
+            const hospital =
+                await getPublicHospital(
+                    hospitalId,
+                );
+
+            if (
+                !hospital
+            ) {
+                return res
+                    .status(
+                        404,
+                    )
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Hospital not found or booking disabled",
+                    });
+            }
+
+            const doctor:
+                any =
+                await User.findOne({
+                    _id:
+                        toObjectId(
+                            doctorId,
+                        ),
+
+                    hospitalId:
+                        hospital._id,
+
+                    role:
+                        "DOCTOR",
+
+                    isActive: {
+                        $ne:
+                            false,
+                    },
+                }).lean();
+
+            if (
+                !doctor
+            ) {
+                return res
+                    .status(
+                        404,
+                    )
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Doctor not found",
+                    });
+            }
+
+            if (
+                departmentId
+            ) {
+                const department =
+                    await Department.findOne({
+                        _id:
+                            toObjectId(
+                                departmentId,
+                            ),
+
+                        hospitalId:
+                            hospital._id,
+
+                        isActive:
+                            true,
+                    }).lean();
+
+                if (
+                    !department
+                ) {
+                    return res
+                        .status(
+                            404,
+                        )
+                        .json({
+                            success:
+                                false,
+
+                            message:
+                                "Department not found",
+                        });
+                }
+
+                if (
+                    doctor.departmentId &&
+                    String(
+                        doctor.departmentId,
+                    ) !==
+                    String(
+                        department._id,
+                    )
+                ) {
+                    return res
+                        .status(
+                            400,
+                        )
+                        .json({
+                            success:
+                                false,
+
+                            message:
+                                "Selected doctor does not belong to selected department",
+                        });
+                }
+            }
+
+            const schedule:
+                any =
+                await DoctorSchedule.findOne({
+                    hospitalId:
+                        hospital._id,
+
+                    doctorId:
+                        toObjectId(
+                            doctorId,
+                        ),
+                }).lean();
+
+            if (
+                !schedule ||
+                schedule.appointmentEnabled ===
+                false
+            ) {
+                return res
+                    .status(
+                        400,
+                    )
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Appointments are not enabled for this doctor",
+                    });
+            }
+
+            const selectedSlot:
+                any =
+                await DoctorSlot.findOne({
+                    _id:
+                        toObjectId(
+                            slotId,
+                        ),
+
+                    hospitalId:
+                        hospital._id,
+
+                    doctorId:
+                        toObjectId(
+                            doctorId,
+                        ),
+
+                    slotType:
+                        "APPOINTMENT",
+                }).lean();
+
+            if (
+                !selectedSlot
+            ) {
+                return res
+                    .status(
+                        404,
+                    )
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Appointment slot not found",
+                    });
+            }
+
+            const slotDate =
+                getDateOnly(
+                    selectedSlot.date,
+                );
+
+            if (
+                requestedDate &&
+                requestedDate !==
+                slotDate
+            ) {
+                return res
+                    .status(
+                        400,
+                    )
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Selected slot does not belong to the requested date",
+                    });
+            }
+
+            if (
+                !isPublicBookingDateAllowed(
+                    slotDate,
+                )
+            ) {
+                return res
+                    .status(
+                        409,
+                    )
+                    .json({
+                        success:
+                            false,
+
+                        code:
+                            "BOOKING_WINDOW_EXCEEDED",
+
+                        message:
+                            "Appointments can be booked only from today through the next 6 days.",
+                    });
+            }
+
+            const passedSlotError =
+                assertAppointmentSlotNotPassed(
+                    slotDate,
+                    selectedSlot.startTime,
+                );
+
+            if (
+                passedSlotError
+            ) {
+                return res
+                    .status(
+                        409,
+                    )
+                    .json(
+                        passedSlotError,
+                    );
+            }
+
+            await releaseExpiredPublicSlotHolds({
+                hospitalId:
+                    hospital._id,
+
+                doctorId:
+                    doctor._id,
+            });
+
+            const now =
+                new Date();
+
+            const holdExpiresAt =
+                new Date(
+                    now.getTime() +
+                    PUBLIC_SLOT_HOLD_MS,
+                );
+
+            const holdToken =
+                crypto.randomBytes(
+                    32,
+                ).toString(
+                    "hex",
+                );
+
+            const heldSlot:
+                any =
+                await DoctorSlot.findOneAndUpdate(
+                    {
+                        _id:
+                            toObjectId(
+                                slotId,
+                            ),
+
+                        hospitalId:
+                            hospital._id,
+
+                        doctorId:
+                            doctor._id,
+
+                        slotType:
+                            "APPOINTMENT",
+
+                        $or: [
+                            {
+                                status:
+                                    "AVAILABLE",
+                            },
+                            {
+                                status:
+                                    "HELD",
+
+                                holdExpiresAt: {
+                                    $ne:
+                                        null,
+
+                                    $lte:
+                                        now,
+                                },
+                            },
+                        ],
+                    },
+                    {
+                        $set: {
+                            status:
+                                "HELD",
+
+                            holdToken,
+
+                            holdExpiresAt,
+
+                            patientId:
+                                null,
+
+                            appointmentId:
+                                null,
+                        },
+                    } as any,
+                    {
+                        returnDocument:
+                            "after",
+
+                        new:
+                            true,
+                    },
+                );
+
+            if (
+                !heldSlot
+            ) {
+                return res
+                    .status(
+                        409,
+                    )
+                    .json({
+                        success:
+                            false,
+
+                        code:
+                            "SLOT_UNAVAILABLE",
+
+                        message:
+                            "This time was just selected by another patient. Please choose another available slot.",
+                    });
+            }
+
+            return res
+                .status(
+                    200,
+                )
+                .json({
+                    success:
+                        true,
+
+                    message:
+                        "Appointment time reserved temporarily",
+
+                    data: {
+                        holdToken,
+
+                        expiresAt:
+                            holdExpiresAt.toISOString(),
+
+                        slot: {
+                            ...publicSlotResponse(
+                                heldSlot,
+                            ),
+
+                            // The current patient may keep rendering the
+                            // selected item, but it is not publicly available.
+                            status:
+                                "AVAILABLE",
+                        },
+                    },
+                });
+        } catch (
+            error
+        ) {
+            console.error(
+                "HOLD PUBLIC SLOT ERROR:",
+                error,
+            );
+
+            return res
+                .status(
+                    500,
+                )
+                .json({
+                    success:
+                        false,
+
+                    message:
+                        "Failed to reserve appointment time",
+                });
+        }
+    };
+
+/* ============================================================
+   RELEASE PUBLIC DOCTOR SLOT HOLD
+   POST /api/public/hospitals/:hospitalId/doctors/:doctorId/slots/:slotId/release
+============================================================ */
+
+export const releasePublicDoctorSlot =
+    async (
+        req:
+            Request,
+        res:
+            Response,
+    ) => {
+        try {
+            const hospitalId =
+                getParam(
+                    req.params.hospitalId,
+                );
+
+            const doctorId =
+                getParam(
+                    req.params.doctorId,
+                );
+
+            const slotId =
+                getParam(
+                    req.params.slotId,
+                );
+
+            const holdToken =
+                getParam(
+                    req.body?.holdToken,
+                ).trim();
+
+            if (
+                !isValidObjectId(
+                    hospitalId,
+                ) ||
+                !isValidObjectId(
+                    doctorId,
+                ) ||
+                !isValidObjectId(
+                    slotId,
+                ) ||
+                !holdToken
+            ) {
+                return res
+                    .status(
+                        400,
+                    )
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Hospital, doctor, slot and hold token are required",
+                    });
+            }
+
+            const hospital =
+                await getPublicHospital(
+                    hospitalId,
+                );
+
+            if (
+                !hospital
+            ) {
+                return res
+                    .status(
+                        404,
+                    )
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Hospital not found or booking disabled",
+                    });
+            }
+
+            const releaseResult =
+                await DoctorSlot.updateOne(
+                    {
+                        _id:
+                            toObjectId(
+                                slotId,
+                            ),
+
+                        hospitalId:
+                            hospital._id,
+
+                        doctorId:
+                            toObjectId(
+                                doctorId,
+                            ),
+
+                        slotType:
+                            "APPOINTMENT",
+
+                        status:
+                            "HELD",
+
+                        holdToken,
+                    },
+                    {
+                        $set: {
+                            status:
+                                "AVAILABLE",
+
+                            patientId:
+                                null,
+
+                            appointmentId:
+                                null,
+                        },
+
+                        $unset: {
+                            holdToken:
+                                1,
+
+                            holdExpiresAt:
+                                1,
+                        },
+                    } as any,
+                );
+
+            return res.json({
+                success:
+                    true,
+
+                data: {
+                    released:
+                        Boolean(
+                            releaseResult.modifiedCount,
+                        ),
+                },
+            });
+        } catch (
+            error
+        ) {
+            console.error(
+                "RELEASE PUBLIC SLOT ERROR:",
+                error,
+            );
+
+            return res
+                .status(
+                    500,
+                )
+                .json({
+                    success:
+                        false,
+
+                    message:
+                        "Failed to release appointment time",
+                });
+        }
+    };
+
+/* ============================================================
    BOOK PUBLIC APPOINTMENT
    POST /api/public/hospitals/:hospitalId/appointments
 ============================================================ */
@@ -1762,6 +2612,7 @@ export const bookPublicAppointment =
                 doctorId,
                 departmentId,
                 slotId,
+                holdToken: rawHoldToken,
                 name,
                 phone,
                 age,
@@ -1781,6 +2632,12 @@ export const bookPublicAppointment =
                 normalizePhone(
                     phone,
                 );
+
+            const holdToken =
+                String(
+                    rawHoldToken ||
+                    "",
+                ).trim();
 
             if (
                 !isValidObjectId(
@@ -1803,7 +2660,8 @@ export const bookPublicAppointment =
                         slotId ||
                         "",
                     ),
-                )
+                ) ||
+                !holdToken
             ) {
                 return res
                     .status(
@@ -1814,7 +2672,10 @@ export const bookPublicAppointment =
                             false,
 
                         message:
-                            "Invalid booking details",
+                            "Invalid booking details or expired slot reservation",
+
+                        code:
+                            "SLOT_HOLD_REQUIRED",
                     });
             }
 
@@ -2133,6 +2994,45 @@ export const bookPublicAppointment =
                     selectedSlot.date,
                 );
 
+            if (
+                !isPublicBookingDateAllowed(
+                    appointmentDate,
+                )
+            ) {
+                return res
+                    .status(
+                        409,
+                    )
+                    .json({
+                        success:
+                            false,
+
+                        code:
+                            "BOOKING_WINDOW_EXCEEDED",
+
+                        message:
+                            "Appointments can be booked only from today through the next 6 days.",
+                    });
+            }
+
+            const passedSlotError =
+                assertAppointmentSlotNotPassed(
+                    appointmentDate,
+                    selectedSlot.startTime,
+                );
+
+            if (
+                passedSlotError
+            ) {
+                return res
+                    .status(
+                        409,
+                    )
+                    .json(
+                        passedSlotError,
+                    );
+            }
+
             const duplicateSameDoctorToday =
                 await Appointment.findOne({
                     hospitalId:
@@ -2224,7 +3124,14 @@ export const bookPublicAppointment =
                             "APPOINTMENT",
 
                         status:
-                            "AVAILABLE",
+                            "HELD",
+
+                        holdToken,
+
+                        holdExpiresAt: {
+                            $gt:
+                                new Date(),
+                        },
                     },
                     {
                         $set: {
@@ -2233,6 +3140,14 @@ export const bookPublicAppointment =
 
                             patientId:
                                 patient._id,
+                        },
+
+                        $unset: {
+                            holdToken:
+                                1,
+
+                            holdExpiresAt:
+                                1,
                         },
                     },
                     {
@@ -2253,7 +3168,10 @@ export const bookPublicAppointment =
                             false,
 
                         message:
-                            "This slot is no longer available. Please choose another slot.",
+                            "Your slot reservation expired or this time was already booked. Please choose another available slot.",
+
+                        code:
+                            "SLOT_UNAVAILABLE",
                     });
             }
 
@@ -2474,6 +3392,14 @@ export const bookPublicAppointment =
 
                             appointmentId:
                                 null,
+                        },
+
+                        $unset: {
+                            holdToken:
+                                1,
+
+                            holdExpiresAt:
+                                1,
                         },
                     },
                 );
@@ -2969,6 +3895,8 @@ const publicAppointmentController = {
     getPublicHospitalDepartments,
     getPublicHospitalDoctors,
     getPublicDoctorSlots,
+    holdPublicDoctorSlot,
+    releasePublicDoctorSlot,
     bookPublicAppointment,
     getPublicAppointmentByCode,
     getIndiaTodayAndMinutes
