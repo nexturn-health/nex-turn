@@ -13,6 +13,7 @@ import {
     callSelectedPatient,
     recallSkippedPatient,
     markSkippedPatientNoShow,
+    deleteQueueToken,
 } from "../controllers/queue.controller";
 
 import {
@@ -216,8 +217,23 @@ router.patch(
     skipPatient,
 );
 
+router.delete(
+    "/:queueId",
+    protect,
+    authorize(
+        "RECEPTIONIST",
+        "HOSPITAL_ADMIN",
+        "SUPER_ADMIN",
+    ),
+    deleteQueueToken,
+);
+
 /* =========================================================
    EXPORT
 ========================================================= */
 
 export default router;
+
+function authorizeRoles(arg0: string, arg1: string, arg2: string): import("express-serve-static-core").RequestHandler<import("express-serve-static-core").ParamsDictionary, any, any, import("qs").ParsedQs, Record<string, any>> {
+    throw new Error("Function not implemented.");
+}

@@ -4743,3 +4743,104 @@ export const callSelectedPatient = async (
     });
   }
 };
+
+export const deleteQueueToken = async (
+    req: Request,
+    res: Response,
+) => {
+    try {
+        const { queueId } = req.params;
+
+        const user = req.user as {
+            userId: string;
+            hospitalId?: string;
+            role: string;
+        };
+
+        if (!mongoose.isValidObjectId(queueId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid token ID.",
+            });
+        }
+
+        if (!user.hospitalId) {
+            return res.status(403).json({
+                success: false,
+                message: "Hospital access is required.",
+            });
+        }
+
+        const reason =
+            String(
+                req.body?.reason ||
+                    "Removed by reception",
+            ).slice(0, 200);
+
+        const queue =
+            await Queue.findOneAndUpdate(
+                {
+                    _id: queueId,
+                    hospitalId: user.hospitalId,
+                    status: {
+                        $in: [
+                            "WAITING",
+                            "CALLED",
+                        ],
+                    },
+                },
+                {
+                    $set: {
+                        status: "CANCELLED",
+                        cancelledAt: new Date(),
+                        cancelledBy: user.userId,
+                        cancellationReason: reason,
+                    },
+                },
+                {
+                    new: true,
+                    runValidators: true,
+                },
+            ).select(
+                "_id patientId tokenLabel tokenNumber status",
+            );
+
+        if (!queue) {
+            return res.status(409).json({
+                success: false,
+                message:
+                    "This token cannot be deleted. It may already be completed, serving, skipped, or cancelled.",
+            });
+        }
+
+        const io = req.app.get("io");
+
+        io?.to(
+            `hospital:${user.hospitalId}`,
+        ).emit(
+            "queue:cancelled",
+            {
+                queueId: queue._id.toString(),
+                patientId:
+                    queue.patientId?.toString(),
+                tokenLabel: queue.tokenLabel,
+            },
+        );
+
+        return res.json({
+            success: true,
+            message: "Token deleted successfully.",
+            data: queue,
+        });
+    } catch (error) {
+        console.error(
+            "deleteQueueToken error:",
+            error,
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: "Unable to delete token.",
+        });
+    }
+};

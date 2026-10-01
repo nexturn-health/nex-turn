@@ -56,149 +56,153 @@ export type QueueRecallMode =
 
 export interface IQueue {
     _id?:
-        mongoose.Types.ObjectId;
+    mongoose.Types.ObjectId;
 
     hospitalId:
-        mongoose.Types.ObjectId;
+    mongoose.Types.ObjectId;
 
     patientId:
-        mongoose.Types.ObjectId;
+    mongoose.Types.ObjectId;
 
     departmentId:
-        mongoose.Types.ObjectId;
+    mongoose.Types.ObjectId;
 
     doctorId?:
-        mongoose.Types.ObjectId | null;
+    mongoose.Types.ObjectId | null;
 
     appointmentId?:
-        mongoose.Types.ObjectId | null;
+    mongoose.Types.ObjectId | null;
 
     source:
-        QueueSource;
+    QueueSource;
 
     scheduledStartTime?:
-        string | null;
+    string | null;
 
     scheduledEndTime?:
-        string | null;
+    string | null;
 
     sortTime?:
-        Date | null;
+    Date | null;
 
     tokenNumber:
-        number;
+    number;
 
     tokenLabel:
-        string;
+    string;
 
     priority:
-        QueuePriority;
+    QueuePriority;
 
     status:
-        QueueStatus;
+    QueueStatus;
 
     queueDate:
-        string;
+    string;
 
     paymentStatus:
-        QueuePaymentStatus;
+    QueuePaymentStatus;
 
     arrivedAt?:
-        Date | null;
+    Date | null;
 
     checkedInAt?:
-        Date | null;
+    Date | null;
 
     estimatedWaitTime:
-        number;
+    number;
 
     estimatedTurnTime?:
-        Date | null;
+    Date | null;
 
     serviceDurationMinutes?:
-        number | null;
+    number | null;
 
     trackingToken:
-        string;
+    string;
 
     trackingLinkActive:
-        boolean;
+    boolean;
 
     trackingExpiresAt:
-        Date;
+    Date;
 
     tokenNotificationSent:
-        boolean;
+    boolean;
 
     nearTurnNotificationSent:
-        boolean;
+    boolean;
 
     calledNotificationSent:
-        boolean;
+    boolean;
 
     calledAt?:
-        Date | null;
+    Date | null;
 
     servingAt?:
-        Date | null;
+    Date | null;
 
     completedAt?:
-        Date | null;
+    Date | null;
 
     appointmentCallStatus?:
-        AppointmentCallStatus;
+    AppointmentCallStatus;
 
     appointmentMissedAt?:
-        Date | null;
+    Date | null;
 
     manuallyCalledAfterMissedAt?:
-        Date | null;
+    Date | null;
 
     /* ============================================================
        SKIPPED / RECALL / OVERRIDE FLOW
     ============================================================ */
 
     skipReason?:
-        string;
+    string;
 
     skippedAt?:
-        Date | null;
+    Date | null;
 
     skippedBy?:
-        mongoose.Types.ObjectId | null;
+    mongoose.Types.ObjectId | null;
 
     skipCount?:
-        number;
+    number;
 
     recallStatus?:
-        QueueRecallStatus;
+    QueueRecallStatus;
 
     recallMode?:
-        QueueRecallMode;
+    QueueRecallMode;
 
     recalledAt?:
-        Date | null;
+    Date | null;
 
     recalledBy?:
-        mongoose.Types.ObjectId | null;
+    mongoose.Types.ObjectId | null;
 
     manualOverride?:
-        boolean;
+    boolean;
 
     manualOverrideReason?:
-        string;
+    string;
 
     manualOverrideAt?:
-        Date | null;
+    Date | null;
 
     manualOverrideBy?:
-        mongoose.Types.ObjectId | null;
+    mongoose.Types.ObjectId | null;
 
     createdAt?:
-        Date;
+    Date;
 
     updatedAt?:
-        Date;
+    Date;
+
+    cancelledAt?: Date | null;
+    cancelledBy?: mongoose.Types.ObjectId | null;
+    cancellationReason?: string | null;
 }
 
 export type QueueDocument =
@@ -733,6 +737,24 @@ const queueSchema =
 
                 default:
                     null,
+            },
+
+            cancelledAt: {
+                type: Date,
+                default: null,
+            },
+
+            cancelledBy: {
+                type: Schema.Types.ObjectId,
+                ref: "User",
+                default: null,
+            },
+
+            cancellationReason: {
+                type: String,
+                trim: true,
+                maxlength: 200,
+                default: null,
             },
         },
         {

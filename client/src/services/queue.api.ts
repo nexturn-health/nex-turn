@@ -380,3 +380,20 @@ export const resumeDoctorDuty = async () => {
 
     return unwrapResponse(response);
 };
+
+export const deleteSameDayToken = async (
+    queueId: string,
+) => {
+    const response =
+        await api.delete(
+            `/queues/${queueId}`,
+            {
+                data: {
+                    reason:
+                        "Removed by reception",
+                },
+            },
+        );
+
+    return response.data;
+};
