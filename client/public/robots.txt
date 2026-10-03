@@ -1,4 +1,11 @@
 User-agent: *
 Allow: /
 
+Disallow: /api/
+Disallow: /login
+Disallow: /admin
+Disallow: /doctor
+Disallow: /reception
+Disallow: /super-admin
+
 Sitemap: https://www.nextsynq.health/sitemap.xml

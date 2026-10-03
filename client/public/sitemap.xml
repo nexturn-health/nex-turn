@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset
-  xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
->
-  <url>
-    <loc>
-      https://www.nextsynq.health/book-appointment
-    </loc>
-  </url>
+    xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 
-  <url>
-    <loc>
-      https://www.nextsynq.health/book-appointment/nexturn-hospital
-    </loc>
-  </url>
+    <url>
+        <loc>https://www.nextsynq.health/</loc>
+    </url>
+
+    <url>
+        <loc>https://www.nextsynq.health/book-appointment</loc>
+    </url>
+
+    <url>
+        <loc>https://www.nextsynq.health/book-appointment/janhit-hospital</loc>
+        <lastmod>2026-10-03</lastmod>
+    </url>
+
 </urlset>
