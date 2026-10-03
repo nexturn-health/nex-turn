@@ -11,6 +11,7 @@ const {
     getPublicStates,
     getPublicDistricts,
     getPublicHospitals,
+    getPublicHospitalBySlug,
     getPublicHospitalDepartments,
     getPublicHospitalDoctors,
     getPublicDoctorSlots,
@@ -44,6 +45,14 @@ router.get(
     getPublicHospitals,
 );
 
+// Direct hospital search by slug
+// Example:
+// /api/public/hospitals/slug/janhit-hospital
+router.get(
+    "/hospitals/slug/:slug",
+    getPublicHospitalBySlug,
+);
+
 router.get(
     "/hospitals/:hospitalId/departments",
     getPublicHospitalDepartments,
@@ -61,9 +70,6 @@ router.get(
 
 /* ============================================================
    PUBLIC SLOT HOLD
-
-   The client calls hold before showing the patient form. The hold
-   is short-lived and is identified by an unguessable token.
 ============================================================ */
 
 router.post(
