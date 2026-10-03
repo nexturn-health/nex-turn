@@ -1,7 +1,8 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
-      "source": "/((?!assets/|favicon.ico|robots.txt|manifest.webmanifest).*)",
+      "source": "/((?!assets/|favicon.ico|robots.txt|sitemap.xml|manifest.webmanifest|index.html).*)",
       "destination": "/index.html"
     }
   ],

@@ -23,6 +23,7 @@ export interface PublicHospital {
     address: string;
     pincode?: string;
     logoUrl?: string;
+    bookingSlug?: string;
 }
 
 export interface PublicDepartment {
@@ -192,6 +193,20 @@ export const getPublicHospitals =
         return response.data;
     };
 
+export const getPublicHospitalBySlug =
+    async (
+        slug: string,
+    ) => {
+        const response =
+            await publicApi.get<
+                ApiResponse<PublicHospital>
+            >(
+                `/public/hospitals/slug/${slug}`,
+            );
+
+        return response.data;
+    };
+
 export const getPublicDepartments =
     async (
         hospitalId:
@@ -349,3 +364,5 @@ export const getPublicAppointmentByCode =
     };
 
 export default publicApi;
+
+

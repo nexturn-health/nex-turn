@@ -16,24 +16,36 @@ export interface GenerateAIAnalysisResponse {
   data: Consultation;
 }
 
-// ============================================================
-// GENERATE AI ANALYSIS
-// ============================================================
+
+export interface ClinicalAnalysisResponse {
+    success: boolean;
+    message: string;
+    data: {
+        clinicalSummary?: string;
+        symptoms?: string[];
+        possibleConditions?: string[];
+        redFlags?: string[];
+        suggestedInvestigations?: string[];
+        medicationConsiderations?: string[];
+        dietAndLifestyle?: string[];
+        followUpSuggestions?: string[];
+        generatedAt?: string | null;
+        model?: string;
+    };
+}
 
 export const generateClinicalAnalysis =
-  async (
-    consultationId: string,
-  ): Promise<GenerateAIAnalysisResponse> => {
-    if (!consultationId) {
-      throw new Error(
-        "Consultation ID is required",
-      );
-    }
+    async (
+        consultationId: string,
+    ): Promise<ClinicalAnalysisResponse> => {
+        const response =
+            await api.post<ClinicalAnalysisResponse>(
+                `/consultations/${consultationId}/ai-analysis`,
+                {},
+                {
+                    timeout: 120000,
+                },
+            );
 
-    const response =
-      await api.post<GenerateAIAnalysisResponse>(
-        `/consultations/${consultationId}/ai-analysis`,
-      );
-
-    return response.data;
-  };
+        return response.data;
+    };

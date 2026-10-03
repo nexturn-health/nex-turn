@@ -126,6 +126,11 @@ function App() {
                     />
 
                     <Route
+                        path="/book-appointment/:hospitalSlug"
+                        element={<PatientBookAppointment />}
+                    />
+
+                    <Route
                         path="/appointment-status/:appointmentCode"
                         element={<AppointmentStatus />}
                     />

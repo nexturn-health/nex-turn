@@ -442,7 +442,7 @@ const emitAppointmentUpdate =
                 },
             );
         } catch (
-            socketError
+        socketError
         ) {
             console.error(
                 "PUBLIC APPOINTMENT SOCKET EMIT ERROR:",
@@ -486,17 +486,17 @@ const sendAppointmentBookedNotification =
         schedule,
     }: {
         appointment:
-            any;
+        any;
         patient:
-            any;
+        any;
         hospital:
-            any;
+        any;
         doctor:
-            any;
+        any;
         department:
-            any;
+        any;
         schedule:
-            any;
+        any;
     }): string => {
         const phone =
             String(
@@ -626,9 +626,9 @@ const releaseExpiredPublicSlotHolds =
         doctorId,
     }: {
         hospitalId:
-            mongoose.Types.ObjectId;
+        mongoose.Types.ObjectId;
         doctorId:
-            mongoose.Types.ObjectId;
+        mongoose.Types.ObjectId;
     }) => {
         await DoctorSlot.updateMany(
             {
@@ -758,6 +758,10 @@ const sanitizeHospital =
         logoUrl:
             hospital.logoUrl ||
             "",
+
+        bookingSlug:
+            hospital.bookingSlug ||
+            "",
     });
 
 /* ============================================================
@@ -805,7 +809,7 @@ export const getPublicStates =
                         .sort(),
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "GET PUBLIC STATES ERROR:",
@@ -897,7 +901,7 @@ export const getPublicDistricts =
                         .sort(),
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "GET PUBLIC DISTRICTS ERROR:",
@@ -948,12 +952,12 @@ export const getPublicHospitals =
 
             const query:
                 any = {
-                    publicBookingEnabled:
-                        true,
+                publicBookingEnabled:
+                    true,
 
-                    isActive:
-                        true,
-                };
+                isActive:
+                    true,
+            };
 
             if (
                 state
@@ -1009,7 +1013,7 @@ export const getPublicHospitals =
                     query,
                 )
                     .select(
-                        "_id name publicName state district city address publicAddress pincode logoUrl",
+                        "_id name publicName state district city address publicAddress pincode logoUrl bookingSlug",
                     )
                     .sort({
                         name:
@@ -1027,7 +1031,7 @@ export const getPublicHospitals =
                     ),
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "GET PUBLIC HOSPITALS ERROR:",
@@ -1048,6 +1052,66 @@ export const getPublicHospitals =
         }
     };
 
+
+export const getPublicHospitalBySlug =
+    async (
+        req: Request,
+        res: Response,
+    ) => {
+        try {
+            const slug =
+                getParam(
+                    req.params.slug,
+                )
+                    .trim()
+                    .toLowerCase();
+
+            if (!slug) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Hospital slug is required",
+                });
+            }
+
+            const hospital =
+                await Hospital.findOne({
+                    bookingSlug: slug,
+                    publicBookingEnabled: true,
+                    isActive: true,
+                })
+                    .select(
+                        "_id name publicName state district city address publicAddress pincode logoUrl bookingSlug",
+                    )
+                    .lean();
+
+            if (!hospital) {
+                return res.status(404).json({
+                    success: false,
+                    message:
+                        "Hospital not found or online booking is disabled",
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                data: {
+                    ...sanitizeHospital(hospital),
+                    bookingSlug:
+                        hospital.bookingSlug,
+                },
+            });
+        } catch (error) {
+            console.error(
+                "GET PUBLIC HOSPITAL BY SLUG ERROR:",
+                error,
+            );
+
+            return res.status(500).json({
+                success: false,
+                message: "Failed to load hospital",
+            });
+        }
+    };
 /* ============================================================
    GET HOSPITAL DEPARTMENTS
    GET /api/public/hospitals/:hospitalId/departments
@@ -1112,7 +1176,7 @@ export const getPublicHospitalDepartments =
                     departments,
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "GET PUBLIC DEPARTMENTS ERROR:",
@@ -1204,17 +1268,17 @@ export const getPublicHospitalDoctors =
 
             const doctorQuery:
                 any = {
-                    hospitalId:
-                        hospital._id,
+                hospitalId:
+                    hospital._id,
 
-                    role:
-                        "DOCTOR",
+                role:
+                    "DOCTOR",
 
-                    isActive: {
-                        $ne:
-                            false,
-                    },
-                };
+                isActive: {
+                    $ne:
+                        false,
+                },
+            };
 
             if (
                 departmentId
@@ -1284,11 +1348,11 @@ export const getPublicHospitalDoctors =
                         (
                             schedule,
                         ) => [
-                            String(
-                                schedule.doctorId,
-                            ),
-                            schedule,
-                        ],
+                                String(
+                                    schedule.doctorId,
+                                ),
+                                schedule,
+                            ],
                     ),
                 );
 
@@ -1381,7 +1445,7 @@ export const getPublicHospitalDoctors =
                         : undefined,
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "GET PUBLIC DOCTORS ERROR:",
@@ -1632,7 +1696,7 @@ export const getPublicDoctorSlots =
 
             const selectedDay =
                 dayNames[
-                    selectedDate.getDay()
+                selectedDate.getDay()
                 ];
 
             const daySchedule =
@@ -1860,10 +1924,10 @@ export const getPublicDoctorSlots =
                         result.schedule?.slotDurationMinutes ??
                         schedule.slotDurationMinutes,
 
-                        slots:
-                            availableSlots.map(
-                                publicSlotResponse,
-                            ),
+                    slots:
+                        availableSlots.map(
+                            publicSlotResponse,
+                        ),
                 },
 
                 debug:
@@ -1938,8 +2002,8 @@ export const getPublicDoctorSlots =
                         : undefined,
             });
         } catch (
-            error:
-                any
+        error:
+            any
         ) {
             console.error(
                 "GET PUBLIC SLOTS ERROR:",
@@ -2411,7 +2475,7 @@ export const holdPublicDoctorSlot =
                     },
                 });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "HOLD PUBLIC SLOT ERROR:",
@@ -2569,7 +2633,7 @@ export const releasePublicDoctorSlot =
                 },
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "RELEASE PUBLIC SLOT ERROR:",
@@ -3375,7 +3439,7 @@ export const bookPublicAppointment =
                         },
                     });
             } catch (
-                error
+            error
             ) {
                 await DoctorSlot.updateOne(
                     {
@@ -3407,8 +3471,8 @@ export const bookPublicAppointment =
                 throw error;
             }
         } catch (
-            error:
-                any
+        error:
+            any
         ) {
             console.error(
                 "BOOK PUBLIC APPOINTMENT ERROR:",
@@ -3589,7 +3653,7 @@ export const getPublicAppointmentByCode =
                 },
             });
         } catch (
-            error
+        error
         ) {
             console.error(
                 "GET PUBLIC APPOINTMENT ERROR:",
@@ -3611,13 +3675,13 @@ export const getPublicAppointmentByCode =
     };
 
 
-    /* ============================================================
-   BACKEND FIX: CLOSE SAME-DAY PAST APPOINTMENT SLOTS
-   Add this in BOTH:
-   1) server/src/controllers/appointment.controller.ts
-   2) server/src/controllers/publicAppointment.controller.ts
+/* ============================================================
+BACKEND FIX: CLOSE SAME-DAY PAST APPOINTMENT SLOTS
+Add this in BOTH:
+1) server/src/controllers/appointment.controller.ts
+2) server/src/controllers/publicAppointment.controller.ts
 
-   Then call assertAppointmentSlotNotPassed(...) before creating/locking appointment.
+Then call assertAppointmentSlotNotPassed(...) before creating/locking appointment.
 ============================================================ */
 
 const getIndiaTodayAndMinutes =
@@ -3836,6 +3900,9 @@ const assertAppointmentSlotNotPassed =
         return null;
     };
 
+
+
+
 /* ============================================================
    INSERT INSIDE ADMIN createAppointment BEFORE SLOT LOCK / CREATE
 ============================================================ */
@@ -3892,6 +3959,7 @@ const publicAppointmentController = {
     getPublicStates,
     getPublicDistricts,
     getPublicHospitals,
+    getPublicHospitalBySlug,
     getPublicHospitalDepartments,
     getPublicHospitalDoctors,
     getPublicDoctorSlots,

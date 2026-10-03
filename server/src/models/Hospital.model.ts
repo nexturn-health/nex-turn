@@ -64,6 +64,7 @@ export interface IHospital {
   trialEndsAt?: Date;
   subscriptionStartedAt?: Date;
   subscriptionEndsAt?: Date;
+  bookingSlug?: string;
 
   createdAt?: Date;
   updatedAt?: Date;
@@ -255,6 +256,14 @@ const HospitalSchema =
 
       subscriptionEndsAt: {
         type: Date,
+      },
+      bookingSlug: {
+        type: String,
+        unique: true,
+        sparse: true,
+        lowercase: true,
+        trim: true,
+        index: true,
       },
     },
     {

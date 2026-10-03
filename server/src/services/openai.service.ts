@@ -1,111 +1,68 @@
-import OpenAI from "openai";
-import { toFile } from "openai/uploads";
+// src/services/openai.service.ts
 
-// ============================================================
-// OPENAI CLIENT
-// ============================================================
+import OpenAI, { toFile } from "openai";
 
 const apiKey = process.env.OPENAI_API_KEY;
 
 if (!apiKey) {
-  console.warn(
-    "⚠️ OPENAI_API_KEY is not configured.",
-  );
+    throw new Error("OPENAI_API_KEY is missing");
 }
 
-export const openai = new OpenAI({
-  apiKey,
+const openai = new OpenAI({
+    apiKey,
+    // Do not add baseURL here
 });
 
-// ============================================================
-// TYPES
-// ============================================================
+function getExtension(mimetype: string): string {
+    if (mimetype.includes("mp4")) return "mp4";
+    if (mimetype.includes("mpeg")) return "mpeg";
+    if (mimetype.includes("mp3")) return "mp3";
+    if (mimetype.includes("wav")) return "wav";
+    if (mimetype.includes("m4a")) return "m4a";
 
-export interface TranscriptionResult {
-  text: string;
-  language?: string;
+    return "webm";
 }
 
-// ============================================================
-// TRANSCRIBE AUDIO
-// ============================================================
+export async function transcribeAudio(
+    buffer: Buffer,
+    mimetype = "audio/webm",
+) {
+    if (!buffer || buffer.length === 0) {
+        throw new Error("Audio file is empty");
+    }
 
-export const transcribeAudio = async (
-  file: Express.Multer.File,
-): Promise<TranscriptionResult> => {
-  // ----------------------------------------------------------
-  // VALIDATION
-  // ----------------------------------------------------------
+    const extension = getExtension(mimetype);
 
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error(
-      "OpenAI API key is not configured",
+    const file = await toFile(
+        buffer,
+        `consultation.${extension}`,
+        {
+            type: mimetype,
+        },
     );
-  }
 
-  if (!file) {
-    throw new Error(
-      "Audio file is required",
-    );
-  }
+    const transcription =
+        await openai.audio.transcriptions.create({
+            file,
+            model:
+                process.env.OPENAI_TTS_MODEL ||
+                "gpt-transcribe",
+            response_format: "json",
+        });
 
-  if (!file.buffer) {
-    throw new Error(
-      "Audio file buffer is empty",
-    );
-  }
+    const result = transcription as {
+        text?: string;
+        language?: string;
+        languages?: Array<{
+            code?: string;
+        }>;
+    };
 
-  // ----------------------------------------------------------
-  // CONVERT MULTER BUFFER TO OPENAI FILE
-  // ----------------------------------------------------------
-
-  const audioFile = await toFile(
-    file.buffer,
-    file.originalname ||
-      "consultation.webm",
-    {
-      type:
-        file.mimetype ||
-        "audio/webm",
-    },
-  );
-
-  // ----------------------------------------------------------
-  // MODEL
-  // ----------------------------------------------------------
-
-  const model =
-    process.env.OPENAI_TRANSCRIPTION_MODEL ||
-    "gpt-4o-transcribe";
-
-  console.log(
-    "🎙️ OPENAI TRANSCRIPTION MODEL:",
-    model,
-  );
-
-  // ----------------------------------------------------------
-  // TRANSCRIPTION
-  // ----------------------------------------------------------
-
-  const transcription =
-    await openai.audio.transcriptions.create({
-      file: audioFile,
-
-      model,
-
-      prompt:
-        "This is a medical consultation between a doctor and a patient. " +
-        "The conversation may contain English, Hindi, Hinglish, Indian names, " +
-        "medical terminology, symptoms, medicines, diagnoses, and clinical terms. " +
-        "Preserve the spoken meaning accurately. " +
-        "Do not translate Hindi or Hinglish into English unless the speaker naturally speaks English.",
-    });
-
-  // ----------------------------------------------------------
-  // RETURN
-  // ----------------------------------------------------------
-
-  return {
-    text: transcription.text || "",
-  };
-};
+    return {
+        text: result.text || "",
+        language:
+            result.language ||
+            result.languages?.[0]?.code ||
+            "en",
+    };
+}

@@ -27,11 +27,13 @@ import labTechnicianRoutes from "./routes/labTechnician.routes";
 import subscriptionRoutes from "./routes/subscription.routes";
 import appointmentRoutes from "./routes/appointment.routes";
 import publicAppointmentRoutes from "./routes/publicAppointment.routes";
+import appointmentAssistantRoutes from "./routes/appointmentAssistant.routes";
 import doctorAvailabilityRoutes from "./routes/doctorAvailability.routes";
 import contactRoutes from "./routes/contact.routes";
 import superAdminNotificationRoutes from "./routes/superAdminNotification.routes";
 import superAdminLeadRoutes from "./routes/superAdminLead.routes";
 import superAdminSettingsRoutes from "./routes/superAdminSettings.routes";
+
 
 import { shutdownPostHog } from "./services/posthog.service";
 import { protect } from "./middleware/auth.middleware";
@@ -216,6 +218,12 @@ app.use("/api/lab-rooms", labRoomRoutes);
 app.use("/api/lab-technicians", labTechnicianRoutes);
 app.use("/api/subscription", subscriptionRoutes);
 app.use("/api/appointments", appointmentRoutes);
+app.use(express.json());
+
+app.use(
+  "/api/public/appointment-assistant",
+  appointmentAssistantRoutes,
+);
 app.use("/api/public", publicAppointmentRoutes);
 
 app.use(

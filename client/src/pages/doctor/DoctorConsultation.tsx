@@ -99,7 +99,7 @@ const SectionHeader = ({
                             {title}
                         </h2>
 
-                        
+
                     </div>
 
                     <p className="mt-1 text-xs leading-5 text-gray-500">
@@ -124,29 +124,26 @@ const AIListSection = ({
 }: AIListSectionProps) => {
     return (
         <div
-            className={`rounded-xl border p-4 ${
-                danger
+            className={`rounded-xl border p-4 ${danger
                     ? "border-red-200 bg-red-50"
                     : "border-gray-200 bg-white"
-            }`}
+                }`}
         >
             <div className="mb-3 flex items-center gap-2">
                 <div
-                    className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                        danger
+                    className={`flex h-8 w-8 items-center justify-center rounded-lg ${danger
                             ? "bg-red-100 text-red-600"
                             : "bg-teal-50 text-teal-600"
-                    }`}
+                        }`}
                 >
                     {icon}
                 </div>
 
                 <h3
-                    className={`text-sm font-semibold ${
-                        danger
+                    className={`text-sm font-semibold ${danger
                             ? "text-red-700"
                             : "text-gray-900"
-                    }`}
+                        }`}
                 >
                     {title}
                 </h3>
@@ -164,11 +161,10 @@ const AIListSection = ({
                                 className="flex items-start gap-2 text-sm leading-6 text-gray-700"
                             >
                                 <span
-                                    className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${
-                                        danger
+                                    className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${danger
                                             ? "bg-red-500"
                                             : "bg-teal-500"
-                                    }`}
+                                        }`}
                                 />
 
                                 <span>
@@ -437,7 +433,7 @@ const StartConsultation = ({
                                 item,
                             ) =>
                                 typeof item.labTestId ===
-                                "string"
+                                    "string"
                                     ? item.labTestId
                                     : (
                                         item.labTestId as {
@@ -677,9 +673,9 @@ const StartConsultation = ({
                     (
                         current,
                     ) => [
-                        ...current,
-                        order,
-                    ],
+                            ...current,
+                            order,
+                        ],
                 );
 
                 setSelectedLabTestIds(
@@ -691,11 +687,10 @@ const StartConsultation = ({
                 );
 
                 setSuccessMessage(
-                    `${order.items.length} lab test${
-                        order.items.length >
+                    `${order.items.length} lab test${order.items.length >
                         1
-                            ? "s"
-                            : ""
+                        ? "s"
+                        : ""
                     } ordered successfully.`,
                 );
             } catch (err) {
@@ -718,7 +713,7 @@ const StartConsultation = ({
                         .response
                         ?.data
                         ?.message ??
-                        "Unable to create the lab order. Please try again.",
+                    "Unable to create the lab order. Please try again.",
                 );
             } finally {
                 setLabOrdering(
@@ -754,7 +749,7 @@ const StartConsultation = ({
 
                 setChiefComplaint(
                     data.chiefComplaint ??
-                        "",
+                    "",
                 );
 
                 setSymptomsText(
@@ -769,22 +764,22 @@ const StartConsultation = ({
 
                 setClinicalNotes(
                     data.clinicalNotes ??
-                        "",
+                    "",
                 );
 
                 setExaminationNotes(
                     data.examinationNotes ??
-                        "",
+                    "",
                 );
 
                 setTranscript(
                     data.transcript ??
-                        "",
+                    "",
                 );
 
                 setTranscriptLanguage(
                     data.transcriptLanguage ??
-                        "en",
+                    "en",
                 );
 
                 if (
@@ -951,66 +946,80 @@ const StartConsultation = ({
     // TRANSCRIBE
     // ========================================================
 
-    const handleTranscribe =
-        async () => {
-            if (
-                !audioBlob
-            ) {
-                setError(
-                    "Please record the consultation first.",
-                );
+    const handleTranscribe = async () => {
+        if (!audioBlob || audioBlob.size === 0) {
+            setError("Please record the consultation first.");
+            return;
+        }
 
-                return;
-            }
+        try {
+            setTranscribing(true);
+            clearMessages();
 
-            try {
-                setTranscribing(
-                    true,
-                );
+            const rawResponse =
+                await transcribeConsultationAudio(audioBlob);
 
-                clearMessages();
+            const isRecord = (
+                value: unknown,
+            ): value is Record<string, unknown> =>
+                typeof value === "object" &&
+                value !== null;
 
-                const response =
-                    await transcribeConsultationAudio(
-                        audioBlob,
-                    );
+            const firstLayer =
+                isRecord(rawResponse) &&
+                    "data" in rawResponse
+                    ? rawResponse.data
+                    : rawResponse;
 
-                const text =
-                    response.data
-                        ?.text ??
-                    "";
+            const secondLayer =
+                isRecord(firstLayer) &&
+                    "data" in firstLayer
+                    ? firstLayer.data
+                    : firstLayer;
 
-                const language =
-                    response.data
-                        ?.language ??
-                    "en";
-
-                setTranscript(
-                    text,
-                );
-
-                setTranscriptLanguage(
-                    language,
-                );
-
-                setSuccessMessage(
-                    "Transcript generated successfully. Please review it before AI analysis.",
-                );
-            } catch (err) {
-                console.error(
-                    "Transcription error:",
-                    err,
-                );
-
-                setError(
-                    "Unable to transcribe the recording. Please try again.",
-                );
-            } finally {
-                setTranscribing(
-                    false,
+            if (!isRecord(secondLayer)) {
+                throw new Error(
+                    "Invalid transcription response",
                 );
             }
-        };
+
+            const text =
+                typeof secondLayer.text === "string"
+                    ? secondLayer.text
+                    : typeof secondLayer.transcript === "string"
+                        ? secondLayer.transcript
+                        : "";
+
+            const language =
+                typeof secondLayer.language === "string"
+                    ? secondLayer.language
+                    : "en";
+
+            if (!text.trim()) {
+                throw new Error(
+                    "The transcription API returned empty text",
+                );
+            }
+
+            setTranscript(text);
+            setTranscriptLanguage(language);
+
+            setSuccessMessage(
+                "Transcript generated successfully. Please review it before AI analysis.",
+            );
+        } catch (error: unknown) {
+            console.error("Transcription error:", error);
+
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : "Unable to transcribe the recording.";
+
+            setError(message);
+        } finally {
+            setTranscribing(false);
+        }
+    };
 
     // ========================================================
     // SAVE
@@ -1061,36 +1070,43 @@ const StartConsultation = ({
     const handleGenerateAIAnalysis =
         async () => {
             try {
-                setAnalyzing(
-                    true,
-                );
+                setAnalyzing(true);
 
                 clearMessages();
 
-                // Save latest doctor input
+                // First save transcript and doctor notes
                 const saveResponse =
                     await updateConsultation(
                         consultationId,
                         getFormData(),
                     );
 
-                setConsultation(
-                    saveResponse.data,
-                );
+                const savedConsultation =
+                    saveResponse.data;
 
-                // Generate AI analysis
+                if (
+                    !savedConsultation.transcript?.trim()
+                ) {
+                    throw new Error(
+                        "Please generate the transcript before AI analysis.",
+                    );
+                }
+
+                // AI endpoint can receive an empty body
                 const aiResponse =
                     await generateClinicalAnalysis(
                         consultationId,
                     );
 
-                setConsultation(
-                    aiResponse.data,
-                );
+                // Preserve complete consultation
+                // and update only AI analysis
+                setConsultation({
+                    ...savedConsultation,
+                    aiAnalysis:
+                        aiResponse.data,
+                });
 
-                setShowAI(
-                    true,
-                );
+                setShowAI(true);
 
                 setSuccessMessage(
                     "AI analysis generated. Please review the suggestions carefully.",
@@ -1102,12 +1118,12 @@ const StartConsultation = ({
                 );
 
                 setError(
-                    "Unable to generate AI analysis.",
+                    err instanceof Error
+                        ? err.message
+                        : "Unable to generate AI analysis.",
                 );
             } finally {
-                setAnalyzing(
-                    false,
-                );
+                setAnalyzing(false);
             }
         };
 
@@ -1348,11 +1364,11 @@ const StartConsultation = ({
                     ================================================== */}
 
                     <nav className="scribe-nav" aria-label="Consultation views">
-  <button type="button" aria-pressed={activeView === "capture"} onClick={() => setActiveView("capture")}><Mic size={17} /><span>Record & notes</span></button>
-  <button type="button" aria-pressed={activeView === "review"} onClick={() => setActiveView("review")}><Sparkles size={17} /><span>AI review</span>{aiAnalysis && <span className="scribe-dot" aria-label="Analysis available" />}</button>
-  <button type="button" aria-pressed={activeView === "labs"} onClick={() => setActiveView("labs")}><FlaskConical size={17} /><span>Lab tests</span></button>
-</nav>
-<main className="scribe-body flex-1 overflow-y-auto">
+                        <button type="button" aria-pressed={activeView === "capture"} onClick={() => setActiveView("capture")}><Mic size={17} /><span>Record & notes</span></button>
+                        <button type="button" aria-pressed={activeView === "review"} onClick={() => setActiveView("review")}><Sparkles size={17} /><span>AI review</span>{aiAnalysis && <span className="scribe-dot" aria-label="Analysis available" />}</button>
+                        <button type="button" aria-pressed={activeView === "labs"} onClick={() => setActiveView("labs")}><FlaskConical size={17} /><span>Lab tests</span></button>
+                    </nav>
+                    <main className="scribe-body flex-1 overflow-y-auto">
                         <div className="mx-auto max-w-4xl space-y-5 p-5 sm:p-6">
 
                             {/* ==================================================
@@ -1437,15 +1453,15 @@ const StartConsultation = ({
 
                                                 {consultation.patientId.age !==
                                                     undefined && (
-                                                    <span>
-                                                        Age:{" "}
-                                                        {
-                                                            consultation
-                                                                .patientId
-                                                                .age
-                                                        }
-                                                    </span>
-                                                )}
+                                                        <span>
+                                                            Age:{" "}
+                                                            {
+                                                                consultation
+                                                                    .patientId
+                                                                    .age
+                                                            }
+                                                        </span>
+                                                    )}
 
                                                 {consultation.patientId.gender && (
                                                     <span>
@@ -1481,286 +1497,286 @@ const StartConsultation = ({
                             ================================================== */}
 
                             <div hidden={activeView !== "capture"} className="scribe-view">
-<div className="scribe-intro"><span>YOUR AI SCRIBE</span><h2>Focus on your patient.</h2><p>Record, review the transcript, then ask AI for suggestions.</p></div>
-<section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
-                                <SectionHeader
-                                    number="1"
-                                    title="Record the conversation"
-                                    description="Record the conversation between the doctor and patient."
-                                    icon={
-                                        <Mic
-                                            size={16}
-                                        />
-                                    }
-                                />
-
-                                <div className="mt-6">
-                                    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
-                                        <VoiceRecorder
-                                            onRecordingComplete={
-                                                handleRecordingComplete
-                                            }
-                                        />
-                                    </div>
-
-                                    {audioBlob && (
-                                        <div className="mt-4 flex flex-col gap-3 rounded-xl border border-teal-100 bg-teal-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-teal-600">
-                                                    <Mic
-                                                        size={17}
-                                                    />
-                                                </div>
-
-                                                <div>
-                                                    <p className="text-sm font-semibold text-gray-900">
-                                                        Recording ready
-                                                    </p>
-
-                                                    <p className="text-xs text-gray-500">
-                                                        Convert this recording into text.
-                                                    </p>
-                                                </div>
-                                            </div>
-
-                                            <button
-                                                type="button"
-                                                onClick={
-                                                    handleTranscribe
-                                                }
-                                                disabled={
-                                                    transcribing
-                                                }
-                                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
-                                            >
-                                                {transcribing ? (
-                                                    <>
-                                                        <Loader2
-                                                            size={
-                                                                16
-                                                            }
-                                                            className="animate-spin"
-                                                        />
-
-                                                        Transcribing
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <FileText
-                                                            size={
-                                                                16
-                                                            }
-                                                        />
-
-                                                        Generate Transcript
-                                                    </>
-                                                )}
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </section><section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
-                                <SectionHeader
-                                    number="2"
-                                    title="Review the transcript"
-                                    description="Correct the text, or type your consultation notes directly."
-                                    icon={
-                                        <FileText
-                                            size={16}
-                                        />
-                                    }
-                                />
-
-                                <div className="mt-6">
-                                    <div className="mb-3 flex items-center justify-between">
-                                        <label className="text-sm font-medium text-gray-700">
-                                            Consultation Transcript
-                                        </label>
-
-                                        <select
-                                            value={
-                                                transcriptLanguage
-                                            }
-                                            onChange={(
-                                                event,
-                                            ) =>
-                                                setTranscriptLanguage(
-                                                    event
-                                                        .target
-                                                        .value,
-                                                )
-                                            }
-                                            className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
-                                        >
-                                            <option value="en">
-                                                English
-                                            </option>
-
-                                            <option value="hi">
-                                                Hindi
-                                            </option>
-
-                                            <option value="hinglish">
-                                                Hinglish
-                                            </option>
-                                        </select>
-                                    </div>
-
-                                    <textarea
-                                        value={
-                                            transcript
+                                <div className="scribe-intro"><span>YOUR AI SCRIBE</span><h2>Focus on your patient.</h2><p>Record, review the transcript, then ask AI for suggestions.</p></div>
+                                <section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
+                                    <SectionHeader
+                                        number="1"
+                                        title="Record the conversation"
+                                        description="Record the conversation between the doctor and patient."
+                                        icon={
+                                            <Mic
+                                                size={16}
+                                            />
                                         }
-                                        onChange={(
-                                            event,
-                                        ) =>
-                                            setTranscript(
-                                                event
-                                                    .target
-                                                    .value,
-                                            )
-                                        }
-                                        rows={7}
-                                        placeholder="Your consultation transcript will appear here..."
-                                        className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100"
                                     />
 
-                                    <div className="mt-3 flex items-center justify-between">
-                                        <p className="text-xs text-gray-400">
-                                            {
-                                                transcript.length
-                                            }{" "}
-                                            characters
-                                        </p>
+                                    <div className="mt-6">
+                                        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                                            <VoiceRecorder
+                                                onRecordingComplete={
+                                                    handleRecordingComplete
+                                                }
+                                            />
+                                        </div>
 
-                                        {transcript && (
-                                            <span className="text-xs font-medium text-emerald-600">
-                                                Transcript available
-                                            </span>
+                                        {audioBlob && (
+                                            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-teal-100 bg-teal-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-teal-600">
+                                                        <Mic
+                                                            size={17}
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-gray-900">
+                                                            Recording ready
+                                                        </p>
+
+                                                        <p className="text-xs text-gray-500">
+                                                            Convert this recording into text.
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={
+                                                        handleTranscribe
+                                                    }
+                                                    disabled={
+                                                        transcribing
+                                                    }
+                                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    {transcribing ? (
+                                                        <>
+                                                            <Loader2
+                                                                size={
+                                                                    16
+                                                                }
+                                                                className="animate-spin"
+                                                            />
+
+                                                            Transcribing
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <FileText
+                                                                size={
+                                                                    16
+                                                                }
+                                                            />
+
+                                                            Generate Transcript
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
-                                </div>
-                            </section><details className="scribe-details"><summary>Clinical notes <span>Complaint, symptoms & examination</span><ChevronDown size={17} /></summary><section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
-                                <SectionHeader
-                                    number="4"
-                                    title="Clinical notes"
-                                    description="Add your findings before generating AI suggestions."
-                                    icon={
-                                        <Stethoscope
-                                            size={
-                                                16
-                                            }
-                                        />
-                                    }
-                                />
+                                </section><section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
+                                    <SectionHeader
+                                        number="2"
+                                        title="Review the transcript"
+                                        description="Correct the text, or type your consultation notes directly."
+                                        icon={
+                                            <FileText
+                                                size={16}
+                                            />
+                                        }
+                                    />
 
-                                <div className="mt-6 space-y-5">
-                                    <div>
-                                        <label className="mb-2 block text-sm font-medium text-gray-700">
-                                            Chief Complaint
-                                        </label>
+                                    <div className="mt-6">
+                                        <div className="mb-3 flex items-center justify-between">
+                                            <label className="text-sm font-medium text-gray-700">
+                                                Consultation Transcript
+                                            </label>
 
-                                        <textarea
-                                            value={
-                                                chiefComplaint
-                                            }
-                                            onChange={(
-                                                event,
-                                            ) =>
-                                                setChiefComplaint(
-                                                    event
-                                                        .target
-                                                        .value,
-                                                )
-                                            }
-                                            rows={
-                                                3
-                                            }
-                                            placeholder="Enter the patient's main complaint..."
-                                            className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100"
-                                        />
-                                    </div>
+                                            <select
+                                                value={
+                                                    transcriptLanguage
+                                                }
+                                                onChange={(
+                                                    event,
+                                                ) =>
+                                                    setTranscriptLanguage(
+                                                        event
+                                                            .target
+                                                            .value,
+                                                    )
+                                                }
+                                                className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                                            >
+                                                <option value="en">
+                                                    English
+                                                </option>
 
-                                    <div>
-                                        <label className="mb-2 block text-sm font-medium text-gray-700">
-                                            Symptoms
-                                        </label>
+                                                <option value="hi">
+                                                    Hindi
+                                                </option>
 
-                                        <input
-                                            value={
-                                                symptomsText
-                                            }
-                                            onChange={(
-                                                event,
-                                            ) =>
-                                                setSymptomsText(
-                                                    event
-                                                        .target
-                                                        .value,
-                                                )
-                                            }
-                                            placeholder="Fever, cough, headache, fatigue..."
-                                            className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100"
-                                        />
-
-                                        <p className="mt-1.5 text-xs text-gray-400">
-                                            Separate symptoms with commas.
-                                        </p>
-                                    </div>
-
-                                    <div>
-                                        <label className="mb-2 block text-sm font-medium text-gray-700">
-                                            Clinical Notes
-                                        </label>
+                                                <option value="hinglish">
+                                                    Hinglish
+                                                </option>
+                                            </select>
+                                        </div>
 
                                         <textarea
                                             value={
-                                                clinicalNotes
+                                                transcript
                                             }
                                             onChange={(
                                                 event,
                                             ) =>
-                                                setClinicalNotes(
+                                                setTranscript(
                                                     event
                                                         .target
                                                         .value,
                                                 )
                                             }
-                                            rows={
-                                                5
-                                            }
-                                            placeholder="Write your clinical assessment..."
+                                            rows={7}
+                                            placeholder="Your consultation transcript will appear here..."
                                             className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100"
                                         />
-                                    </div>
 
-                                    <div>
-                                        <label className="mb-2 block text-sm font-medium text-gray-700">
-                                            Examination Findings
-                                        </label>
+                                        <div className="mt-3 flex items-center justify-between">
+                                            <p className="text-xs text-gray-400">
+                                                {
+                                                    transcript.length
+                                                }{" "}
+                                                characters
+                                            </p>
 
-                                        <textarea
-                                            value={
-                                                examinationNotes
-                                            }
-                                            onChange={(
-                                                event,
-                                            ) =>
-                                                setExaminationNotes(
-                                                    event
-                                                        .target
-                                                        .value,
-                                                )
-                                            }
-                                            rows={
-                                                5
-                                            }
-                                            placeholder="Enter physical examination findings..."
-                                            className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100"
-                                        />
+                                            {transcript && (
+                                                <span className="text-xs font-medium text-emerald-600">
+                                                    Transcript available
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            </section></details><div className="scribe-next"><p>Your transcript is editable. Review it before analysis.</p><button type="button" onClick={() => setActiveView("review")} className="scribe-primary">Continue to AI review <Sparkles size={16} /></button></div>
-</div><div hidden={activeView !== "review"} className="scribe-view"><section className="overflow-hidden rounded-2xl border border-teal-100 bg-white">
+                                </section><details className="scribe-details"><summary>Clinical notes <span>Complaint, symptoms & examination</span><ChevronDown size={17} /></summary><section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
+                                    <SectionHeader
+                                        number="4"
+                                        title="Clinical notes"
+                                        description="Add your findings before generating AI suggestions."
+                                        icon={
+                                            <Stethoscope
+                                                size={
+                                                    16
+                                                }
+                                            />
+                                        }
+                                    />
+
+                                    <div className="mt-6 space-y-5">
+                                        <div>
+                                            <label className="mb-2 block text-sm font-medium text-gray-700">
+                                                Chief Complaint
+                                            </label>
+
+                                            <textarea
+                                                value={
+                                                    chiefComplaint
+                                                }
+                                                onChange={(
+                                                    event,
+                                                ) =>
+                                                    setChiefComplaint(
+                                                        event
+                                                            .target
+                                                            .value,
+                                                    )
+                                                }
+                                                rows={
+                                                    3
+                                                }
+                                                placeholder="Enter the patient's main complaint..."
+                                                className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="mb-2 block text-sm font-medium text-gray-700">
+                                                Symptoms
+                                            </label>
+
+                                            <input
+                                                value={
+                                                    symptomsText
+                                                }
+                                                onChange={(
+                                                    event,
+                                                ) =>
+                                                    setSymptomsText(
+                                                        event
+                                                            .target
+                                                            .value,
+                                                    )
+                                                }
+                                                placeholder="Fever, cough, headache, fatigue..."
+                                                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100"
+                                            />
+
+                                            <p className="mt-1.5 text-xs text-gray-400">
+                                                Separate symptoms with commas.
+                                            </p>
+                                        </div>
+
+                                        <div>
+                                            <label className="mb-2 block text-sm font-medium text-gray-700">
+                                                Clinical Notes
+                                            </label>
+
+                                            <textarea
+                                                value={
+                                                    clinicalNotes
+                                                }
+                                                onChange={(
+                                                    event,
+                                                ) =>
+                                                    setClinicalNotes(
+                                                        event
+                                                            .target
+                                                            .value,
+                                                    )
+                                                }
+                                                rows={
+                                                    5
+                                                }
+                                                placeholder="Write your clinical assessment..."
+                                                className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="mb-2 block text-sm font-medium text-gray-700">
+                                                Examination Findings
+                                            </label>
+
+                                            <textarea
+                                                value={
+                                                    examinationNotes
+                                                }
+                                                onChange={(
+                                                    event,
+                                                ) =>
+                                                    setExaminationNotes(
+                                                        event
+                                                            .target
+                                                            .value,
+                                                    )
+                                                }
+                                                rows={
+                                                    5
+                                                }
+                                                placeholder="Enter physical examination findings..."
+                                                className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100"
+                                            />
+                                        </div>
+                                    </div>
+                                </section></details><div className="scribe-next"><p>Your transcript is editable. Review it before analysis.</p><button type="button" onClick={() => setActiveView("review")} className="scribe-primary">Continue to AI review <Sparkles size={16} /></button></div>
+                            </div><div hidden={activeView !== "review"} className="scribe-view"><section className="overflow-hidden rounded-2xl border border-teal-100 bg-white">
                                 <button
                                     type="button"
                                     onClick={() =>
@@ -1921,54 +1937,77 @@ const StartConsultation = ({
 
                                                 <AIListSection
                                                     title="Red Flags"
-                                                    items={
-                                                        aiRedFlags
-                                                    }
+                                                    items={aiRedFlags}
                                                     icon={
-                                                        <><ShieldAlert
-                                                            size={16} /><div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                                                <AIListSection
-                                                                    title="Symptoms"
-                                                                    items={aiSymptoms}
-                                                                    icon={<Stethoscope
-                                                                        size={16} />} />
-
-                                                                <AIListSection
-                                                                    title="Possible Conditions"
-                                                                    items={aiPossibleConditions}
-                                                                    icon={<HeartPulse
-                                                                        size={16} />} />
-
-                                                                <AIListSection
-                                                                    title="Suggested Investigations"
-                                                                    items={aiSuggestedInvestigations}
-                                                                    icon={<FlaskConical
-                                                                        size={16} />} />
-
-                                                                <AIListSection
-                                                                    title="Medication Considerations"
-                                                                    items={aiMedicationConsiderations}
-                                                                    icon={<Pill
-                                                                        size={16} />} />
-
-                                                                <AIListSection
-                                                                    title="Diet & Lifestyle"
-                                                                    items={aiDietAndLifestyle}
-                                                                    icon={<HeartPulse
-                                                                        size={16} />} />
-
-                                                                <AIListSection
-                                                                    title="Follow-up Suggestions"
-                                                                    items={aiFollowUpSuggestions}
-                                                                    icon={<RefreshCw
-                                                                        size={16} />} />
-                                                            </div></>
-
-                                                
+                                                        <ShieldAlert
+                                                            size={16}
+                                                        />
                                                     }
                                                     emptyText="No red flags identified from the available information."
                                                     danger
                                                 />
+
+                                                <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
+                                                    <AIListSection
+                                                        title="Symptoms"
+                                                        items={aiSymptoms}
+                                                        icon={
+                                                            <Stethoscope
+                                                                size={16}
+                                                            />
+                                                        }
+                                                    />
+
+                                                    <AIListSection
+                                                        title="Possible Conditions"
+                                                        items={aiPossibleConditions}
+                                                        icon={
+                                                            <HeartPulse
+                                                                size={16}
+                                                            />
+                                                        }
+                                                    />
+
+                                                    <AIListSection
+                                                        title="Suggested Investigations"
+                                                        items={aiSuggestedInvestigations}
+                                                        icon={
+                                                            <FlaskConical
+                                                                size={16}
+                                                            />
+                                                        }
+                                                    />
+
+                                                    <AIListSection
+                                                        title="Medication Considerations"
+                                                        items={aiMedicationConsiderations}
+                                                        icon={
+                                                            <Pill
+                                                                size={16}
+                                                            />
+                                                        }
+                                                    />
+
+                                                    <AIListSection
+                                                        title="Diet & Lifestyle"
+                                                        items={aiDietAndLifestyle}
+                                                        icon={
+                                                            <HeartPulse
+                                                                size={16}
+                                                            />
+                                                        }
+                                                    />
+
+                                                    <AIListSection
+                                                        title="Follow-up Suggestions"
+                                                        items={aiFollowUpSuggestions}
+                                                        icon={
+                                                            <RefreshCw
+                                                                size={16}
+                                                            />
+                                                        }
+                                                    />
+                                                </div>
 
                                                 <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
                                                     <AlertCircle
@@ -2137,11 +2176,10 @@ Additional instructions...`}
 
                                                 <span className="truncate text-sm text-gray-500">
                                                     {selectedLabTests.length
-                                                        ? `${selectedLabTests.length} test${
-                                                            selectedLabTests.length >
+                                                        ? `${selectedLabTests.length} test${selectedLabTests.length >
                                                             1
-                                                                ? "s"
-                                                                : ""
+                                                            ? "s"
+                                                            : ""
                                                         } selected`
                                                         : "Search and select laboratory tests..."}
                                                 </span>
@@ -2200,7 +2238,7 @@ Additional instructions...`}
                                                             Loading lab tests...
                                                         </div>
                                                     ) : filteredLabTests.length ===
-                                                      0 ? (
+                                                        0 ? (
                                                         <div className="px-4 py-8 text-center">
                                                             <FlaskConical
                                                                 size={
@@ -2246,22 +2284,20 @@ Additional instructions...`}
                                                                                 test._id,
                                                                             )
                                                                         }
-                                                                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition ${
-                                                                            alreadyOrderedToday
+                                                                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition ${alreadyOrderedToday
                                                                                 ? "cursor-not-allowed bg-gray-50 opacity-60"
                                                                                 : selected
                                                                                     ? "bg-teal-50"
                                                                                     : "hover:bg-gray-50"
-                                                                        }`}
+                                                                            }`}
                                                                     >
                                                                         <span
-                                                                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${
-                                                                                alreadyOrderedToday
+                                                                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${alreadyOrderedToday
                                                                                     ? "border-emerald-500 bg-emerald-500 text-white"
                                                                                     : selected
                                                                                         ? "border-teal-600 bg-teal-600 text-white"
                                                                                         : "border-gray-300 bg-white"
-                                                                            }`}
+                                                                                }`}
                                                                         >
                                                                             {alreadyOrderedToday ? (
                                                                                 <CheckCircle2
@@ -2295,13 +2331,12 @@ Additional instructions...`}
 
                                                                             <span className="mt-0.5 block text-xs text-gray-400">
                                                                                 {test.code
-                                                                                    ? `${test.code}${
-                                                                                        test.category
-                                                                                            ? ` • ${test.category}`
-                                                                                            : ""
+                                                                                    ? `${test.code}${test.category
+                                                                                        ? ` • ${test.category}`
+                                                                                        : ""
                                                                                     }`
                                                                                     : test.category ||
-                                                                                      "Laboratory test"}
+                                                                                    "Laboratory test"}
                                                                             </span>
                                                                         </span>
 
@@ -2327,121 +2362,121 @@ Additional instructions...`}
 
                                     {selectedLabTests.length >
                                         0 && (
-                                        <div className="mt-4 rounded-xl border border-teal-100 bg-teal-50/50 p-4">
-                                            <div className="mb-3 flex items-center justify-between gap-3">
-                                                <div>
-                                                    <p className="text-sm font-semibold text-gray-900">
-                                                        Selected Tests
-                                                    </p>
+                                            <div className="mt-4 rounded-xl border border-teal-100 bg-teal-50/50 p-4">
+                                                <div className="mb-3 flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-gray-900">
+                                                            Selected Tests
+                                                        </p>
 
-                                                    <p className="mt-0.5 text-xs text-gray-500">
-                                                        These tests will be sent to the hospital laboratory.
-                                                    </p>
+                                                        <p className="mt-0.5 text-xs text-gray-500">
+                                                            These tests will be sent to the hospital laboratory.
+                                                        </p>
+                                                    </div>
+
+                                                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-teal-700">
+                                                        {
+                                                            selectedLabTests.length
+                                                        }{" "}
+                                                        selected
+                                                    </span>
                                                 </div>
 
-                                                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-teal-700">
-                                                    {
-                                                        selectedLabTests.length
-                                                    }{" "}
-                                                    selected
-                                                </span>
-                                            </div>
-
-                                            <div className="flex flex-wrap gap-2">
-                                                {selectedLabTests.map(
-                                                    (
-                                                        test,
-                                                    ) => (
-                                                        <span
-                                                            key={
-                                                                test._id
-                                                            }
-                                                            className="inline-flex items-center gap-2 rounded-lg border border-teal-100 bg-white px-3 py-2 text-xs font-medium text-gray-700"
-                                                        >
-                                                            <FlaskConical
-                                                                size={
-                                                                    14
+                                                <div className="flex flex-wrap gap-2">
+                                                    {selectedLabTests.map(
+                                                        (
+                                                            test,
+                                                        ) => (
+                                                            <span
+                                                                key={
+                                                                    test._id
                                                                 }
-                                                                className="text-teal-500"
-                                                            />
-
-                                                            {
-                                                                test.name
-                                                            }
-
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    removeLabTest(
-                                                                        test._id,
-                                                                    )
-                                                                }
-                                                                className="rounded-md p-0.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
-                                                                aria-label={`Remove ${test.name}`}
+                                                                className="inline-flex items-center gap-2 rounded-lg border border-teal-100 bg-white px-3 py-2 text-xs font-medium text-gray-700"
                                                             >
-                                                                <X
+                                                                <FlaskConical
                                                                     size={
                                                                         14
                                                                     }
+                                                                    className="text-teal-500"
                                                                 />
-                                                            </button>
-                                                        </span>
-                                                    ),
-                                                )}
-                                            </div>
 
-                                            <div className="mt-4 flex flex-col gap-3 border-t border-teal-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                                                <p className="text-xs text-gray-500">
-                                                    Payment is handled separately by the receptionist.
-                                                </p>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={
-                                                        handleCreateLabOrder
-                                                    }
-                                                    disabled={
-                                                        labOrdering ||
-                                                        labOrderCreated
-                                                    }
-                                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
-                                                >
-                                                    {labOrdering ? (
-                                                        <>
-                                                            <Loader2
-                                                                size={
-                                                                    16
+                                                                {
+                                                                    test.name
                                                                 }
-                                                                className="animate-spin"
-                                                            />
 
-                                                            Ordering...
-                                                        </>
-                                                    ) : labOrderCreated ? (
-                                                        <>
-                                                            <CheckCircle2
-                                                                size={
-                                                                    16
-                                                                }
-                                                            />
-
-                                                            Lab Order Created
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <FlaskConical
-                                                                size={
-                                                                    16
-                                                                }
-                                                            />
-
-                                                            Order Selected Tests
-                                                        </>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        removeLabTest(
+                                                                            test._id,
+                                                                        )
+                                                                    }
+                                                                    className="rounded-md p-0.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+                                                                    aria-label={`Remove ${test.name}`}
+                                                                >
+                                                                    <X
+                                                                        size={
+                                                                            14
+                                                                        }
+                                                                    />
+                                                                </button>
+                                                            </span>
+                                                        ),
                                                     )}
-                                                </button>
+                                                </div>
+
+                                                <div className="mt-4 flex flex-col gap-3 border-t border-teal-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                                                    <p className="text-xs text-gray-500">
+                                                        Payment is handled separately by the receptionist.
+                                                    </p>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={
+                                                            handleCreateLabOrder
+                                                        }
+                                                        disabled={
+                                                            labOrdering ||
+                                                            labOrderCreated
+                                                        }
+                                                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    >
+                                                        {labOrdering ? (
+                                                            <>
+                                                                <Loader2
+                                                                    size={
+                                                                        16
+                                                                    }
+                                                                    className="animate-spin"
+                                                                />
+
+                                                                Ordering...
+                                                            </>
+                                                        ) : labOrderCreated ? (
+                                                            <>
+                                                                <CheckCircle2
+                                                                    size={
+                                                                        16
+                                                                    }
+                                                                />
+
+                                                                Lab Order Created
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <FlaskConical
+                                                                    size={
+                                                                        16
+                                                                    }
+                                                                />
+
+                                                                Order Selected Tests
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
 
                                     {/* ==================================================
                                         TODAY'S LAB TESTS / REPORTS
@@ -2491,7 +2526,7 @@ Additional instructions...`}
                                                 Loading today's laboratory tests...
                                             </div>
                                         ) : todayLabOrders.length ===
-                                          0 ? (
+                                            0 ? (
                                             <div className="px-4 py-8 text-center">
                                                 <FlaskConical
                                                     size={
@@ -2528,7 +2563,7 @@ Additional instructions...`}
                                                                 ) => {
                                                                     const reportReady =
                                                                         item.status ===
-                                                                            "COMPLETED" &&
+                                                                        "COMPLETED" &&
                                                                         Boolean(
                                                                             item.reportFileName,
                                                                         );
@@ -2564,9 +2599,8 @@ Additional instructions...`}
                                                                                         )}
 
                                                                                         <span
-                                                                                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                                                                                item.status ===
-                                                                                                "COMPLETED"
+                                                                                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.status ===
+                                                                                                    "COMPLETED"
                                                                                                     ? "bg-emerald-100 text-emerald-700"
                                                                                                     : item.status ===
                                                                                                         "PROCESSING"
@@ -2575,11 +2609,11 @@ Additional instructions...`}
                                                                                                             "SAMPLE_COLLECTED"
                                                                                                             ? "bg-amber-100 text-amber-700"
                                                                                                             : "bg-gray-100 text-gray-600"
-                                                                                            }`}
+                                                                                                }`}
                                                                                         >
                                                                                             {
                                                                                                 item.status ===
-                                                                                                "COMPLETED"
+                                                                                                    "COMPLETED"
                                                                                                     ? "REPORT READY"
                                                                                                     : item.status.replace(
                                                                                                         /_/g,
@@ -2634,7 +2668,7 @@ Additional instructions...`}
                                                                                         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                                                                                     >
                                                                                         {viewingReport ===
-                                                                                        item._id ? (
+                                                                                            item._id ? (
                                                                                             <>
                                                                                                 <Loader2
                                                                                                     size={
@@ -2660,7 +2694,7 @@ Additional instructions...`}
                                                                                 ) : (
                                                                                     <span className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium capitalize text-gray-500">
                                                                                         {item.status ===
-                                                                                        "PROCESSING"
+                                                                                            "PROCESSING"
                                                                                             ? "Processing"
                                                                                             : "Report pending"}
                                                                                     </span>

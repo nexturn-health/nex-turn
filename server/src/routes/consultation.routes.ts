@@ -86,13 +86,9 @@ router.get(
 // ============================================================
 
 router.post(
-  "/:id/ai-analysis",
-
-  authorize(
-    "DOCTOR",
-  ),
-
-  generateConsultationAIAnalysis,
+    "/:id/ai-analysis",
+    authorize("DOCTOR"),
+    generateConsultationAIAnalysis,
 );
 
 // ============================================================

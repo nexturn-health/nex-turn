@@ -83,6 +83,7 @@ type QueueStatus =
 
 interface SameDayToken {
     _id: string;
+    createdAt?: string;
     tokenLabel: string;
     tokenNumber?: number;
     status: QueueStatus;
@@ -95,6 +96,7 @@ type TodayPatient = Patient & {
 
 interface QueueApiItem {
     _id?: string;
+    createdAt?: string;
     queueId?: string;
     patientId?: string | {
         _id?: string;
@@ -591,6 +593,67 @@ function MessagePopup({
 }
 
 
+// Sort by registration time, newest first. MongoDB IDs are a fallback
+// for older records that do not include a valid createdAt value.
+function patientRegistrationTime(patient: Patient): number {
+    const createdAt = patient.createdAt ? new Date(patient.createdAt).getTime() : NaN;
+
+    if (Number.isFinite(createdAt)) return createdAt;
+
+    return /^[a-f0-9]{24}$/i.test(patient._id)
+        ? parseInt(patient._id.slice(0, 8), 16) * 1000
+        : 0;
+}
+
+function newestPatientFirst(a: Patient, b: Patient): number {
+    const difference = patientRegistrationTime(b) - patientRegistrationTime(a);
+    if (difference !== 0) return difference;
+
+    // A deterministic tie-breaker for records created at the same time.
+    return /^[a-f0-9]{24}$/i.test(a._id) && /^[a-f0-9]{24}$/i.test(b._id)
+        ? b._id.localeCompare(a._id)
+        : 0;
+}
+
+// Today is ordered by queue/token creation, not patient registration.
+// Never use tokenNumber: different departments can have independent sequences.
+function tokenGenerationTime(token: SameDayToken): number {
+    const timestamp = token.createdAt ? new Date(token.createdAt).getTime() : NaN;
+    if (Number.isFinite(timestamp)) return timestamp;
+
+    // Older API responses may omit createdAt. ObjectId supplies second precision.
+    return /^[a-f0-9]{24}$/i.test(token._id)
+        ? parseInt(token._id.slice(0, 8), 16) * 1000
+        : 0;
+}
+
+function newestTokenFirst(a: SameDayToken, b: SameDayToken): number {
+    const difference = tokenGenerationTime(b) - tokenGenerationTime(a);
+    if (difference !== 0) return difference;
+
+    // Stable tie-breaker only; IDs cannot prove exact order within the same second.
+    return /^[a-f0-9]{24}$/i.test(a._id) && /^[a-f0-9]{24}$/i.test(b._id)
+        ? b._id.localeCompare(a._id)
+        : 0;
+}
+
+function latestPatientToken(patient: TodayPatient): SameDayToken | undefined {
+    return patient.sameDayTokens?.reduce<SameDayToken | undefined>(
+        (latest, token) => !latest || newestTokenFirst(token, latest) < 0 ? token : latest,
+        undefined,
+    );
+}
+
+function newestVisitFirst(a: TodayPatient, b: TodayPatient): number {
+    const aToken = latestPatientToken(a);
+    const bToken = latestPatientToken(b);
+
+    if (!aToken && !bToken) return 0;
+    if (!aToken) return 1;
+    if (!bToken) return -1;
+    return newestTokenFirst(aToken, bToken);
+}
+
 // Keep token status visible even when a token also has a Delete action.
 const TOKEN_STATUS_LABELS: Record<QueueStatus, string> = {
     WAITING: "Waiting",
@@ -641,7 +704,9 @@ function PatientTable({
                 </thead>
                 <tbody role="rowgroup">
                     {patients.map((patient) => {
-                        const tokens = (patient as TodayPatient).sameDayTokens || [];
+                        // Copy before sorting so React state is never mutated.
+                        const tokens = [...((patient as TodayPatient).sameDayTokens || [])]
+                            .sort(newestTokenFirst);
                         const gender = patient.gender
                             ? patient.gender.charAt(0) + patient.gender.slice(1).toLowerCase()
                             : "Gender not recorded";
@@ -1102,6 +1167,7 @@ export default function Patients() {
                                     queueId,
                                 ),
                                 tokenLabel,
+                                createdAt: queue.createdAt,
                                 tokenNumber:
                                     queue.tokenNumber,
                                 status,
@@ -1411,49 +1477,18 @@ export default function Patients() {
         ],
     );
 
-    const filtered =
-        useMemo(
-            () => {
-                const query =
-                    search
-                        .trim()
-                        .toLowerCase();
+    // filter() creates a new array, so sorting never mutates React state.
+    const filtered = useMemo(() => {
+        const query = search.trim().toLowerCase();
+        const patients = view === "today" ? today : allPatients;
 
-                return (
-                    view === "today"
-                        ? today
-                        : allPatients
-                ).filter(
-                    (
-                        patient,
-                    ) =>
-                        [
-                            patient.name,
-                            patient.phone,
-                            patient.patientCode,
-                            patient._id,
-                        ].some(
-                            (
-                                value,
-                            ) =>
-                                String(
-                                    value ??
-                                    "",
-                                )
-                                    .toLowerCase()
-                                    .includes(
-                                        query,
-                                    ),
-                        ),
-                );
-            },
-            [
-                view,
-                today,
-                allPatients,
-                search,
-            ],
-        );
+        return patients
+            .filter((patient) =>
+                [patient.name, patient.phone, patient.patientCode, patient._id]
+                    .some((value) => String(value ?? "").toLowerCase().includes(query)),
+            )
+            .sort(view === "today" ? newestVisitFirst : newestPatientFirst);
+    }, [view, today, allPatients, search]);
 
     function resetVisit() {
         setVisit(
@@ -1660,6 +1695,9 @@ export default function Patients() {
 
         resetVisit();
 
+        // Reveal the latest visit for new and returning patients alike.
+        setSearch("");
+        setView("today");
         await loadPatients();
 
         return true;
@@ -1882,6 +1920,10 @@ export default function Patients() {
             ) {
                 return;
             }
+
+            // Reveal the newly added patient instead of leaving an old search active.
+            setSearch("");
+            setView("today");
 
             setForm(
                 emptyForm(),
