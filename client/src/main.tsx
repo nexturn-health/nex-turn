@@ -1,34 +1,64 @@
-import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import { PostHogProvider } from "@posthog/react";
+import {
+    StrictMode,
+} from "react";
+
+import {
+    createRoot,
+} from "react-dom/client";
+
+import {
+    PostHogProvider,
+} from "@posthog/react";
+
+import {
+    HelmetProvider,
+} from "react-helmet-async";
 
 import "./index.css";
+
 import App from "./App";
 
-import { useAuthStore } from "./store/authStore";
+import {
+    useAuthStore,
+} from "./store/authStore";
 
 import posthog, {
     initPostHog,
 } from "./analytics/posthog";
 
 /*
- * Load saved login before app renders.
+ * Load saved authentication before rendering
  */
 useAuthStore
     .getState()
     .loadAuth();
 
 /*
- * Initialize PostHog before wrapping app.
+ * Initialize PostHog
  */
 initPostHog();
 
+const rootElement =
+    document.getElementById(
+        "root",
+    );
+
+if (!rootElement) {
+    throw new Error(
+        "Root element not found",
+    );
+}
+
 createRoot(
-    document.getElementById("root")!,
+    rootElement,
 ).render(
     <StrictMode>
-        <PostHogProvider client={posthog}>
-            <App />
-        </PostHogProvider>
+        <HelmetProvider>
+            <PostHogProvider
+                client={posthog}
+            >
+                <App />
+            </PostHogProvider>
+        </HelmetProvider>
     </StrictMode>,
 );
