@@ -1,5 +1,8 @@
 import { Helmet } from "react-helmet-async";
 
+const SITE_URL =
+  "https://www.nextsynq.health";
+
 interface HospitalSeoProps {
   hospital: {
     name: string;
@@ -7,13 +10,28 @@ interface HospitalSeoProps {
     city?: string;
     district?: string;
     state?: string;
+    pincode?: string;
     phone?: string;
     logoUrl?: string;
   };
   hospitalSlug: string;
 }
 
-const SITE_URL = "https://www.nextsynq.health";
+const makeAbsoluteUrl = (
+  value?: string,
+) => {
+  if (!value) {
+    return `${SITE_URL}/nextsynq.png`;
+  }
+
+  if (value.startsWith("http")) {
+    return value;
+  }
+
+  return `${SITE_URL}${
+    value.startsWith("/") ? "" : "/"
+  }${value}`;
+};
 
 export default function HospitalSeo({
   hospital,
@@ -23,19 +41,23 @@ export default function HospitalSeo({
     hospital.name?.trim() || "Hospital";
 
   const title =
-    `${hospitalName} Online Appointment Booking | NextSynq Health`;
+    `Book Appointment at ${hospitalName} | NextSynq Health`;
 
   const description =
-    `Book an online appointment at ${hospitalName}. Select a department, doctor, date, and available time slot using NextSynq Health.`;
+    `Book an appointment at ${hospitalName} online. Select a department, doctor, date, and available time slot using NextSynq Health.`;
 
   const canonicalUrl =
     `${SITE_URL}/book-appointment/${hospitalSlug}`;
+
+  const imageUrl =
+    makeAbsoluteUrl(hospital.logoUrl);
 
   const fullAddress = [
     hospital.address,
     hospital.city,
     hospital.district,
     hospital.state,
+    hospital.pincode,
   ]
     .filter(Boolean)
     .join(", ");
@@ -43,20 +65,30 @@ export default function HospitalSeo({
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "MedicalClinic",
+    "@id": canonicalUrl,
     name: hospitalName,
     url: canonicalUrl,
     description,
+    image: imageUrl,
     ...(hospital.phone
-      ? { telephone: hospital.phone }
+      ? {
+          telephone: hospital.phone,
+        }
       : {}),
     ...(fullAddress
       ? {
           address: {
             "@type": "PostalAddress",
-            streetAddress: hospital.address || "",
+            streetAddress:
+              hospital.address || "",
             addressLocality:
-              hospital.city || hospital.district || "",
-            addressRegion: hospital.state || "",
+              hospital.city ||
+              hospital.district ||
+              "",
+            addressRegion:
+              hospital.state || "",
+            postalCode:
+              hospital.pincode || "",
             addressCountry: "IN",
           },
         }
@@ -72,9 +104,24 @@ export default function HospitalSeo({
         content={description}
       />
 
+      <meta
+        name="robots"
+        content="index,follow"
+      />
+
       <link
         rel="canonical"
         href={canonicalUrl}
+      />
+
+      <meta
+        property="og:type"
+        content="website"
+      />
+
+      <meta
+        property="og:site_name"
+        content="NextSynq Health"
       />
 
       <meta
@@ -93,8 +140,28 @@ export default function HospitalSeo({
       />
 
       <meta
-        property="og:type"
-        content="website"
+        property="og:image"
+        content={imageUrl}
+      />
+
+      <meta
+        name="twitter:card"
+        content="summary_large_image"
+      />
+
+      <meta
+        name="twitter:title"
+        content={title}
+      />
+
+      <meta
+        name="twitter:description"
+        content={description}
+      />
+
+      <meta
+        name="twitter:image"
+        content={imageUrl}
       />
 
       <script type="application/ld+json">

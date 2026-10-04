@@ -1,7 +1,11 @@
 {
   "rewrites": [
     {
-      "source": "/((?!assets/|favicon.ico|robots.txt|sitemap.xml|manifest.webmanifest|index.html|nextsynq.png|nextsynq.svg|og-image.png|google3458237e26607d67.html).*)",
+      "source": "/book-appointment/:hospitalSlug",
+      "destination": "/api/seo-booking"
+    },
+    {
+      "source": "/((?!api/|assets/|favicon.ico|robots.txt|sitemap.xml|manifest.webmanifest|index.html|nextsynq.png|nextsynq.svg|nexturn.png|og-image.png|google3458237e26607d67.html).*)",
       "destination": "/index.html"
     }
   ],
