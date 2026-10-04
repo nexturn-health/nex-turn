@@ -1,13 +1,10 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-
   "rewrites": [
     {
       "source": "/((?!assets/|favicon.ico|robots.txt|sitemap.xml|manifest.webmanifest|index.html|nextsynq.png|nextsynq.svg|og-image.png).*)",
       "destination": "/index.html"
     }
   ],
-
   "headers": [
     {
       "source": "/index.html",

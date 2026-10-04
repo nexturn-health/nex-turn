@@ -49,6 +49,8 @@ import {
   getDistrictsByState,
 } from "../../store/indiaLocations";
 
+import HospitalSeo from "../../components/seo/HospitalSeo";
+
 // Dates use the patient's local calendar, rather than UTC.
 const INDIA_TIME_ZONE = "Asia/Kolkata";
 
@@ -479,6 +481,9 @@ export default function PatientBookAppointment() {
   } = useParams<{
     hospitalSlug?: string;
   }>();
+
+  const isDirectHospitalPage =
+    Boolean(hospitalSlug);
 
   const [
     step,
@@ -1223,6 +1228,12 @@ export default function PatientBookAppointment() {
     <div className="pb-page">
       <BookingStyles />
 
+      {isDirectHospitalPage && hospital && (
+        <HospitalSeo
+          hospital={hospital}
+        />
+      )}
+
       <ErrorPopup
         message={popupError}
         onClose={() =>
@@ -1373,7 +1384,9 @@ export default function PatientBookAppointment() {
                 {step === 1
                   ? "Find your hospital"
                   : step === 2
-                    ? "Choose your doctor & time"
+                    ? isDirectHospitalPage && hospital
+                      ? `Book an appointment at ${hospital.name}`
+                      : "Choose your doctor & time"
                     : "You're almost booked"}
               </h1>
 
@@ -1381,7 +1394,9 @@ export default function PatientBookAppointment() {
                 {step === 1
                   ? "Choose a location to see hospitals accepting appointments."
                   : step === 2
-                    ? "Select a department, doctor and available appointment time."
+                    ? isDirectHospitalPage && hospital
+                      ? "Select a department, doctor and available appointment time at this hospital."
+                      : "Select a department, doctor and available appointment time."
                     : "Add the patient's details and confirm your appointment."}
               </p>
             </div>
@@ -1458,6 +1473,37 @@ export default function PatientBookAppointment() {
                   Change
                 </button>
               </div>
+            )}
+
+            {isDirectHospitalPage && hospital && (
+              <section
+                className="pb-seo-hospital"
+                aria-labelledby="pb-seo-hospital-title"
+              >
+                <p className="pb-seo-label">
+                  ONLINE HOSPITAL APPOINTMENTS
+                </p>
+
+                <h2 id="pb-seo-hospital-title">
+                  Book an appointment at {hospital.name}
+                </h2>
+
+                <p>
+                  Book your appointment online with {hospital.name}. Choose a department, doctor, date and available time slot.
+                </p>
+
+                <address>
+                  {[
+                    hospital.address,
+                    hospital.city,
+                    hospital.district,
+                    hospital.state,
+                    hospital.pincode,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
+                </address>
+              </section>
             )}
 
             <section className="pb-panel">
@@ -2447,6 +2493,43 @@ function BookingStyles() {
         text-decoration: underline;
         font-size: 12px;
         min-height: 44px;
+      }
+
+      .pb-seo-hospital {
+        margin: 0 0 14px;
+        padding: 18px 20px;
+        border: 1px solid #dce6d4;
+        border-radius: 15px;
+        background: #f0f5eb;
+      }
+
+      .pb-seo-label {
+        color: #5c7850;
+        font-size: 10px;
+        letter-spacing: 1.2px;
+        font-weight: 700;
+      }
+
+      .pb-seo-hospital h2 {
+        margin-top: 7px;
+        color: #173d39;
+        font-size: 19px;
+        line-height: 1.35;
+      }
+
+      .pb-seo-hospital p:not(.pb-seo-label) {
+        margin-top: 8px;
+        color: #5f7159;
+        font-size: 13px;
+        line-height: 1.65;
+      }
+
+      .pb-seo-hospital address {
+        margin-top: 8px;
+        color: #536a4d;
+        font-size: 12px;
+        font-style: normal;
+        line-height: 1.6;
       }
 
       .pb-fields {
