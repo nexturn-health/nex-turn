@@ -1228,9 +1228,10 @@ export default function PatientBookAppointment() {
     <div className="pb-page">
       <BookingStyles />
 
-      {isDirectHospitalPage && hospital && (
+      {hospital && hospitalSlug && (
         <HospitalSeo
           hospital={hospital}
+          hospitalSlug={hospitalSlug}
         />
       )}
 
@@ -1381,13 +1382,13 @@ export default function PatientBookAppointment() {
                 ref={headingRef}
                 tabIndex={-1}
               >
-                {step === 1
-                  ? "Find your hospital"
-                  : step === 2
-                    ? isDirectHospitalPage && hospital
-                      ? `Book an appointment at ${hospital.name}`
-                      : "Choose your doctor & time"
-                    : "You're almost booked"}
+                {isDirectHospitalPage && hospital
+                  ? `${hospital.name} Online Appointment Booking`
+                  : step === 1
+                    ? "Find your hospital"
+                    : step === 2
+                      ? "Choose your doctor & time"
+                      : "You're almost booked"}
               </h1>
 
               <p>

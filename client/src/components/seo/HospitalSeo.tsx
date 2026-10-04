@@ -1,127 +1,105 @@
-import {
-    Helmet,
-} from "react-helmet-async";
+import { Helmet } from "react-helmet-async";
 
 interface HospitalSeoProps {
-    hospital: {
-        name: string;
-        bookingSlug?: string;
-        address?: string;
-        city?: string;
-        district?: string;
-        state?: string;
-        pincode?: string;
-        phone?: string;
-        logoUrl?: string;
-    };
+  hospital: {
+    name: string;
+    address?: string;
+    city?: string;
+    district?: string;
+    state?: string;
+    phone?: string;
+    logoUrl?: string;
+  };
+  hospitalSlug: string;
 }
 
-const HospitalSeo = ({
-    hospital,
-}: HospitalSeoProps) => {
-    if (!hospital.bookingSlug) {
-        return null;
-    }
+const SITE_URL = "https://www.nextsynq.health";
 
-    const pageUrl =
-        `https://www.nextsynq.health/book-appointment/${hospital.bookingSlug}`;
+export default function HospitalSeo({
+  hospital,
+  hospitalSlug,
+}: HospitalSeoProps) {
+  const hospitalName =
+    hospital.name?.trim() || "Hospital";
 
-    const location = [
-        hospital.city,
-        hospital.district,
-        hospital.state,
-    ]
-        .filter(Boolean)
-        .join(", ");
+  const title =
+    `${hospitalName} Online Appointment Booking | NextSynq Health`;
 
-    const description =
-        `Book an appointment online at ${hospital.name}` +
-        `${location ? ` in ${location}` : ""}. ` +
-        "Choose a department, doctor, date and available appointment slot.";
+  const description =
+    `Book an online appointment at ${hospitalName}. Select a department, doctor, date, and available time slot using NextSynq Health.`;
 
-    const logoUrl =
-        hospital.logoUrl?.startsWith("http")
-            ? hospital.logoUrl
-            : hospital.logoUrl
-                ? `https://www.nextsynq.health${hospital.logoUrl}`
-                : undefined;
+  const canonicalUrl =
+    `${SITE_URL}/book-appointment/${hospitalSlug}`;
 
-    const structuredData = {
-        "@context": "https://schema.org",
-        "@type": "MedicalClinic",
-        "@id": `${pageUrl}#hospital`,
-        name: hospital.name,
-        url: pageUrl,
-        description,
-        image: logoUrl,
-        telephone: hospital.phone || undefined,
-        address: {
+  const fullAddress = [
+    hospital.address,
+    hospital.city,
+    hospital.district,
+    hospital.state,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "MedicalClinic",
+    name: hospitalName,
+    url: canonicalUrl,
+    description,
+    ...(hospital.phone
+      ? { telephone: hospital.phone }
+      : {}),
+    ...(fullAddress
+      ? {
+          address: {
             "@type": "PostalAddress",
             streetAddress: hospital.address || "",
             addressLocality:
-                hospital.city || "",
-            addressRegion:
-                hospital.state || "",
-            postalCode:
-                hospital.pincode || "",
+              hospital.city || hospital.district || "",
+            addressRegion: hospital.state || "",
             addressCountry: "IN",
-        },
-    };
+          },
+        }
+      : {}),
+  };
 
-    return (
-        <Helmet>
-            <title>
-                Book Appointment at {hospital.name}
-                {location ? `, ${location}` : ""} | NextSynq Health
-            </title>
+  return (
+    <Helmet>
+      <title>{title}</title>
 
-            <meta
-                name="description"
-                content={description}
-            />
+      <meta
+        name="description"
+        content={description}
+      />
 
-            <meta
-                name="robots"
-                content="index, follow"
-            />
+      <link
+        rel="canonical"
+        href={canonicalUrl}
+      />
 
-            <link
-                rel="canonical"
-                href={pageUrl}
-            />
+      <meta
+        property="og:title"
+        content={title}
+      />
 
-            <meta
-                property="og:type"
-                content="website"
-            />
+      <meta
+        property="og:description"
+        content={description}
+      />
 
-            <meta
-                property="og:title"
-                content={`Book Appointment at ${hospital.name}`}
-            />
+      <meta
+        property="og:url"
+        content={canonicalUrl}
+      />
 
-            <meta
-                property="og:description"
-                content={description}
-            />
+      <meta
+        property="og:type"
+        content="website"
+      />
 
-            <meta
-                property="og:url"
-                content={pageUrl}
-            />
-
-            {logoUrl && (
-                <meta
-                    property="og:image"
-                    content={logoUrl}
-                />
-            )}
-
-            <script type="application/ld+json">
-                {JSON.stringify(structuredData)}
-            </script>
-        </Helmet>
-    );
-};
-
-export default HospitalSeo;
+      <script type="application/ld+json">
+        {JSON.stringify(structuredData)}
+      </script>
+    </Helmet>
+  );
+}
