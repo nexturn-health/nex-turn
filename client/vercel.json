@@ -1,7 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/((?!assets/|favicon.ico|robots.txt|sitemap.xml|manifest.webmanifest|index.html|nextsynq.png|nextsynq.svg|og-image.png).*)",
+      "source": "/((?!assets/|favicon.ico|robots.txt|sitemap.xml|manifest.webmanifest|index.html|nextsynq.png|nextsynq.svg|og-image.png|google3458237e26607d67.html).*)",
       "destination": "/index.html"
     }
   ],
@@ -21,24 +21,6 @@
         {
           "key": "Cache-Control",
           "value": "public, max-age=31536000, immutable"
-        }
-      ]
-    },
-    {
-      "source": "/sitemap.xml",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "application/xml"
-        }
-      ]
-    },
-    {
-      "source": "/robots.txt",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "text/plain"
         }
       ]
     }
