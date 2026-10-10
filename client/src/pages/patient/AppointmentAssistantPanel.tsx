@@ -14,7 +14,9 @@ import {
   Mic,
   Search,
   Square,
+  Volume2,
   UserRound,
+  X,
 } from "lucide-react";
 
 import {
@@ -118,11 +120,19 @@ export default function AppointmentAssistantPanel({
   const [message, setMessage] =
     useState("");
 
+  const [modalOpen, setModalOpen] = useState(false);
+
   const [loading, setLoading] =
     useState(false);
 
   const [listening, setListening] =
     useState(false);
+
+  const [inputLanguage, setInputLanguage] =
+    useState<"en-IN" | "hi-IN">("en-IN");
+
+  const [voiceReplies, setVoiceReplies] =
+    useState(true);
 
   const [error, setError] =
     useState("");
@@ -161,9 +171,12 @@ export default function AppointmentAssistantPanel({
       setResponse(null);
       setLoading(true);
 
+      const languageGuidance =
+        `\n\nReply in simple, clear English only, even if the patient's question is in Hindi. Keep the answer short and friendly. Preserve doctor, hospital, department, date, and appointment details accurately.`;
+
       const result =
         await searchAppointmentsWithAI(
-          trimmed,
+          `${trimmed}${languageGuidance}`,
         );
 
       setResponse(result);
@@ -218,7 +231,7 @@ export default function AppointmentAssistantPanel({
 
     let spokenText = "";
 
-    recognition.lang = "en-IN";
+    recognition.lang = inputLanguage;
     recognition.continuous = false;
     recognition.interimResults = true;
 
@@ -289,6 +302,33 @@ export default function AppointmentAssistantPanel({
   }
 
   useEffect(() => {
+    if (
+      !response?.message ||
+      !voiceReplies ||
+      typeof window === "undefined" ||
+      !("speechSynthesis" in window)
+    ) {
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(response.message);
+    utterance.lang = "en-IN";
+    utterance.rate = 0.96;
+    utterance.pitch = 1;
+
+    const voices = window.speechSynthesis.getVoices();
+    const englishVoice =
+      voices.find((voice) => voice.lang.toLowerCase().startsWith("en-in")) ||
+      voices.find((voice) => voice.lang.toLowerCase().startsWith("en"));
+
+    if (englishVoice) utterance.voice = englishVoice;
+    window.speechSynthesis.speak(utterance);
+
+    return () => window.speechSynthesis.cancel();
+  }, [response, voiceReplies]);
+
+  useEffect(() => {
     return () => {
       try {
         recognitionRef.current?.stop();
@@ -297,31 +337,104 @@ export default function AppointmentAssistantPanel({
       }
 
       recognitionRef.current = null;
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     };
   }, []);
 
+  useEffect(() => {
+    if (!modalOpen) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setModalOpen(false);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [modalOpen]);
+
   return (
-    <section
-      className="pb-ai-card"
-      aria-labelledby="pb-ai-title"
-    >
+    <>
+      <button
+        type="button"
+        className="pb-button pb-ai-button pb-ai-open-modal"
+        onClick={() => setModalOpen(true)}
+        aria-haspopup="dialog"
+        aria-expanded={modalOpen}
+      >
+        <Bot size={18} />
+        Book Appointment with AI
+      </button>
+
+      {modalOpen && (
+        <div
+          className="pb-ai-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setModalOpen(false);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+            background: "rgba(15, 23, 42, 0.62)",
+          }}
+        >
+          <div
+            className="pb-ai-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pb-ai-title"
+            style={{
+              position: "relative",
+              width: "min(760px, 100%)",
+              maxHeight: "min(90vh, 900px)",
+              overflowY: "auto",
+              borderRadius: "18px",
+              background: "#fff",
+              boxShadow: "0 24px 80px rgba(0,0,0,.28)",
+            }}
+          >
+            <button
+              type="button"
+              className="pb-ai-modal-close"
+              onClick={() => setModalOpen(false)}
+              aria-label="Close AI appointment assistant"
+              style={{
+                position: "sticky",
+                top: "10px",
+                float: "right",
+                zIndex: 2,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "36px",
+                height: "36px",
+                margin: "10px 10px -46px 0",
+                border: "1px solid #e2e8f0",
+                borderRadius: "50%",
+                background: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              <X size={18} />
+            </button>
+            <section
+              className="pb-ai-card pb-ai-modal-content"
+              aria-labelledby="pb-ai-title"
+              style={{ margin: 0, maxHeight: "none" }}
+            >
       <div className="pb-ai-heading">
         <span className="pb-ai-icon">
           <Bot size={20} />
         </span>
 
         <div>
-          <p className="pb-ai-kicker">
-            AI APPOINTMENT ASSISTANT
-          </p>
-
           <h2 id="pb-ai-title">
-            Find your appointment using AI
+            How can I help?
           </h2>
-
-          <p>
-            Example: Find a cardiologist at NexTurn Hospital tomorrow
-          </p>
         </div>
       </div>
 
@@ -341,18 +454,20 @@ export default function AppointmentAssistantPanel({
           value={message}
           maxLength={300}
           rows={3}
-          placeholder="Type or speak: Find a cardiologist at NexTurn Hospital tomorrow"
+          placeholder="Ask about a doctor, hospital, department, or appointment..."
           onChange={(event) => {
             setMessage(event.target.value);
             setError("");
           }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              void performSearch(message);
+            }
+          }}
         />
 
         <div className="pb-ai-form-footer">
-          <small>
-            {message.length}/300
-          </small>
-
           <div className="pb-ai-actions">
             <button
               type="button"
@@ -376,6 +491,16 @@ export default function AppointmentAssistantPanel({
             </button>
 
             <button
+              type="button"
+              className="pb-button pb-ai-voice"
+              disabled={loading || listening}
+              onClick={() => setInputLanguage((current) => current === "en-IN" ? "hi-IN" : "en-IN")}
+              title="Change voice input language"
+            >
+              {inputLanguage === "hi-IN" ? "हिन्दी" : "English"}
+            </button>
+
+            <button
               type="submit"
               className="pb-button pb-ai-button"
               disabled={loading || listening}
@@ -390,12 +515,16 @@ export default function AppointmentAssistantPanel({
               )}
 
               {loading
-                ? "Searching..."
-                : "Find appointments"}
+                ? "Thinking..."
+                : "Send"}
             </button>
           </div>
         </div>
       </form>
+
+      <p className="pb-ai-kicker">
+        Press Enter to send · Replies are in English
+      </p>
 
       {error && (
         <p
@@ -408,9 +537,27 @@ export default function AppointmentAssistantPanel({
 
       {response && (
         <div className="pb-ai-results">
-          <p className="pb-ai-message">
-            {response.message}
-          </p>
+          <div className="pb-ai-message-row">
+            <p className="pb-ai-message">
+              {response.message}
+            </p>
+            <button
+              type="button"
+              className="pb-button pb-ai-voice"
+              onClick={() => {
+                if (voiceReplies) {
+                  window.speechSynthesis?.cancel();
+                  setVoiceReplies(false);
+                } else {
+                  setVoiceReplies(true);
+                }
+              }}
+              aria-label={voiceReplies ? "Turn off spoken replies" : "Turn on spoken replies"}
+            >
+              <Volume2 size={16} />
+              {voiceReplies ? "Voice on" : "Voice off"}
+            </button>
+          </div>
 
           {!response.results.length &&
             response.hospitals.length > 0 && (
@@ -549,6 +696,10 @@ export default function AppointmentAssistantPanel({
             )}
         </div>
       )}
-    </section>
+            </section>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

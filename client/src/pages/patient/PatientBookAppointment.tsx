@@ -1060,7 +1060,7 @@ export default function PatientBookAppointment() {
       if (remaining === 0) {
         releaseCurrentHold();
         setSlot(null);
-        setStep(2);
+        setStep(3);
         slots.retry();
 
         const message =
@@ -1178,7 +1178,7 @@ export default function PatientBookAppointment() {
     setDate(selectedDate);
     setSlot(null);
     setBookingError("");
-    setStep(2);
+    setStep(3);
   }
 
   async function book(
@@ -1197,7 +1197,7 @@ export default function PatientBookAppointment() {
       !slot ||
       !holdToken
     ) {
-      setStep(2);
+      setStep(3);
 
       showBookingError(
         "Please choose an available appointment time before entering patient details.",
@@ -1284,7 +1284,7 @@ export default function PatientBookAppointment() {
         releaseCurrentHold();
         setSlot(null);
         slots.retry();
-        setStep(2);
+        setStep(3);
 
         showBookingError(
           "This time was just booked by another patient. Please choose another available slot. Your entered details are still saved.",
@@ -1461,20 +1461,19 @@ export default function PatientBookAppointment() {
                   : step === 1
                     ? "Find your hospital"
                     : step === 2
-                      ? "Choose your doctor & time"
-                      : "You're almost booked"}
+                      ? "Choose your doctor"
+                      : "Choose a time and enter patient details"}
               </h1>
 
               <p>
                 {step === 1
                   ? "Choose a location to see hospitals accepting appointments."
                   : step === 2
-                    ? isDirectHospitalPage && hospital
-                      ? "Select a department, doctor and available appointment time at this hospital."
-                      : "Select a department, doctor and available appointment time."
-                    : "Add the patient's details and confirm your appointment."}
+                    ? "Choose a doctor at this hospital to view available appointment times."
+                    : "Select an available time, enter the patient's details, and confirm the appointment."}
               </p>
             </div>
+
 
             <ol
               className="pb-progress"
@@ -1482,8 +1481,8 @@ export default function PatientBookAppointment() {
             >
               {[
                 "Hospital",
-                "Doctor & time",
-                "Your details",
+                "Doctor",
+                "Time & details",
               ].map((label, index) => (
                 <li
                   key={label}
@@ -1519,7 +1518,7 @@ export default function PatientBookAppointment() {
                   </strong>
 
                   <p>
-                    {step === 3 &&
+                    {step >= 3 &&
                       doctor &&
                       slot
                       ? `${doctorName(
@@ -1537,12 +1536,7 @@ export default function PatientBookAppointment() {
                   disabled={saving}
                   onClick={() => {
                     setBookingError("");
-
-                    setStep(
-                      step === 3
-                        ? 2
-                        : 1,
-                    );
+                    setStep(step === 3 ? 2 : 1);
                   }}
                 >
                   Change
@@ -1550,46 +1544,18 @@ export default function PatientBookAppointment() {
               </div>
             )}
 
-            {isDirectHospitalPage && hospital && (
-              <section
-                className="pb-seo-hospital"
-                aria-labelledby="pb-seo-hospital-title"
-              >
-                <p className="pb-seo-label">
-                  ONLINE HOSPITAL APPOINTMENTS
-                </p>
-
-                <h2 id="pb-seo-hospital-title">
-                  Book an appointment at {hospital.name}
-                </h2>
-
-                <p>
-                  Book your appointment online with {hospital.name}. Choose a department, doctor, date and available time slot.
-                </p>
-
-                <address>
-                  {[
-                    hospital.address,
-                    hospital.city,
-                    hospital.district,
-                    hospital.state,
-                    hospital.pincode,
-                  ]
-                    .filter(Boolean)
-                    .join(", ")}
-                </address>
-              </section>
-            )}
-
             <section className="pb-panel">
               {step === 1 && (
                 <>
+                  <br />
+
                   <AppointmentAssistantPanel
                     onSelectResult={
                       chooseAIResult
                     }
                   />
-
+                  <br />
+                  <br />
                   <div className="pb-fields">
                     <div className="pb-field">
                       <label htmlFor="pb-state">
@@ -1762,6 +1728,8 @@ export default function PatientBookAppointment() {
                       </>
                     )}
                 </>
+
+
               )}
 
               {step === 2 && (
@@ -1815,14 +1783,15 @@ export default function PatientBookAppointment() {
                                 setDepartment(
                                   item.department
                                     ? {
-                                        _id: item.department._id,
-                                        name: item.department.name,
-                                      } as PublicDepartment
+                                      _id: item.department._id,
+                                      name: item.department.name,
+                                    } as PublicDepartment
                                     : null,
                                 );
                                 setDoctor(item);
                                 setSlot(null);
                                 setBookingError("");
+                                setStep(3);
                               }}
                             >
                               <span className="pb-doctor-avatar" aria-hidden="true">
@@ -1842,7 +1811,7 @@ export default function PatientBookAppointment() {
                                   <span>{doctorExperienceLabel(item)}</span>
                                 </span>
                                 <span className="pb-doctor-action">
-                                  {selected ? "Selected — choose a time below" : "View available slots"}
+                                  {selected ? "Choose another time" : "Book Available Slot"}
                                   <ChevronRight size={15} />
                                 </span>
                               </span>
@@ -1851,6 +1820,34 @@ export default function PatientBookAppointment() {
                         })}
                       </div>
                     )}
+
+                  <div className="pb-actions">
+                    <button
+                      type="button"
+                      className="pb-button pb-secondary"
+                      onClick={() => {
+                        releaseCurrentHold();
+                        setSlot(null);
+                        setDoctor(null);
+                        setDepartment(null);
+                        setStep(1);
+                      }}
+                    >
+                      <ArrowLeft size={16} />
+                      Back to hospitals
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {step === 3 && (
+                <>
+                  <div className="pb-doctor-heading">
+                    <div>
+                      <h2>Choose an available time</h2>
+                      <p>{doctor ? `${doctorName(doctor.name)} · ${department?.name || "Department not specified"}` : "Choose a doctor first."}</p>
+                    </div>
+                  </div>
 
                   {doctor && (
                     <div className="pb-section">
@@ -1966,221 +1963,202 @@ export default function PatientBookAppointment() {
                       type="button"
                       className="pb-button pb-secondary"
                       onClick={() => {
-                        releaseCurrentHold();
-                        setSlot(null);
-                        setStep(1);
-                      }}
-                    >
-                      <ArrowLeft size={16} />
-                      Back
-                    </button>
-
-                    <button
-                      type="button"
-                      className="pb-button pb-primary"
-                      disabled={
-                        !slot ||
-                        !holdToken ||
-                        slots.loading ||
-                        !!slots.error ||
-                        !date ||
-                        !isDateWithinBookingWindow(
-                          date,
-                        )
-                      }
-                      onClick={() =>
-                        setStep(3)
-                      }
-                    >
-                      Continue
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {step === 3 && (
-                <form
-                  onSubmit={book}
-                  aria-busy={saving}
-                >
-                  {bookingError && (
-                    <div
-                      className="pb-error"
-                      role="alert"
-                    >
-                      {bookingError}
-                    </div>
-                  )}
-
-                  {holdSeconds !== null && (
-                    <p className="pb-note">
-                      This time is reserved for you for{" "}
-                      {formatHoldTime(holdSeconds)}.
-                    </p>
-                  )}
-
-                  <fieldset
-                    className="pb-form"
-                    disabled={saving}
-                  >
-                    <div className="pb-fields">
-                      <div className="pb-field">
-                        <label htmlFor="pb-name">
-                          Patient name
-                        </label>
-
-                        <input
-                          id="pb-name"
-                          required
-                          minLength={2}
-                          autoComplete="name"
-                          value={name}
-                          onChange={(event) =>
-                            setName(
-                              event.target.value,
-                            )
-                          }
-                          placeholder="Full name"
-                        />
-                      </div>
-
-                      <div className="pb-field">
-                        <label htmlFor="pb-phone">
-                          Mobile number
-                        </label>
-
-                        <input
-                          id="pb-phone"
-                          required
-                          type="tel"
-                          inputMode="tel"
-                          autoComplete="tel"
-                          value={phone}
-                          onChange={(event) =>
-                            setPhone(
-                              event.target.value,
-                            )
-                          }
-                          placeholder="10-digit mobile number"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="pb-fields">
-                      <div className="pb-field">
-                        <label htmlFor="pb-age">
-                          Age{" "}
-                          <span>
-                            (optional)
-                          </span>
-                        </label>
-
-                        <input
-                          id="pb-age"
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={age}
-                          onChange={(event) =>
-                            setAge(
-                              event.target.value,
-                            )
-                          }
-                          placeholder="Age in years"
-                        />
-                      </div>
-
-                      <div className="pb-field">
-                        <label htmlFor="pb-gender">
-                          Gender
-                        </label>
-
-                        <select
-                          id="pb-gender"
-                          value={gender}
-                          onChange={(event) =>
-                            setGender(
-                              event.target.value,
-                            )
-                          }
-                        >
-                          <option value="MALE">
-                            Male
-                          </option>
-
-                          <option value="FEMALE">
-                            Female
-                          </option>
-
-                          <option value="OTHER">
-                            Other
-                          </option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="pb-field">
-                      <label htmlFor="pb-reason">
-                        Reason for visit{" "}
-                        <span>
-                          (optional)
-                        </span>
-                      </label>
-
-                      <textarea
-                        id="pb-reason"
-                        rows={2}
-                        value={reason}
-                        onChange={(event) =>
-                          setReason(
-                            event.target.value,
-                          )
-                        }
-                        placeholder="Briefly describe why you're visiting"
-                      />
-                    </div>
-                  </fieldset>
-
-                  <p className="pb-note">
-                    After booking, show your appointment code at reception to check in and receive your queue token.
-                  </p>
-
-                  <div className="pb-actions">
-                    <button
-                      type="button"
-                      className="pb-button pb-secondary"
-                      disabled={saving}
-                      onClick={() => {
                         setBookingError("");
                         setStep(2);
                       }}
                     >
                       <ArrowLeft size={16} />
-                      Back
+                      Back to doctors
                     </button>
 
-                    <button
-                      type="submit"
-                      className="pb-button pb-primary"
-                      disabled={saving}
+                  </div>
+
+                  {slot && holdToken && (
+                    <form
+                      onSubmit={book}
+                      aria-busy={saving}
                     >
-                      {saving ? (
-                        <Loader2
-                          size={17}
-                          className="pb-spin"
-                        />
-                      ) : (
-                        <CalendarDays size={17} />
+                      {bookingError && (
+                        <div
+                          className="pb-error"
+                          role="alert"
+                        >
+                          {bookingError}
+                        </div>
                       )}
 
-                      {saving
-                        ? "Booking…"
-                        : "Confirm appointment"}
-                    </button>
-                  </div>
-                </form>
+                      {holdSeconds !== null && (
+                        <p className="pb-note">
+                          This time is reserved for you for{" "}
+                          {formatHoldTime(holdSeconds)}.
+                        </p>
+                      )}
+
+                      <fieldset
+                        className="pb-form"
+                        disabled={saving}
+                      >
+                        <div className="pb-fields">
+                          <div className="pb-field">
+                            <label htmlFor="pb-name">
+                              Patient name
+                            </label>
+
+                            <input
+                              id="pb-name"
+                              required
+                              minLength={2}
+                              autoComplete="name"
+                              value={name}
+                              onChange={(event) =>
+                                setName(
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="Full name"
+                            />
+                          </div>
+
+                          <div className="pb-field">
+                            <label htmlFor="pb-phone">
+                              Mobile number
+                            </label>
+
+                            <input
+                              id="pb-phone"
+                              required
+                              type="tel"
+                              inputMode="tel"
+                              autoComplete="tel"
+                              value={phone}
+                              onChange={(event) =>
+                                setPhone(
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="10-digit mobile number"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pb-fields">
+                          <div className="pb-field">
+                            <label htmlFor="pb-age">
+                              Age{" "}
+                              <span>
+                                (optional)
+                              </span>
+                            </label>
+
+                            <input
+                              id="pb-age"
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={age}
+                              onChange={(event) =>
+                                setAge(
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="Age in years"
+                            />
+                          </div>
+
+                          <div className="pb-field">
+                            <label htmlFor="pb-gender">
+                              Gender
+                            </label>
+
+                            <select
+                              id="pb-gender"
+                              value={gender}
+                              onChange={(event) =>
+                                setGender(
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              <option value="MALE">
+                                Male
+                              </option>
+
+                              <option value="FEMALE">
+                                Female
+                              </option>
+
+                              <option value="OTHER">
+                                Other
+                              </option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="pb-field">
+                          <label htmlFor="pb-reason">
+                            Reason for visit{" "}
+                            <span>
+                              (optional)
+                            </span>
+                          </label>
+
+                          <textarea
+                            id="pb-reason"
+                            rows={2}
+                            value={reason}
+                            onChange={(event) =>
+                              setReason(
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Briefly describe why you're visiting"
+                          />
+                        </div>
+                      </fieldset>
+
+                      <p className="pb-note">
+                        After booking, show your appointment code at reception to check in and receive your queue token.
+                      </p>
+
+                      <div className="pb-actions">
+                        <button
+                          type="button"
+                          className="pb-button pb-secondary"
+                          disabled={saving}
+                          onClick={() => {
+                            setBookingError("");
+                            releaseCurrentHold();
+                            setSlot(null);
+                          }}
+                        >
+                          <ArrowLeft size={16} />
+                          Back
+                        </button>
+
+                        <button
+                          type="submit"
+                          className="pb-button pb-primary"
+                          disabled={saving}
+                        >
+                          {saving ? (
+                            <Loader2
+                              size={17}
+                              className="pb-spin"
+                            />
+                          ) : (
+                            <CalendarDays size={17} />
+                          )}
+
+                          {saving
+                            ? "Booking…"
+                            : "Confirm appointment"}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </>
               )}
+
             </section>
 
             <p className="pb-bottom-note">
@@ -2327,7 +2305,7 @@ function BookingStyles() {
       .pb-page {
         min-height: 100dvh;
         color: #173d39;
-        background: #f5f6f2;
+        background: #f5f1e5;
         font-family: "Inter", "Segoe UI", sans-serif;
         -webkit-font-smoothing: antialiased;
       }
@@ -3445,7 +3423,7 @@ function BookingStyles() {
       }
 
       .pb-doctor-heading h2 {
-        color: #172238;
+        color: #173d39;
         font-size: 22px;
         font-weight: 800;
         letter-spacing: -.45px;
@@ -3482,10 +3460,10 @@ function BookingStyles() {
         gap: 14px;
         padding: 18px;
         text-align: left;
-        border: 1px solid #dfe7ef;
+        border: 1px solid #e3dfd0;
         border-radius: 16px;
         background: #fff;
-        color: #172238;
+        color: #173d39;
         box-shadow: 0 2px 6px rgba(25, 45, 70, .045);
         transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
       }
@@ -3499,7 +3477,7 @@ function BookingStyles() {
       .pb-doctor-card.is-selected {
         border: 2px solid #0b918b;
         padding: 17px;
-        background: #f5fffd;
+        background: #fbf8ed;
         box-shadow: 0 0 0 3px rgba(11, 145, 139, .08);
       }
 
@@ -3510,7 +3488,7 @@ function BookingStyles() {
         display: grid;
         place-items: center;
         color: #087f7b;
-        background: linear-gradient(145deg, #d8f5f2, #eef8ff);
+        background: linear-gradient(145deg, #d8efea, #f7f0dc);
         border-radius: 12px;
       }
 
@@ -3524,14 +3502,14 @@ function BookingStyles() {
       }
 
       .pb-doctor-card-body > strong {
-        color: #172238;
+        color: #173d39;
         font-size: 15px;
         font-weight: 800;
         line-height: 1.35;
       }
 
       .pb-doctor-role {
-        color: #69778b;
+        color: #65776f;
         font-size: 12px;
         line-height: 1.4;
       }
@@ -3563,13 +3541,37 @@ function BookingStyles() {
       }
 
       .pb-doctor-action {
-        display: flex;
+        display: inline-flex;
         align-items: center;
-        gap: 4px;
-        margin-top: 5px;
-        color: #07847f;
-        font-size: 11px;
-        font-weight: 750;
+        justify-content: center;
+        gap: 8px;
+        width: fit-content;
+        margin-top: 12px;
+        padding: 10px 14px;
+        border-radius: 9px;
+        background: #16796f;
+        color: #fffdf5;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.25;
+        transition: background .18s ease, transform .18s ease;
+      }
+
+      .pb-doctor-card:hover .pb-doctor-action {
+        background: #105f57;
+      }
+
+      .pb-doctor-card.is-selected .pb-doctor-action {
+        background: #0f6b60;
+      }
+
+      .pb-doctor-action svg {
+        flex-shrink: 0;
+        transition: transform .18s ease;
+      }
+
+      .pb-doctor-card:hover .pb-doctor-action svg {
+        transform: translateX(2px);
       }
 
       @media (max-width: 640px) {
