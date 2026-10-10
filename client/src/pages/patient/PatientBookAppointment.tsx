@@ -283,6 +283,55 @@ function doctorName(
     : `Dr. ${name}`;
 }
 
+// Read optional profile fields without assuming every backend version
+// exposes the same doctor-profile schema.
+function doctorProfileText(
+  doctor: PublicDoctor,
+  fields: string[],
+): string {
+  const profile = doctor as PublicDoctor & Record<string, unknown>;
+
+  for (const field of fields) {
+    const value = profile[field];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      return String(value);
+    }
+  }
+
+  return "";
+}
+
+function doctorExperienceLabel(
+  doctor: PublicDoctor,
+): string {
+  const experience = doctorProfileText(doctor, [
+    "experienceYears",
+    "yearsOfExperience",
+    "experience",
+    "totalExperience",
+    "workExperience",
+  ]);
+
+  if (!experience) return "Experience not provided";
+  if (/\b(year|years|yr|yrs)\b/i.test(experience)) return experience;
+  return `${experience} years experience`;
+}
+
+function doctorSpecializationLabel(
+  doctor: PublicDoctor,
+): string {
+  return doctorProfileText(doctor, [
+    "specialization",
+    "speciality",
+    "specialty",
+    "specializationName",
+    "qualificationSpecialization",
+  ]) || doctor.department?.name || "Specialization not provided";
+}
+
 function errorMessage(
   error: unknown,
 ): string {
@@ -785,22 +834,47 @@ export default function PatientBookAppointment() {
       showErrorPopup,
     );
 
+  // Load doctors from every department at this hospital.
+  // Department remains attached to each doctor for booking/slot APIs.
   const doctors =
     useBookingList<PublicDoctor>(
       useCallback(
-        async () =>
-          hospital && department
-            ? (
-              await getPublicDoctors(
+        async () => {
+          if (!hospital) return [];
+
+          const departmentResponse =
+            await getPublicDepartments(hospital._id);
+          const allDepartments =
+            departmentResponse.data || [];
+
+          const groupedDoctors = await Promise.all(
+            allDepartments.map(async (item) => {
+              const response = await getPublicDoctors(
                 hospital._id,
-                department._id,
-              )
-            ).data || []
-            : [],
-        [
-          hospital,
-          department,
-        ],
+                item._id,
+              );
+
+              return (response.data || []).map((doctorItem) => ({
+                ...doctorItem,
+                department: {
+                  _id: item._id,
+                  name: item.name,
+                },
+              }));
+            }),
+          );
+
+          const seen = new Set<string>();
+          return groupedDoctors
+            .flat()
+            .filter((item) => {
+              const key = `${item._id}:${item.department?._id || ""}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+        },
+        [hospital],
       ),
       showErrorPopup,
     );
@@ -1692,133 +1766,91 @@ export default function PatientBookAppointment() {
 
               {step === 2 && (
                 <>
-                  <div className="pb-field">
-                    <label htmlFor="pb-department">
-                      Department
-                    </label>
-
-                    <select
-                      id="pb-department"
-                      disabled={departments.loading}
-                      value={
-                        department?._id || ""
-                      }
-                      onChange={(event) => {
-                        releaseCurrentHold();
-
-                        setDepartment(
-                          departments.items.find(
-                            (item) =>
-                              item._id ===
-                              event.target.value,
-                          ) || null,
-                        );
-
-                        setDoctor(null);
-                        setSlot(null);
-                      }}
-                    >
-                      <option value="">
-                        Select department
-                      </option>
-
-                      {departments.items.map(
-                        (item) => (
-                          <option
-                            key={item._id}
-                            value={item._id}
-                          >
-                            {item.name}
-                          </option>
-                        ),
-                      )}
-                    </select>
+                  <div className="pb-doctor-heading">
+                    <div>
+                      <h2>Choose your doctor</h2>
+                      <p>Select a doctor directly. Their department is shown on each card.</p>
+                    </div>
+                    <span className="pb-doctor-count">
+                      {doctors.items.length} doctor{doctors.items.length === 1 ? "" : "s"}
+                    </span>
                   </div>
 
                   <ListFeedback
-                    loading={departments.loading}
-                    error={departments.error}
-                    retry={departments.retry}
+                    loading={departments.loading || doctors.loading}
+                    error={departments.error || doctors.error}
+                    retry={() => {
+                      departments.retry();
+                      doctors.retry();
+                    }}
                     showPopup={showErrorPopup}
                   />
 
                   {!departments.loading &&
+                    !doctors.loading &&
                     !departments.error &&
-                    !departments.items.length && (
+                    !doctors.error &&
+                    !doctors.items.length && (
                       <p className="pb-empty">
-                        No departments are accepting appointments here. Choose another hospital.
+                        No doctors are currently accepting appointments at this hospital.
                       </p>
                     )}
 
-                  {department && (
-                    <div className="pb-section">
-                      <h2>
-                        Choose a doctor
-                      </h2>
+                  {!doctors.loading &&
+                    !doctors.error &&
+                    doctors.items.length > 0 && (
+                      <div className="pb-doctor-grid">
+                        {doctors.items.map((item) => {
+                          const selected = doctor?._id === item._id &&
+                            department?._id === item.department?._id;
 
-                      <ListFeedback
-                        loading={doctors.loading}
-                        error={doctors.error}
-                        retry={doctors.retry}
-                        showPopup={showErrorPopup}
-                      />
-
-                      {!doctors.loading &&
-                        !doctors.error && (
-                          <div className="pb-options">
-                            {doctors.items.map(
-                              (item) => (
-                                <button
-                                  type="button"
-                                  className="pb-option"
-                                  aria-pressed={
-                                    doctor?._id ===
-                                    item._id
-                                  }
-                                  key={item._id}
-                                  onClick={() => {
-                                    releaseCurrentHold();
-                                    setDoctor(item);
-                                    setSlot(null);
-                                  }}
-                                >
-                                  <span className="pb-option-icon">
-                                    <UserRound size={21} />
-                                  </span>
-
-                                  <span className="pb-option-text">
-                                    <strong>
-                                      {doctorName(
-                                        item.name,
-                                      )}
-                                    </strong>
-
-                                    <span>
-                                      {department.name}
-                                    </span>
-                                  </span>
-
-                                  {doctor?._id ===
-                                    item._id ? (
-                                    <CheckCircle2 size={19} />
-                                  ) : (
-                                    <ChevronRight size={18} />
-                                  )}
-                                </button>
-                              ),
-                            )}
-                          </div>
-                        )}
-
-                      {!doctors.loading &&
-                        !doctors.error &&
-                        !doctors.items.length && (
-                          <p className="pb-empty">
-                            No doctors are available for booking in this department.
-                          </p>
-                        )}
-                    </div>
-                  )}
+                          return (
+                            <button
+                              type="button"
+                              className={`pb-doctor-card${selected ? " is-selected" : ""}`}
+                              aria-pressed={selected}
+                              key={`${item._id}-${item.department?._id || "department"}`}
+                              onClick={() => {
+                                releaseCurrentHold();
+                                setDepartment(
+                                  item.department
+                                    ? {
+                                        _id: item.department._id,
+                                        name: item.department.name,
+                                      } as PublicDepartment
+                                    : null,
+                                );
+                                setDoctor(item);
+                                setSlot(null);
+                                setBookingError("");
+                              }}
+                            >
+                              <span className="pb-doctor-avatar" aria-hidden="true">
+                                <UserRound size={34} />
+                              </span>
+                              <span className="pb-doctor-card-body">
+                                <strong>{doctorName(item.name)}</strong>
+                                <span className="pb-doctor-role">
+                                  {doctorSpecializationLabel(item)}
+                                </span>
+                                <span className="pb-doctor-department">
+                                  <CheckCircle2 size={13} />
+                                  {item.department?.name || "Department not specified"}
+                                </span>
+                                <span className="pb-doctor-experience">
+                                  <CalendarDays size={14} />
+                                  <span>{doctorExperienceLabel(item)}</span>
+                                </span>
+                                <span className="pb-doctor-action">
+                                  {selected ? "Selected — choose a time below" : "View available slots"}
+                                  <ChevronRight size={15} />
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
 
                   {doctor && (
                     <div className="pb-section">
@@ -3401,6 +3433,160 @@ function BookingStyles() {
         .pb-popup {
           padding: 24px 18px 20px;
           border-radius: 18px;
+        }
+      }
+
+      .pb-doctor-heading {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        margin: 8px 0 18px;
+      }
+
+      .pb-doctor-heading h2 {
+        color: #172238;
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: -.45px;
+      }
+
+      .pb-doctor-heading p {
+        color: #728096;
+        font-size: 13px;
+        margin-top: 6px;
+        line-height: 1.5;
+      }
+
+      .pb-doctor-count {
+        white-space: nowrap;
+        color: #087f7b;
+        background: #e2f7f4;
+        border-radius: 999px;
+        padding: 7px 11px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .pb-doctor-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin: 18px 0 26px;
+      }
+
+      .pb-doctor-card {
+        min-width: 0;
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        padding: 18px;
+        text-align: left;
+        border: 1px solid #dfe7ef;
+        border-radius: 16px;
+        background: #fff;
+        color: #172238;
+        box-shadow: 0 2px 6px rgba(25, 45, 70, .045);
+        transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+      }
+
+      .pb-doctor-card:hover {
+        border-color: #89d6d0;
+        box-shadow: 0 8px 22px rgba(19, 85, 83, .09);
+        transform: translateY(-1px);
+      }
+
+      .pb-doctor-card.is-selected {
+        border: 2px solid #0b918b;
+        padding: 17px;
+        background: #f5fffd;
+        box-shadow: 0 0 0 3px rgba(11, 145, 139, .08);
+      }
+
+      .pb-doctor-avatar {
+        flex: 0 0 68px;
+        width: 68px;
+        height: 78px;
+        display: grid;
+        place-items: center;
+        color: #087f7b;
+        background: linear-gradient(145deg, #d8f5f2, #eef8ff);
+        border-radius: 12px;
+      }
+
+      .pb-doctor-card-body {
+        display: flex;
+        flex: 1;
+        min-width: 0;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 7px;
+      }
+
+      .pb-doctor-card-body > strong {
+        color: #172238;
+        font-size: 15px;
+        font-weight: 800;
+        line-height: 1.35;
+      }
+
+      .pb-doctor-role {
+        color: #69778b;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .pb-doctor-department {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border-radius: 999px;
+        padding: 6px 9px;
+        color: #075f61;
+        background: #d9f8f5;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .pb-doctor-experience {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #52637a;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .pb-doctor-experience svg {
+        flex: 0 0 auto;
+        color: #0b918b;
+      }
+
+      .pb-doctor-action {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: 5px;
+        color: #07847f;
+        font-size: 11px;
+        font-weight: 750;
+      }
+
+      @media (max-width: 640px) {
+        .pb-doctor-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .pb-doctor-card {
+          padding: 14px;
+        }
+
+        .pb-doctor-card.is-selected {
+          padding: 13px;
+        }
+
+        .pb-doctor-heading {
+          align-items: flex-start;
         }
       }
 
