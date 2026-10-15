@@ -89,6 +89,11 @@ export interface AppointmentAssistantResponse {
     results: AppointmentAssistantResult[];
 }
 
+export type AppointmentAssistantChatMessage = {
+    role: "user" | "assistant";
+    content: string;
+};
+
 type SearchContext = {
     today: string;
     lastBookableDate: string;
@@ -200,58 +205,83 @@ function normalizeIntent(
 async function extractIntent(
     message: string,
     context: SearchContext,
+    history: AppointmentAssistantChatMessage[] = [],
 ): Promise<AppointmentAssistantIntent> {
     const client = getOpenAIClient();
-    const model =
-        process.env.OPENAI_APPOINTMENT_MODEL ||
-        "gpt-4o-mini";
+    const model = process.env.OPENAI_APPOINTMENT_MODEL || "gpt-4o-mini";
+    const recentHistory = history.slice(-8).map((item) => ({
+        role: item.role,
+        content: cleanText(item.content, 1200),
+    }));
 
-    const response =
-        await client.chat.completions.create({
-            model,
-            temperature: 0,
-            response_format: {
-                type: "json_object",
+    const response = await client.chat.completions.create({
+        model,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+            {
+                role: "system",
+                content: [
+                    "You classify the patient's latest message for a hospital appointment assistant.",
+                    "Return only JSON with keys: intent, hospitalQuery, departmentQuery, doctorQuery, stateQuery, districtQuery, requestedDate.",
+                    "intent must be APPOINTMENT_SEARCH, MEDICAL_QUESTION, or UNCLEAR.",
+                    "Use conversation history to resolve follow-ups like 'tomorrow?', 'what about that hospital?', or 'show me more'.",
+                    "Use empty strings for absent filters. requestedDate must be YYYY-MM-DD only if within the allowed booking window, otherwise null.",
+                    `Today is ${context.today}; last allowed booking date is ${context.lastBookableDate}. Convert relative dates using these dates.`,
+                    "Map specialties such as cardiologist to departmentQuery Cardiology when possible.",
+                    "A greeting, thanks, or general non-medical question is UNCLEAR. If the latest message clearly says the patient wants to see a doctor, book/find an appointment, or consult a hospital but gives no filters, classify it as APPOINTMENT_SEARCH. A symptom/health question is MEDICAL_QUESTION.",
+                    "Do not diagnose or provide medical advice.",
+                ].join(" "),
             },
-            messages: [
-                {
-                    role: "system",
-                    content: [
-                        "You extract appointment-search filters for a hospital booking website.",
-                        "Return only valid JSON with exactly these keys:",
-                        "intent, hospitalQuery, departmentQuery, doctorQuery, stateQuery, districtQuery, requestedDate.",
-                        "intent must be APPOINTMENT_SEARCH, MEDICAL_QUESTION, or UNCLEAR.",
-                        "Use empty strings when a filter is not present.",
-                        "requestedDate must be YYYY-MM-DD only when the patient clearly asks for a date inside the allowed window; otherwise use null.",
-                        "Today is " + context.today + ". The last allowed booking date is " + context.lastBookableDate + ".",
-                        "Convert relative dates such as today, tomorrow, and day after tomorrow using those dates.",
-                        "Convert a doctor specialty such as cardiologist into departmentQuery such as Cardiology when possible.",
-                        "Do not diagnose symptoms and do not provide medical advice.",
-                    ].join(" "),
-                },
-                {
-                    role: "user",
-                    content: message,
-                },
-            ],
-        });
-
-    const content =
-        response.choices[0]?.message?.content ||
-        "{}";
+            ...recentHistory,
+            { role: "user", content: message },
+        ],
+    });
 
     let parsed: unknown = {};
-
     try {
-        parsed = JSON.parse(content);
+        parsed = JSON.parse(response.choices[0]?.message?.content || "{}");
     } catch {
         parsed = {};
     }
+    return normalizeIntent(parsed, context);
+}
 
-    return normalizeIntent(
-        parsed,
-        context,
-    );
+async function generateConversationalReply(
+    message: string,
+    history: AppointmentAssistantChatMessage[],
+    medicalQuestion: boolean,
+): Promise<string> {
+    const client = getOpenAIClient();
+    const model = process.env.OPENAI_APPOINTMENT_MODEL || "gpt-4o-mini";
+    const response = await client.chat.completions.create({
+        model,
+        temperature: 0.5,
+        messages: [
+            {
+                role: "system",
+                content: [
+                    "You are a friendly conversational assistant on a hospital appointment booking website.",
+                    "Reply in the same language as the patient's latest message. If they write Hindi, answer naturally in Hindi; if English, answer in English. Match their language rather than forcing English.",
+                    "Handle greetings, thanks, simple general conversation, and clarify what appointment help they need.",
+                    "You can help find appointments, but do not claim to have booked anything.",
+                    "Do not invent hospitals, doctors, prices, or availability. Real appointment availability comes only from the booking search.",
+                    "For medical questions, provide a brief safe response, do not diagnose or prescribe, and advise urgent local care for emergency symptoms.",
+                    "Keep replies warm, concise, and suitable for being read aloud.",
+                ].join(" "),
+            },
+            ...history.slice(-8).map((item) => ({
+                role: item.role,
+                content: cleanText(item.content, 1200),
+            })),
+            { role: "user", content: message },
+        ],
+    });
+    const reply = response.choices[0]?.message?.content?.trim();
+    if (reply) return reply;
+    return medicalQuestion
+        ? "I can share general information, but I can’t diagnose or prescribe. If this may be urgent, please seek medical care."
+        : "Hi! I can chat with you and help find available hospital appointments. Which doctor, department, or city are you looking for?";
 }
 
 function escapeRegex(
@@ -462,28 +492,20 @@ function exactOrContains(
 export async function searchAppointmentAvailability(
     message: string,
     context: SearchContext,
+    history: AppointmentAssistantChatMessage[] = [],
 ): Promise<AppointmentAssistantResponse> {
-    const intent =
-        await extractIntent(
-            message,
-            context,
-        );
+    const intent = await extractIntent(message, context, history);
 
-    if (
-        intent.intent !==
-        "APPOINTMENT_SEARCH"
-    ) {
+    if (intent.intent !== "APPOINTMENT_SEARCH") {
+        const reply = await generateConversationalReply(
+            message,
+            history,
+            intent.intent === "MEDICAL_QUESTION",
+        );
         return {
-            message:
-                intent.intent ===
-                "MEDICAL_QUESTION"
-                    ? "I can help you find a hospital appointment, but I cannot diagnose symptoms. For an emergency, contact local emergency services or go to the nearest emergency department."
-                    : "Tell me the hospital, department, doctor, city, or date for which you want an appointment.",
+            message: reply,
             intent,
-            bookingWindow: {
-                from: context.today,
-                to: context.lastBookableDate,
-            },
+            bookingWindow: { from: context.today, to: context.lastBookableDate },
             hospitals: [],
             results: [],
         };

@@ -171,6 +171,10 @@ export interface Doctor {
 
     specialization?: string;
 
+    experience?: number;
+
+    profilePhoto?: string;
+
     role: "DOCTOR";
 
     hospitalId: string;
@@ -200,6 +204,8 @@ export interface CreateDoctorPayload {
     password: string;
     specialization?: string;
     departmentId: string;
+    experience?: number;
+    profilePhoto?: File | null;
 }
 
 /* =========================================================
@@ -216,6 +222,14 @@ export interface UpdateDoctorPayload {
     password?: string;
 
     specialization?: string;
+
+    experience?: number;
+
+    /**
+     * Select a new image to replace the current profile photo.
+     * Leave undefined/null to preserve the existing photo.
+     */
+    profilePhoto?: File | null;
 
     hospitalId?: string;
 
@@ -447,6 +461,40 @@ export const getDoctorById =
     };
 
 /* =========================================================
+   DOCTOR FORM DATA HELPER
+
+   Multer expects multipart/form-data because profilePhoto
+   is uploaded as a file. FormData also carries text fields.
+========================================================= */
+
+const buildDoctorFormData = (
+    payload: CreateDoctorPayload | UpdateDoctorPayload,
+): FormData => {
+    const formData = new FormData();
+
+    Object.entries(payload).forEach(([key, value]) => {
+        if (value === undefined || value === null) {
+            return;
+        }
+
+        if (key === "profilePhoto") {
+            // Append only an actual browser File.
+            if (
+                typeof File !== "undefined" &&
+                value instanceof File
+            ) {
+                formData.append("profilePhoto", value);
+            }
+            return;
+        }
+
+        formData.append(key, String(value));
+    });
+
+    return formData;
+};
+
+/* =========================================================
    CREATE DOCTOR
    POST /api/doctors
 ========================================================= */
@@ -459,7 +507,7 @@ export const createDoctor =
             const response =
                 await api.post<DoctorResponse>(
                     "/doctors",
-                    payload,
+                    buildDoctorFormData(payload),
                 );
 
             return response.data.data;
@@ -489,7 +537,7 @@ export const updateDoctor =
             const response =
                 await api.put<DoctorResponse>(
                     `/doctors/${id}`,
-                    payload,
+                    buildDoctorFormData(payload),
                 );
 
             return response.data.data;

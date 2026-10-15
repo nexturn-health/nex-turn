@@ -1169,6 +1169,9 @@ export default function PatientBookAppointment() {
     setDoctor({
       _id: result.doctor._id,
       name: result.doctor.name,
+      specialization: result.doctor.specialization || "",
+      experience: result.doctor.experience ?? 0,
+      profilePhoto: result.doctor.profilePhoto || "",
       department: {
         _id: result.department._id,
         name: result.department.name,
@@ -1474,7 +1477,6 @@ export default function PatientBookAppointment() {
               </p>
             </div>
 
-
             <ol
               className="pb-progress"
               aria-label="Booking progress"
@@ -1544,18 +1546,46 @@ export default function PatientBookAppointment() {
               </div>
             )}
 
+            {isDirectHospitalPage && hospital && (
+              <section
+                className="pb-seo-hospital"
+                aria-labelledby="pb-seo-hospital-title"
+              >
+                <p className="pb-seo-label">
+                  ONLINE HOSPITAL APPOINTMENTS
+                </p>
+
+                <h2 id="pb-seo-hospital-title">
+                  Book an appointment at {hospital.name}
+                </h2>
+
+                <p>
+                  Book your appointment online with {hospital.name}. Choose a department, doctor, date and available time slot.
+                </p>
+
+                <address>
+                  {[
+                    hospital.address,
+                    hospital.city,
+                    hospital.district,
+                    hospital.state,
+                    hospital.pincode,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
+                </address>
+              </section>
+            )}
+
             <section className="pb-panel">
               {step === 1 && (
                 <>
-                  <br />
-
                   <AppointmentAssistantPanel
                     onSelectResult={
                       chooseAIResult
                     }
                   />
-                  <br />
-                  <br />
+
                   <div className="pb-fields">
                     <div className="pb-field">
                       <label htmlFor="pb-state">
@@ -1728,8 +1758,6 @@ export default function PatientBookAppointment() {
                       </>
                     )}
                 </>
-
-
               )}
 
               {step === 2 && (
@@ -1796,6 +1824,19 @@ export default function PatientBookAppointment() {
                             >
                               <span className="pb-doctor-avatar" aria-hidden="true">
                                 <UserRound size={34} />
+                                {"profilePhoto" in item &&
+                                  typeof item.profilePhoto === "string" &&
+                                  item.profilePhoto.trim() !== "" && (
+                                    <img
+                                      src={item.profilePhoto.trim()}
+                                      alt=""
+                                      loading="lazy"
+                                      onError={(event) => {
+                                        // Keep the UserRound icon visible if the URL is invalid.
+                                        event.currentTarget.style.display = "none";
+                                      }}
+                                    />
+                                  )}
                               </span>
                               <span className="pb-doctor-card-body">
                                 <strong>{doctorName(item.name)}</strong>
@@ -3482,14 +3523,33 @@ function BookingStyles() {
       }
 
       .pb-doctor-avatar {
+        position: relative;
         flex: 0 0 68px;
         width: 68px;
         height: 78px;
         display: grid;
         place-items: center;
+        overflow: hidden;
         color: #087f7b;
         background: linear-gradient(145deg, #d8efea, #f7f0dc);
         border-radius: 12px;
+      }
+
+      .pb-doctor-avatar img {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+        border-radius: inherit;
+        background: #eef7f4;
+      }
+
+      .pb-doctor-avatar > svg {
+        flex: 0 0 auto;
       }
 
       .pb-doctor-card-body {

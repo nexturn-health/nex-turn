@@ -28,8 +28,20 @@ export interface AppointmentAssistantHospital {
 }
 export interface AppointmentAssistantResult {
   hospital: AppointmentAssistantHospital;
-  department: { _id: string; name: string };
-  doctor: { _id: string; name: string };
+
+  department: {
+    _id: string;
+    name: string;
+  };
+
+  doctor: {
+    _id: string;
+    name: string;
+    specialization?: string;
+    experience?: number;
+    profilePhoto?: string;
+  };
+
   dates: AppointmentAssistantDate[];
 }
 export interface AppointmentAssistantResponse {

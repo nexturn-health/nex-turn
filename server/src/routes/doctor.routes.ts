@@ -1,6 +1,4 @@
-import {
-  Router,
-} from "express";
+import { Router } from "express";
 
 import {
   createDoctor,
@@ -11,28 +9,21 @@ import {
   deleteDoctor,
 } from "../controllers/doctor.controller";
 
-import {
-  protect,
-} from "../middleware/auth.middleware";
+import { protect } from "../middleware/auth.middleware";
 
-import {
-  authorize,
-} from "../middleware/role.middleware";
+import { authorize } from "../middleware/role.middleware";
 
-import {
-  requireSubscription,
-} from "../middleware/subscription.middleware";
+import { requireSubscription } from "../middleware/subscription.middleware";
 
-const router =
-  Router();
+import { doctorPhotoUpload } from "../middleware/doctorPhotoUpload";
+
+const router = Router();
 
 /* =========================================================
    AUTHENTICATION
 ========================================================= */
 
-router.use(
-  protect,
-);
+router.use(protect);
 
 /* =========================================================
    ACTIVE SUBSCRIPTION REQUIRED
@@ -40,9 +31,7 @@ router.use(
    BASIC + PREMIUM
 ========================================================= */
 
-router.use(
-  requireSubscription,
-);
+router.use(requireSubscription);
 
 /* =========================================================
    GET ALL DOCTORS
@@ -52,13 +41,11 @@ router.use(
 
 router.get(
   "/",
-
   authorize(
     "HOSPITAL_ADMIN",
     "RECEPTIONIST",
     "DOCTOR",
   ),
-
   getDoctors,
 );
 
@@ -68,15 +55,13 @@ router.get(
    POST /api/doctors
 
    HOSPITAL ADMIN ONLY
+   Supports profilePhoto upload
 ========================================================= */
 
 router.post(
   "/",
-
-  authorize(
-    "HOSPITAL_ADMIN",
-  ),
-
+  authorize("HOSPITAL_ADMIN"),
+  doctorPhotoUpload.single("profilePhoto"),
   createDoctor,
 );
 
@@ -88,13 +73,11 @@ router.post(
 
 router.get(
   "/:id",
-
   authorize(
     "HOSPITAL_ADMIN",
     "RECEPTIONIST",
     "DOCTOR",
   ),
-
   getDoctorById,
 );
 
@@ -104,15 +87,13 @@ router.get(
    PUT /api/doctors/:id
 
    HOSPITAL ADMIN ONLY
+   Supports optional profilePhoto replacement
 ========================================================= */
 
 router.put(
   "/:id",
-
-  authorize(
-    "HOSPITAL_ADMIN",
-  ),
-
+  authorize("HOSPITAL_ADMIN"),
+  doctorPhotoUpload.single("profilePhoto"),
   updateDoctor,
 );
 
@@ -120,18 +101,14 @@ router.put(
    UPDATE DOCTOR STATUS
 
    PATCH /api/doctors/:id/status
-
-   HOSPITAL ADMIN + DOCTOR
 ========================================================= */
 
 router.patch(
   "/:id/status",
-
   authorize(
     "HOSPITAL_ADMIN",
     "DOCTOR",
   ),
-
   updateDoctorStatus,
 );
 
@@ -139,17 +116,11 @@ router.patch(
    DELETE DOCTOR
 
    DELETE /api/doctors/:id
-
-   HOSPITAL ADMIN ONLY
 ========================================================= */
 
 router.delete(
   "/:id",
-
-  authorize(
-    "HOSPITAL_ADMIN",
-  ),
-
+  authorize("HOSPITAL_ADMIN"),
   deleteDoctor,
 );
 

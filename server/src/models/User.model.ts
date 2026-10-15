@@ -110,6 +110,9 @@ export interface IUser extends Document {
     breakReason?: string | null;
     lastResumedAt?: Date | null;
     shiftEndTime?: string | null;
+    specialization?: string;
+    experience?: number;
+    profilePhoto?: string;
 }
 
 // ============================================================
@@ -360,6 +363,24 @@ const UserSchema = new Schema<IUser>(
             type: String,
             trim: true,
             default: null,
+        },
+        specialization: {
+            type: String,
+            trim: true,
+            default: "",
+        },
+        // DOCTOR PROFILE
+        experience: {
+            type: Number,
+            default: 0,
+            min: 0,
+            max: 80,
+        },
+
+        profilePhoto: {
+            type: String,
+            default: "",
+            trim: true,
         },
     },
 

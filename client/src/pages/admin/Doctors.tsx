@@ -4,8 +4,8 @@ import { ArrowLeft, Plus, Search, X, Building2, Loader2, Mail, Stethoscope, Tras
 import { getDepartments, type Department } from "../../services/department.api";
 import { getDoctors, createDoctor, deleteDoctor, type Doctor } from "../../services/doctor.api";
 
-interface DoctorFormState { name: string; email: string; password: string; departmentId: string; specialization: string; }
-const EMPTY_FORM: DoctorFormState = { name: "", email: "", password: "", departmentId: "", specialization: "" };
+interface DoctorFormState { name: string; email: string; password: string; departmentId: string; specialization: string; experience: string; }
+const EMPTY_FORM: DoctorFormState = { name: "", email: "", password: "", departmentId: "", specialization: "", experience: "0" };
 function getErrorMessage(error: unknown, fallback: string): string {
   const err = error as { response?: { data?: { message?: string } } };
   return err?.response?.data?.message || fallback;
@@ -40,13 +40,14 @@ export default function Doctors() {
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<DoctorFormState>(EMPTY_FORM);
+  const [profilePhoto, setProfilePhoto] = useState<File | null>(null);
   const [formError, setFormError] = useState("");
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
   const savePending = useRef(false);
   const deletePending = useRef(new Set<string>());
   const updateField = (field: keyof DoctorFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(current => ({ ...current, [field]: event.target.value }));
-  const openCreate = () => { setForm(EMPTY_FORM); setFormError(""); setShowModal(true); };
-  const resetModal = () => { setShowModal(false); setForm(EMPTY_FORM); setFormError(""); };
+  const openCreate = () => { setForm(EMPTY_FORM); setProfilePhoto(null); setFormError(""); setShowModal(true); };
+  const resetModal = () => { setShowModal(false); setForm(EMPTY_FORM); setProfilePhoto(null); setFormError(""); };
   const closeModal = () => { if (!savePending.current) resetModal(); };
   const handleCreateDoctor = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -54,9 +55,13 @@ export default function Doctors() {
     if (!form.name.trim() || !form.email.trim() || !form.password || !form.departmentId || !form.specialization.trim()) {
       setFormError("Please fill in all required fields."); return;
     }
+    const experience = Number(form.experience);
+    if (!Number.isInteger(experience) || experience < 0 || experience > 80) {
+      setFormError("Experience must be a whole number between 0 and 80."); return;
+    }
     savePending.current = true; setSubmitting(true); setFormError("");
     try {
-      await createDoctor({ ...form, name: form.name.trim(), email: form.email.trim(), specialization: form.specialization.trim() });
+      await createDoctor({ name: form.name.trim(), email: form.email.trim(), password: form.password, departmentId: form.departmentId, specialization: form.specialization.trim(), experience, profilePhoto });
       resetModal(); await reload();
     } catch (err) { setFormError(getErrorMessage(err, "Failed to create doctor. Please try again.")); }
     finally { savePending.current = false; setSubmitting(false); }
@@ -84,10 +89,10 @@ export default function Doctors() {
         {filtered.map(doctor => {
           const deleting = deletingIds.includes(doctor._id);
           return <article className="cm-card" key={doctor._id}>
-            <div className="cm-card-top"><div className="cm-card-icon"><Stethoscope size={23} strokeWidth={1.7} /></div>
+            <div className="cm-card-top">{doctor.profilePhoto ? <img className="cm-doctor-photo" src={doctor.profilePhoto} alt={`${doctor.name} profile`} /> : <div className="cm-card-icon"><Stethoscope size={23} strokeWidth={1.7} /></div>}
               <div className="cm-card-identity"><h2>{doctor.name}</h2><p className="cm-card-subtitle">{doctor.specialization || "Specialization not provided"}</p><span className="cm-badge" data-active={Boolean(doctor.isActive)}>{doctor.isActive ? "Active" : "Inactive"}</span></div>
             </div>
-            <div className="cm-card-details"><div className="cm-card-detail"><Mail size={16} /><span>{doctor.email}</span></div><div className="cm-card-detail"><Building2 size={16} /><span>{resolveDepartmentName(doctor.departmentId, departments)}</span></div></div>
+            <div className="cm-card-details"><div className="cm-card-detail"><Mail size={16} /><span>{doctor.email}</span></div><div className="cm-card-detail"><Building2 size={16} /><span>{resolveDepartmentName(doctor.departmentId, departments)}</span></div><div className="cm-card-detail"><Stethoscope size={16} /><span>{doctor.experience ?? 0} years experience</span></div></div>
             <div className="cm-card-actions"><p>Clinical team member</p><button type="button" className="cm-icon-button cm-danger" aria-label={`Delete ${doctor.name}`} title="Delete doctor" onClick={() => handleDelete(doctor)} disabled={deleting}>{deleting ? <Loader2 className="cm-spin" size={17} /> : <Trash2 size={17} />}</button></div>
           </article>;
         })}
@@ -105,6 +110,8 @@ export default function Doctors() {
           <fieldset className="cm-form-section" disabled={submitting}><legend>CLINICAL DETAILS</legend>
             <div className="cm-field"><label htmlFor="doctor-department">Department</label><select id="doctor-department" required value={form.departmentId} onChange={updateField("departmentId")}><option value="">Select a department</option>{departments.map(department => <option key={department._id} value={department._id}>{department.name}</option>)}</select>{!loading && departments.length === 0 && <p>Add a department from the Departments page before registering a doctor.</p>}</div>
             <div className="cm-field"><label htmlFor="doctor-specialization">Specialization</label><input id="doctor-specialization" required value={form.specialization} onChange={updateField("specialization")} placeholder="e.g. Cardiologist" /></div>
+            <div className="cm-field"><label htmlFor="doctor-experience">Experience (years)</label><input id="doctor-experience" type="number" min={0} max={80} step={1} required value={form.experience} onChange={updateField("experience")} /></div>
+            <div className="cm-field"><label htmlFor="doctor-profile-photo">Profile photo (optional)</label><input id="doctor-profile-photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={event => { const file = event.target.files?.[0] ?? null; if (file && file.size > 5 * 1024 * 1024) { setFormError("Photo must be 5 MB or smaller."); event.target.value = ""; setProfilePhoto(null); return; } setFormError(""); setProfilePhoto(file); }} /><p>JPG, PNG, or WEBP. Maximum file size: 5 MB.</p>{profilePhoto && <p>Selected: {profilePhoto.name}</p>}</div>
           </fieldset>
         </div>
         <FormActions busy={submitting} onCancel={closeModal} label="Create doctor" />
@@ -235,6 +242,7 @@ function ManagementStyles() {
     .cm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 18px; }
     .cm-card { background: white; border: 1px solid #dfe6d7; border-radius: 16px; padding: 22px; min-width: 0; display: flex; flex-direction: column; }
     .cm-card-top { display: flex; align-items: flex-start; gap: 12px; }
+    .cm-doctor-photo { width: 46px; height: 46px; object-fit: cover; flex-shrink: 0; border-radius: 13px; border: 1px solid #dfe6d7; }
     .cm-card-icon { width: 46px; height: 46px; flex-shrink: 0; display: grid; place-items: center; border-radius: 13px; background: #edf3e6; color: #5c7c4e; }
     .cm-card-identity { min-width: 0; flex: 1; }
     .cm-card h2 { font-size: 16px; font-weight: 600; color: #294a36; line-height: 1.5; margin: 0; overflow-wrap: anywhere; }

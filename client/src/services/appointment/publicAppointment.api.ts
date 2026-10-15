@@ -36,11 +36,13 @@ export interface PublicDepartment {
 export interface PublicDoctor {
     _id: string;
     name: string;
+    specialization: string;
+    experience?: number;
+    profilePhoto?: string;
     department?: {
         _id: string;
         name: string;
-    } | null;
-    isOnline?: boolean;
+    };
 }
 
 export interface PublicSlot {
@@ -105,6 +107,9 @@ export interface PublicBookingResult {
     doctor: {
         _id: string;
         name: string;
+        specialization?: string;
+        experience?: number;
+        profilePhoto?: string;
     };
     department: {
         _id: string;

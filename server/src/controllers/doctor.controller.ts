@@ -5,9 +5,38 @@ import type {
 
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import { v2 as cloudinary } from "cloudinary";
 
 import { User } from "../models/User.model";
 import { Department } from "../models/Department.model";
+
+// Cloudinary configuration. Keep these values in the BACKEND .env file.
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+/** Upload a Multer memory-storage file to Cloudinary. */
+const uploadDoctorPhoto = async (
+  file: Express.Multer.File,
+): Promise<string> => {
+  const { CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } = process.env;
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
+    throw new Error("Cloudinary is not configured. Check the backend environment variables.");
+  }
+
+  const dataUri = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
+  const result = await cloudinary.uploader.upload(dataUri, {
+    folder: "hospital/doctors",
+    resource_type: "image",
+    transformation: [
+      { width: 800, height: 800, crop: "limit" },
+      { quality: "auto", fetch_format: "auto" },
+    ],
+  });
+  return result.secure_url;
+};
 
 /* =========================================================
    TYPES
@@ -118,57 +147,43 @@ const formatDoctor = (
 
     phone: doctor.phone ?? "",
 
+    // NEW: Doctor experience in years
+    experience: doctor.experience ?? 0,
+
+    // NEW: Cloudinary profile photo URL
+    profilePhoto: doctor.profilePhoto ?? "",
+
     role: doctor.role,
 
-    hospitalId:
-      hospitalId
-        ? String(hospitalId)
-        : "",
+    hospitalId: hospitalId
+      ? String(hospitalId)
+      : "",
 
-    departmentId:
-      departmentId
-        ? String(departmentId)
-        : "",
+    departmentId: departmentId
+      ? String(departmentId)
+      : "",
 
     hospital:
       doctor.hospitalId &&
-        typeof doctor.hospitalId ===
-        "object"
+        typeof doctor.hospitalId === "object"
         ? {
-          _id:
-            doctor.hospitalId._id
-              ? String(
-                doctor.hospitalId
-                  ._id,
-              )
-              : "",
-          name:
-            doctor.hospitalId
-              .name ?? "",
+          _id: doctor.hospitalId._id
+            ? String(doctor.hospitalId._id)
+            : "",
+          name: doctor.hospitalId.name ?? "",
         }
         : undefined,
 
     department:
       doctor.departmentId &&
-        typeof doctor.departmentId ===
-        "object"
+        typeof doctor.departmentId === "object"
         ? {
-          _id:
-            doctor.departmentId
-              ._id
-              ? String(
-                doctor
-                  .departmentId
-                  ._id,
-              )
-              : "",
-          name:
-            doctor.departmentId
-              .name ?? "",
+          _id: doctor.departmentId._id
+            ? String(doctor.departmentId._id)
+            : "",
+          name: doctor.departmentId.name ?? "",
           description:
-            doctor.departmentId
-              .description ??
-            "",
+            doctor.departmentId.description ?? "",
         }
         : undefined,
 
@@ -177,22 +192,15 @@ const formatDoctor = (
         ? "INACTIVE"
         : "ACTIVE",
 
-    isActive:
-      doctor.isActive !== false,
+    isActive: doctor.isActive !== false,
 
-    createdAt:
-      doctor.createdAt
-        ? new Date(
-          doctor.createdAt,
-        ).toISOString()
-        : undefined,
+    createdAt: doctor.createdAt
+      ? new Date(doctor.createdAt).toISOString()
+      : undefined,
 
-    updatedAt:
-      doctor.updatedAt
-        ? new Date(
-          doctor.updatedAt,
-        ).toISOString()
-        : undefined,
+    updatedAt: doctor.updatedAt
+      ? new Date(doctor.updatedAt).toISOString()
+      : undefined,
   };
 };
 
@@ -215,6 +223,10 @@ export const createDoctor = async (
       });
     }
 
+    // DEBUG: Check whether Multer received the photo.
+    console.log("Uploaded doctor photo:", req.file);
+    console.log("Doctor request body:", req.body);
+
     const {
       name,
       email,
@@ -223,142 +235,115 @@ export const createDoctor = async (
       specialization,
       hospitalId,
       departmentId,
+      experience,
     } = req.body;
 
-    /* -----------------------------------------
-       NAME
-    ----------------------------------------- */
-
+    // NAME
     if (
       typeof name !== "string" ||
       !name.trim()
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Doctor name is required",
+        message: "Doctor name is required",
       });
     }
 
-    /* -----------------------------------------
-       EMAIL
-    ----------------------------------------- */
-
+    // EMAIL
     if (
       typeof email !== "string" ||
       !email.trim()
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Doctor email is required",
+        message: "Doctor email is required",
       });
     }
 
-    /* -----------------------------------------
-       PASSWORD
-    ----------------------------------------- */
+    const normalizedEmail =
+      email.trim().toLowerCase();
 
+    // PASSWORD
     if (
       typeof password !== "string" ||
       !password.trim()
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Doctor password is required",
+        message: "Doctor password is required",
       });
     }
 
-    /* -----------------------------------------
-       DEPARTMENT
-    ----------------------------------------- */
+    // DEPARTMENT
+    if (
+      typeof departmentId !== "string" ||
+      !departmentId.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Department is required",
+      });
+    }
+
+    // EXPERIENCE
+    const experienceValue =
+      experience === undefined || experience === ""
+        ? 0
+        : Number(experience);
 
     if (
-      typeof departmentId !==
-      "string"
+      !Number.isInteger(experienceValue) ||
+      experienceValue < 0 ||
+      experienceValue > 80
     ) {
       return res.status(400).json({
         success: false,
         message:
-          "Department is required",
+          "Experience must be a whole number between 0 and 80",
       });
     }
 
-    /* -----------------------------------------
-       TARGET HOSPITAL
-    ----------------------------------------- */
-
+    // TARGET HOSPITAL
     const targetHospitalId =
-      getTargetHospitalId(
-        req,
-        hospitalId,
-      );
+      getTargetHospitalId(req, hospitalId);
 
     if (!targetHospitalId) {
       return res.status(400).json({
         success: false,
         message:
-          user.role ===
-            "SUPER_ADMIN"
+          user.role === "SUPER_ADMIN"
             ? "Hospital is required"
             : "Hospital is not assigned to this user",
       });
     }
 
-    /* -----------------------------------------
-       VALIDATE HOSPITAL
-    ----------------------------------------- */
-
-    if (
-      !isValidObjectId(
-        targetHospitalId,
-      )
-    ) {
+    // VALIDATE IDS
+    if (!isValidObjectId(targetHospitalId)) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid hospital ID",
+        message: "Invalid hospital ID",
       });
     }
 
-    /* -----------------------------------------
-       VALIDATE DEPARTMENT
-    ----------------------------------------- */
-
-    if (
-      !isValidObjectId(
-        departmentId,
-      )
-    ) {
+    if (!isValidObjectId(departmentId)) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid department ID",
+        message: "Invalid department ID",
       });
     }
 
     const hospitalObjectId =
-      toObjectId(
-        targetHospitalId,
-      );
+      toObjectId(targetHospitalId);
 
     const departmentObjectId =
-      toObjectId(
-        departmentId,
-      );
+      toObjectId(departmentId);
 
-    /* -----------------------------------------
-       FIND DEPARTMENT
-    ----------------------------------------- */
-
-    const department =
-      await Department.findOne({
-        _id: departmentObjectId,
-        hospitalId:
-          hospitalObjectId,
-        isActive: true,
-      });
+    // FIND DEPARTMENT
+    const department = await Department.findOne({
+      _id: departmentObjectId,
+      hospitalId: hospitalObjectId,
+      isActive: true,
+    });
 
     if (!department) {
       return res.status(404).json({
@@ -368,106 +353,123 @@ export const createDoctor = async (
       });
     }
 
-    /* -----------------------------------------
-       EMAIL
-    ----------------------------------------- */
-
-    const normalizedEmail =
-      email.trim().toLowerCase();
-
-    const existingUser =
-      await User.findOne({
-        email: normalizedEmail,
-      });
+    // CHECK DUPLICATE EMAIL
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
 
     if (existingUser) {
       return res.status(409).json({
         success: false,
-        message:
-          "Email already exists",
+        message: "Email already exists",
       });
     }
 
-    /* -----------------------------------------
-       PASSWORD HASH
-    ----------------------------------------- */
+    // HASH PASSWORD
+    const hashedPassword = await bcrypt.hash(
+      password.trim(),
+      10,
+    );
 
-    const hashedPassword =
-      await bcrypt.hash(
-        password.trim(),
-        10,
-      );
+    // UPLOAD OPTIONAL PROFILE PHOTO
+    let profilePhotoUrl = "";
 
-    /* -----------------------------------------
-       CREATE
-    ----------------------------------------- */
+    const photoFile = req.file;
 
-    const doctor =
-      await User.create({
-        name: name.trim(),
+    if (photoFile) {
+      const allowedTypes = [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+      ];
 
-        email:
-          normalizedEmail,
+      if (!allowedTypes.includes(photoFile.mimetype)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Only JPG, PNG, and WEBP profile photos are allowed",
+        });
+      }
 
-        phone:
-          typeof phone ===
-            "string"
-            ? phone.trim()
-            : "",
+      if (photoFile.size > 5 * 1024 * 1024) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Profile photo must be 5 MB or smaller",
+        });
+      }
 
-        password:
-          hashedPassword,
+      // Upload to Cloudinary.
+      profilePhotoUrl =
+        await uploadDoctorPhoto(photoFile);
 
-        role: "DOCTOR",
-
-        hospitalId:
-          hospitalObjectId,
-
-        departmentId:
-          departmentObjectId,
-
-        isActive: true,
-      });
-
-    /* -----------------------------------------
-       POPULATE
-    ----------------------------------------- */
-
-    const populatedDoctor =
-      await User.findById(
-        doctor._id,
-      )
-        .select("-password")
-        .populate(
-          "departmentId",
-          "name description hospitalId",
-        )
-        .populate(
-          "hospitalId",
-          "name",
+      if (!profilePhotoUrl) {
+        throw new Error(
+          "Cloudinary did not return a profile photo URL",
         );
+      }
+    }
+
+    // CREATE DOCTOR
+    const doctor = await User.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      phone:
+        typeof phone === "string"
+          ? phone.trim()
+          : "",
+      password: hashedPassword,
+      role: "DOCTOR",
+      hospitalId: hospitalObjectId,
+      departmentId: departmentObjectId,
+      specialization:
+        typeof specialization === "string"
+          ? specialization.trim()
+          : "",
+      experience: experienceValue,
+      profilePhoto: profilePhotoUrl,
+      isActive: true,
+    });
+
+    // FETCH POPULATED DOCTOR
+    const populatedDoctor = await User.findById(
+      doctor._id,
+    )
+      .select("-password")
+      .populate(
+        "departmentId",
+        "name description hospitalId",
+      )
+      .populate("hospitalId", "name");
+
+    if (!populatedDoctor) {
+      return res.status(201).json({
+        success: true,
+        message: "Doctor created successfully",
+        data: {
+          _id: doctor._id,
+          experience: experienceValue,
+          profilePhoto: profilePhotoUrl,
+        },
+      });
+    }
 
     return res.status(201).json({
       success: true,
-
-      message:
-        "Doctor created successfully",
-
-      data:
-        formatDoctor(
-          populatedDoctor,
-        ),
+      message: "Doctor created successfully",
+      data: formatDoctor(populatedDoctor),
     });
   } catch (error) {
-    console.error(
-      "Create doctor error:",
-      error,
-    );
+    console.error("Create doctor error:", error);
+
+    if (error instanceof Error) {
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+    }
 
     return res.status(500).json({
       success: false,
-      message:
-        "Internal server error",
+      message: "Internal server error",
     });
   }
 };
@@ -745,6 +747,7 @@ export const updateDoctor =
         hospitalId,
         departmentId,
         isActive,
+        experience,
       } = req.body;
 
       /* -----------------------------------------
@@ -989,6 +992,46 @@ export const updateDoctor =
           toObjectId(
             departmentId,
           );
+      }
+
+      /* -----------------------------------------
+         EXPERIENCE
+      ----------------------------------------- */
+
+      if (experience !== undefined) {
+        const experienceValue = Number(experience);
+        if (
+          !Number.isInteger(experienceValue) ||
+          experienceValue < 0 ||
+          experienceValue > 80
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Experience must be a whole number between 0 and 80",
+          });
+        }
+        doctor.experience = experienceValue;
+      }
+
+      /* -----------------------------------------
+         PROFILE PHOTO (OPTIONAL)
+      ----------------------------------------- */
+
+      const photoFile = (req as Request & { file?: Express.Multer.File }).file;
+      if (photoFile) {
+        if (!photoFile.mimetype.startsWith("image/")) {
+          return res.status(400).json({
+            success: false,
+            message: "Profile photo must be an image",
+          });
+        }
+        if (photoFile.size > 5 * 1024 * 1024) {
+          return res.status(400).json({
+            success: false,
+            message: "Profile photo must be 5 MB or smaller",
+          });
+        }
+        doctor.profilePhoto = await uploadDoctorPhoto(photoFile);
       }
 
       /* -----------------------------------------

@@ -1,43 +1,41 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL:
-    import.meta.env.VITE_API_URL,
-
-  headers: {
-    "Content-Type":
-      "application/json",
-  },
-
-  timeout:
-    10000,
+  baseURL: import.meta.env.VITE_API_URL,
+  timeout: 10000,
 });
 
 // ============================================================
 // REQUEST INTERCEPTOR
-// ADD JWT TOKEN
+// ADD JWT TOKEN + HANDLE FILE UPLOADS
 // ============================================================
 
 api.interceptors.request.use(
   (config) => {
-    const token =
-      localStorage.getItem(
-        "token",
-      );
+    const token = localStorage.getItem("token");
 
     if (token) {
-      config.headers.Authorization =
-        `Bearer ${token}`;
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    // For FormData requests, let Axios/browser set the
+    // multipart Content-Type and its boundary automatically.
+    if (
+      typeof FormData !== "undefined" &&
+      config.data instanceof FormData
+    ) {
+      delete config.headers["Content-Type"];
+    } else if (config.data !== undefined) {
+      // JSON requests continue to use application/json.
+      config.headers.set(
+        "Content-Type",
+        "application/json",
+      );
     }
 
     return config;
   },
-
-  (error) => {
-    return Promise.reject(
-      error,
-    );
-  },
+  (error) => Promise.reject(error),
 );
 
 // ============================================================
@@ -46,149 +44,75 @@ api.interceptors.request.use(
 // ============================================================
 
 api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
-
+  (response) => response,
   (error) => {
-    const status =
-      error?.response?.status;
+    const status = error?.response?.status;
+    const code = error?.response?.data?.code;
 
-    const code =
-      error?.response?.data
-        ?.code;
-
-    // ========================================================
     // 401 - UNAUTHORIZED
-    // ========================================================
-
     if (status === 401) {
       console.log(
         "401 UNAUTHORIZED - CLEARING AUTH",
       );
 
-      localStorage.removeItem(
-        "token",
-      );
-
-      localStorage.removeItem(
-        "user",
-      );
-
-      localStorage.removeItem(
-        "subscription",
-      );
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      localStorage.removeItem("subscription");
 
       window.dispatchEvent(
-        new CustomEvent(
-          "auth-unauthorized",
-        ),
+        new CustomEvent("auth-unauthorized"),
       );
     }
 
-    // ========================================================
     // TRIAL EXPIRED
-    // ========================================================
-
-    if (
-      code ===
-      "TRIAL_EXPIRED"
-    ) {
+    if (code === "TRIAL_EXPIRED") {
       window.dispatchEvent(
-        new CustomEvent(
-          "subscription-expired",
-          {
-            detail: {
-              code:
-                "TRIAL_EXPIRED",
-
-              message:
-                error?.response
-                  ?.data?.message,
-            },
+        new CustomEvent("subscription-expired", {
+          detail: {
+            code: "TRIAL_EXPIRED",
+            message: error?.response?.data?.message,
           },
-        ),
+        }),
       );
     }
 
-    // ========================================================
     // SUBSCRIPTION EXPIRED
-    // ========================================================
-
-    if (
-      code ===
-      "SUBSCRIPTION_EXPIRED"
-    ) {
+    if (code === "SUBSCRIPTION_EXPIRED") {
       window.dispatchEvent(
-        new CustomEvent(
-          "subscription-expired",
-          {
-            detail: {
-              code:
-                "SUBSCRIPTION_EXPIRED",
-
-              message:
-                error?.response
-                  ?.data?.message,
-            },
+        new CustomEvent("subscription-expired", {
+          detail: {
+            code: "SUBSCRIPTION_EXPIRED",
+            message: error?.response?.data?.message,
           },
-        ),
+        }),
       );
     }
 
-    // ========================================================
     // PREMIUM REQUIRED
-    // ========================================================
-
-    if (
-      code ===
-      "PREMIUM_REQUIRED"
-    ) {
+    if (code === "PREMIUM_REQUIRED") {
       window.dispatchEvent(
-        new CustomEvent(
-          "premium-required",
-          {
-            detail: {
-              code:
-                "PREMIUM_REQUIRED",
-
-              message:
-                error?.response
-                  ?.data?.message,
-            },
+        new CustomEvent("premium-required", {
+          detail: {
+            code: "PREMIUM_REQUIRED",
+            message: error?.response?.data?.message,
           },
-        ),
+        }),
       );
     }
 
-    // ========================================================
     // HOSPITAL INACTIVE
-    // ========================================================
-
-    if (
-      code ===
-      "HOSPITAL_INACTIVE"
-    ) {
+    if (code === "HOSPITAL_INACTIVE") {
       window.dispatchEvent(
-        new CustomEvent(
-          "hospital-inactive",
-          {
-            detail: {
-              code:
-                "HOSPITAL_INACTIVE",
-
-              message:
-                error?.response
-                  ?.data?.message,
-            },
+        new CustomEvent("hospital-inactive", {
+          detail: {
+            code: "HOSPITAL_INACTIVE",
+            message: error?.response?.data?.message,
           },
-        ),
+        }),
       );
     }
 
-    return Promise.reject(
-      error,
-    );
+    return Promise.reject(error);
   },
 );
 

@@ -1202,270 +1202,141 @@ export const getPublicHospitalDepartments =
    GET /api/public/hospitals/:hospitalId/doctors?departmentId=...
 ============================================================ */
 
-export const getPublicHospitalDoctors =
-    async (
-        req:
-            Request,
-        res:
-            Response,
-    ) => {
-        try {
-            const hospitalId =
-                getParam(
-                    req.params.hospitalId,
-                );
+export const getPublicHospitalDoctors = async (
+    req: Request,
+    res: Response,
+) => {
+    try {
+        const hospitalId = getParam(req.params.hospitalId);
+        const departmentId = getParam(req.query.departmentId);
+        const debug = getParam(req.query.debug) === "true";
 
-            const departmentId =
-                getParam(
-                    req.query.departmentId,
-                );
+        const hospital = await getPublicHospital(hospitalId);
 
-            const debug =
-                getParam(
-                    req.query.debug,
-                ) ===
-                "true";
-
-            const hospital =
-                await getPublicHospital(
-                    hospitalId,
-                );
-
-            if (
-                !hospital
-            ) {
-                return res
-                    .status(
-                        404,
-                    )
-                    .json({
-                        success:
-                            false,
-
-                        message:
-                            "Hospital not found or booking disabled",
-                    });
-            }
-
-            if (
-                departmentId &&
-                !isValidObjectId(
-                    departmentId,
-                )
-            ) {
-                return res
-                    .status(
-                        400,
-                    )
-                    .json({
-                        success:
-                            false,
-
-                        message:
-                            "Invalid department ID",
-                    });
-            }
-
-            const doctorQuery:
-                any = {
-                hospitalId:
-                    hospital._id,
-
-                role:
-                    "DOCTOR",
-
-                isActive: {
-                    $ne:
-                        false,
-                },
-            };
-
-            if (
-                departmentId
-            ) {
-                const departmentObjectId =
-                    toObjectId(
-                        departmentId,
-                    );
-
-                doctorQuery.$or = [
-                    {
-                        departmentId:
-                            departmentObjectId,
-                    },
-                    {
-                        department:
-                            departmentObjectId,
-                    },
-                    {
-                        departmentId,
-                    },
-                    {
-                        department:
-                            departmentId,
-                    },
-                ];
-            }
-
-            const doctors:
-                any[] =
-                await User.find(
-                    doctorQuery,
-                )
-                    .select(
-                        "_id name phone departmentId department isOnline lastSeenAt isActive role hospitalId",
-                    )
-                    .populate(
-                        "departmentId",
-                        "name",
-                    )
-                    .sort({
-                        name:
-                            1,
-                    })
-                    .lean();
-
-            const schedules:
-                any[] =
-                await DoctorSchedule.find({
-                    hospitalId:
-                        hospital._id,
-
-                    doctorId: {
-                        $in:
-                            doctors.map(
-                                (
-                                    doctor,
-                                ) =>
-                                    doctor._id,
-                            ),
-                    },
-                }).lean();
-
-            const scheduleMap =
-                new Map(
-                    schedules.map(
-                        (
-                            schedule,
-                        ) => [
-                                String(
-                                    schedule.doctorId,
-                                ),
-                                schedule,
-                            ],
-                    ),
-                );
-
-            const publicDoctors =
-                doctors.map(
-                    (
-                        doctor:
-                            any,
-                    ) => {
-                        const schedule =
-                            scheduleMap.get(
-                                String(
-                                    doctor._id,
-                                ),
-                            );
-
-                        return {
-                            _id:
-                                String(
-                                    doctor._id,
-                                ),
-
-                            name:
-                                doctor.name,
-
-                            department:
-                                doctor.departmentId
-                                    ? {
-                                        _id:
-                                            String(
-                                                doctor.departmentId._id ||
-                                                doctor.departmentId,
-                                            ),
-
-                                        name:
-                                            doctor.departmentId.name ||
-                                            "",
-                                    }
-                                    : null,
-
-                            isOnline:
-                                doctor.isOnline ||
-                                false,
-
-                            scheduleConfigured:
-                                Boolean(
-                                    schedule,
-                                ),
-
-                            appointmentEnabled:
-                                schedule
-                                    ? schedule.appointmentEnabled !==
-                                    false
-                                    : false,
-                        };
-                    },
-                );
-
-            return res.json({
-                success:
-                    true,
-
-                data:
-                    publicDoctors,
-
-                debug:
-                    debug
-                        ? {
-                            hospitalId:
-                                String(
-                                    hospital._id,
-                                ),
-
-                            departmentId,
-
-                            doctorQuery,
-
-                            doctorsFound:
-                                doctors.length,
-
-                            schedulesFound:
-                                schedules.length,
-
-                            message:
-                                doctors.length ===
-                                    0
-                                    ? "No doctor matched hospitalId + role + departmentId."
-                                    : "Doctors found. If slots are empty, configure doctor schedule.",
-                        }
-                        : undefined,
+        if (!hospital) {
+            return res.status(404).json({
+                success: false,
+                message: "Hospital not found or booking disabled",
             });
-        } catch (
-        error
-        ) {
-            console.error(
-                "GET PUBLIC DOCTORS ERROR:",
-                error,
-            );
-
-            return res
-                .status(
-                    500,
-                )
-                .json({
-                    success:
-                        false,
-
-                    message:
-                        "Failed to load doctors",
-                });
         }
-    };
 
+        if (departmentId && !isValidObjectId(departmentId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid department ID",
+            });
+        }
+
+        const doctorQuery: any = {
+            hospitalId: hospital._id,
+            role: "DOCTOR",
+            isActive: { $ne: false },
+        };
+
+        if (departmentId) {
+            const departmentObjectId = toObjectId(departmentId);
+
+            doctorQuery.$or = [
+                { departmentId: departmentObjectId },
+                { department: departmentObjectId },
+                { departmentId },
+                { department: departmentId },
+            ];
+        }
+
+        const doctors: any[] = await User.find(doctorQuery)
+            .select(
+                "_id name phone departmentId department isOnline lastSeenAt isActive role hospitalId experience specialization profilePhoto",
+            )
+            .populate("departmentId", "name")
+            .sort({ name: 1 })
+            .lean();
+
+        const schedules: any[] = await DoctorSchedule.find({
+            hospitalId: hospital._id,
+            doctorId: {
+                $in: doctors.map((doctor) => doctor._id),
+            },
+        }).lean();
+
+        const scheduleMap = new Map(
+            schedules.map((schedule) => [
+                String(schedule.doctorId),
+                schedule,
+            ]),
+        );
+
+const publicDoctors = doctors.map((doctor: any) => {
+    const schedule = scheduleMap.get(String(doctor._id));
+
+    const department = doctor.departmentId || doctor.department;
+
+    const departmentName =
+        department && typeof department === "object"
+            ? department.name || ""
+            : "";
+
+    const rawSpecialization =
+        typeof doctor.specialization === "string"
+            ? doctor.specialization.trim()
+            : "";
+
+    // Prevent numeric values from appearing as specializations.
+    const specialization =
+        rawSpecialization && !/^\d+$/.test(rawSpecialization)
+            ? rawSpecialization
+            : departmentName || "General Physician";
+
+    return {
+        _id: String(doctor._id),
+        name: doctor.name,
+        specialization,
+        experience: doctor.experience ?? 0,
+        profilePhoto: doctor.profilePhoto || "",
+
+        department: department
+            ? {
+                  _id: String(department._id || department),
+                  name: departmentName,
+              }
+            : null,
+
+        isOnline: doctor.isOnline || false,
+        scheduleConfigured: Boolean(schedule),
+
+        appointmentEnabled: schedule
+            ? schedule.appointmentEnabled !== false
+            : false,
+    };
+});
+
+        return res.json({
+            success: true,
+            data: publicDoctors,
+
+            debug: debug
+                ? {
+                      hospitalId: String(hospital._id),
+                      departmentId,
+                      doctorQuery,
+                      doctorsFound: doctors.length,
+                      schedulesFound: schedules.length,
+                      message:
+                          doctors.length === 0
+                              ? "No doctor matched hospitalId + role + departmentId."
+                              : "Doctors found. If slots are empty, configure doctor schedule.",
+                  }
+                : undefined,
+        });
+    } catch (error) {
+        console.error("GET PUBLIC DOCTORS ERROR:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to load doctors",
+        });
+    }
+};
 /* ============================================================
    GET PUBLIC DOCTOR SLOTS
    GET /api/public/hospitals/:hospitalId/doctors/:doctorId/slots?date=2026-09-08
